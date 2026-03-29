@@ -94,10 +94,10 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			p.categoryID,
 			p.subcategoryID,
 			p.subbiercategoryID,
-			p.manufacturerID,
-			p.brandID,
+			p.manufacturerid,
+			p.brandid,
 			p.description,
-			p.maintenanceInterval,
+			p.maintenanceinterval,
 			p.itemcostperday,
 			p.weight,
 			p.height,
@@ -126,8 +126,8 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
 		LEFT JOIN subbiercategories sbc ON p.subbiercategoryID = sbc.subbiercategoryID
-		LEFT JOIN brands b ON p.brandID = b.brandID
-		LEFT JOIN manufacturer m ON p.manufacturerID = m.manufacturerID
+		LEFT JOIN brands b ON p.brandid = b.brandid
+		LEFT JOIN manufacturer m ON p.manufacturerid = m.manufacturerid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
 		WHERE 1=1
 	`
@@ -233,10 +233,10 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			p.categoryID,
 			p.subcategoryID,
 			p.subbiercategoryID,
-			p.manufacturerID,
-			p.brandID,
+			p.manufacturerid,
+			p.brandid,
 			p.description,
-			p.maintenanceInterval,
+			p.maintenanceinterval,
 			p.itemcostperday,
 			p.weight,
 			p.height,
@@ -265,8 +265,8 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
 		LEFT JOIN subbiercategories sbc ON p.subbiercategoryID = sbc.subbiercategoryID
-		LEFT JOIN brands b ON p.brandID = b.brandID
-		LEFT JOIN manufacturer m ON p.manufacturerID = m.manufacturerID
+		LEFT JOIN brands b ON p.brandid = b.brandid
+		LEFT JOIN manufacturer m ON p.manufacturerid = m.manufacturerid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
 		WHERE p.productID = $1
 	`
@@ -619,8 +619,8 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	err := db.QueryRow(`
 		INSERT INTO products (
-			name, categoryID, subcategoryID, subbiercategoryID, manufacturerID, brandID,
-			description, maintenanceInterval, itemcostperday, weight, height, width, depth,
+			name, categoryID, subcategoryID, subbiercategoryID, manufacturerid, brandid,
+			description, maintenanceinterval, itemcostperday, weight, height, width, depth,
 			powerconsumption, pos_in_category, is_accessory, is_consumable, count_type_id,
 			stock_quantity, min_stock_level, generic_barcode, price_per_unit,
 			website_visible, website_thumbnail, website_images_json
@@ -695,7 +695,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	result, err := tx.Exec(`
 		UPDATE products SET
 			name = $1, categoryID = $2, subcategoryID = $3, subbiercategoryID = $4,
-			manufacturerID = $5, brandID = $6, description = $7, maintenanceInterval = $8,
+			manufacturerid = $5, brandid = $6, description = $7, maintenanceinterval = $8,
 			itemcostperday = $9, weight = $10, height = $11, width = $12, depth = $13,
 			powerconsumption = $14, pos_in_category = $15,
 			is_accessory = $16, is_consumable = $17, count_type_id = $18,
