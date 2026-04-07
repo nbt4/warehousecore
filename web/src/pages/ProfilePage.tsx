@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Shield, Save } from 'lucide-react';
+import { User, Mail, Shield, Save, Lock, Eye, EyeOff, Check } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface UserProfile {
   profile: {
@@ -8,75 +9,95 @@ interface UserProfile {
     user_id: number;
     display_name: string;
     avatar_url: string;
-    prefs: any;
+    prefs: unknown;
     user?: {
-      userID: number;
+      id: number;
       username: string;
       email: string;
       first_name: string;
       last_name: string;
-    }
+    };
   };
-  roles: Array<{
-    id: number;
-    name: string;
-    description: string;
-  }>;
+  roles: Array<{ id: number; name: string; description: string }>;
 }
 
 export function ProfilePage() {
+  const { changePassword } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [avatarURL, setAvatarURL] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
+  const [profileMsg, setProfileMsg] = useState('');
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  // Password change state
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState('');
+
+  useEffect(() => { loadProfile(); }, []);
 
   const loadProfile = async () => {
     try {
-      const response = await api.get('/profile/me');
-      setProfile(response.data);
-      setDisplayName(response.data.profile.display_name || '');
-      setAvatarURL(response.data.profile.avatar_url || '');
-    } catch (error) {
-      console.error('Failed to load profile:', error);
+      const r = await api.get('/profile/me');
+      setProfile(r.data);
+      setDisplayName(r.data.profile.display_name || '');
+      setAvatarURL(r.data.profile.avatar_url || '');
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSave = async () => {
+  const handleSaveProfile = async () => {
     setSaving(true);
-    setMessage('');
-
+    setProfileMsg('');
     try {
       await api.put('/profile/me', {
         display_name: displayName,
         avatar_url: avatarURL,
         prefs: profile?.profile.prefs || {},
       });
-
-      setMessage('✓ Profil erfolgreich gespeichert');
-      setTimeout(() => setMessage(''), 3000);
+      setProfileMsg('✓ Profil gespeichert');
+      setTimeout(() => setProfileMsg(''), 3000);
       loadProfile();
-    } catch (error: any) {
-      setMessage('Fehler beim Speichern: ' + (error.response?.data?.error || error.message));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Fehler';
+      setProfileMsg('Fehler: ' + msg);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
-    return <div className="text-white">Lädt...</div>;
-  }
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPw !== confirmPw) { setPwMsg('Passwörter stimmen nicht überein'); return; }
+    if (newPw.length < 8) { setPwMsg('Passwort muss mindestens 8 Zeichen haben'); return; }
+    setPwMsg('');
+    setPwSaving(true);
+    try {
+      await changePassword(currentPw, newPw);
+      setPwMsg('✓ Passwort geändert');
+      setCurrentPw(''); setNewPw(''); setConfirmPw('');
+      setTimeout(() => setPwMsg(''), 3000);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Fehler beim Ändern';
+      setPwMsg(msg);
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  if (loading) return <div className="text-white">Lädt...</div>;
+
+  const u = profile?.profile.user;
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <User className="w-8 h-8 text-accent-red" />
         <div>
@@ -85,95 +106,106 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {/* Profile Card */}
+      {/* User info & profile settings */}
       <div className="glass-dark rounded-2xl p-6 space-y-6">
-        {/* User Info */}
         <div className="flex items-center gap-4 pb-6 border-b border-white/10">
-          <div className="w-20 h-20 rounded-full bg-accent-red/20 flex items-center justify-center">
-            <User className="w-10 h-10 text-accent-red" />
+          <div className="w-16 h-16 rounded-full bg-accent-red/20 flex items-center justify-center">
+            {avatarURL ? (
+              <img src={avatarURL} alt="Avatar" className="w-16 h-16 rounded-full object-cover" />
+            ) : (
+              <User className="w-8 h-8 text-accent-red" />
+            )}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">
-              {profile?.profile.user?.first_name} {profile?.profile.user?.last_name}
+            <h2 className="text-xl font-bold text-white">
+              {u?.first_name || u?.last_name ? `${u?.first_name} ${u?.last_name}`.trim() : u?.username}
             </h2>
-            <p className="text-gray-400 flex items-center gap-2">
-              <Mail className="w-4 h-4" />
-              {profile?.profile.user?.email}
+            <p className="text-gray-400 flex items-center gap-2 text-sm">
+              <Mail className="w-4 h-4" />{u?.email}
             </p>
+            <p className="text-gray-500 text-xs mt-0.5">@{u?.username}</p>
           </div>
         </div>
 
-        {/* Roles */}
         <div>
           <label className="block text-sm font-semibold text-gray-400 mb-2 flex items-center gap-2">
-            <Shield className="w-4 h-4" />
-            Rollen
+            <Shield className="w-4 h-4" /> Rollen
           </label>
           <div className="flex flex-wrap gap-2">
-            {profile?.roles.map(role => (
-              <span
-                key={role.id}
-                className="px-3 py-1 rounded-full bg-accent-red/20 text-accent-red text-sm font-semibold"
-              >
+            {profile?.roles.map((role) => (
+              <span key={role.id} className="px-3 py-1 rounded-full bg-accent-red/20 text-accent-red text-sm font-semibold">
                 {role.name}
               </span>
             ))}
           </div>
         </div>
 
-        {/* Display Name */}
         <div>
-          <label className="block text-sm font-semibold text-gray-400 mb-2">
-            Anzeigename (optional)
-          </label>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+          <label className="block text-sm font-semibold text-gray-400 mb-2">Anzeigename (optional)</label>
+          <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)}
             placeholder="z.B. Max M."
-            className="w-full px-4 py-3 rounded-xl glass text-white placeholder-gray-500 focus:ring-2 focus:ring-accent-red outline-none"
-          />
+            className="w-full px-4 py-3 rounded-xl glass text-white placeholder-gray-500 focus:ring-2 focus:ring-accent-red outline-none" />
         </div>
 
-        {/* Avatar URL */}
         <div>
-          <label className="block text-sm font-semibold text-gray-400 mb-2">
-            Avatar URL (optional)
-          </label>
-          <input
-            type="url"
-            value={avatarURL}
-            onChange={(e) => setAvatarURL(e.target.value)}
+          <label className="block text-sm font-semibold text-gray-400 mb-2">Avatar URL (optional)</label>
+          <input type="url" value={avatarURL} onChange={(e) => setAvatarURL(e.target.value)}
             placeholder="https://example.com/avatar.jpg"
-            className="w-full px-4 py-3 rounded-xl glass text-white placeholder-gray-500 focus:ring-2 focus:ring-accent-red outline-none"
-          />
+            className="w-full px-4 py-3 rounded-xl glass text-white placeholder-gray-500 focus:ring-2 focus:ring-accent-red outline-none" />
         </div>
 
-        {/* Save Button */}
         <div className="pt-4 border-t border-white/10">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={`w-full py-3 px-6 rounded-xl font-semibold text-white transition-all flex items-center justify-center gap-2 ${
-              saving
-                ? 'bg-gray-600 cursor-not-allowed'
-                : 'bg-gradient-to-r from-accent-red to-red-700 hover:shadow-lg hover:shadow-red-500/50 hover:scale-105 active:scale-95'
-            }`}
-          >
-            <Save className="w-5 h-5" />
-            <span>{saving ? 'Speichert...' : 'Speichern'}</span>
+          <button onClick={handleSaveProfile} disabled={saving}
+            className="py-3 px-6 rounded-xl font-semibold text-white transition-all flex items-center gap-2 bg-gradient-to-r from-accent-red to-red-700 hover:shadow-lg hover:shadow-red-500/30 disabled:opacity-50">
+            <Save className="w-5 h-5" />{saving ? 'Speichert...' : 'Profil speichern'}
           </button>
-
-          {message && (
-            <div className={`mt-3 p-3 rounded-lg text-center text-sm font-semibold ${
-              message.includes('✓')
-                ? 'bg-green-500/20 text-green-400'
-                : 'bg-red-500/20 text-red-400'
-            }`}>
-              {message}
+          {profileMsg && (
+            <div className={`mt-3 p-3 rounded-lg text-sm font-semibold ${profileMsg.startsWith('✓') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+              {profileMsg}
             </div>
           )}
         </div>
+      </div>
+
+      {/* Password change */}
+      <div className="glass-dark rounded-2xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+          <Lock className="w-5 h-5 text-accent-red" /> Passwort ändern
+        </h3>
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          {[
+            { label: 'Aktuelles Passwort', value: currentPw, set: setCurrentPw, autoComplete: 'current-password' },
+            { label: 'Neues Passwort', value: newPw, set: setNewPw, autoComplete: 'new-password' },
+            { label: 'Neues Passwort bestätigen', value: confirmPw, set: setConfirmPw, autoComplete: 'new-password' },
+          ].map(({ label, value, set, autoComplete }) => (
+            <div key={label}>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  required
+                  autoComplete={autoComplete}
+                  className="w-full px-4 py-3 pr-10 rounded-xl glass text-white placeholder-gray-500 focus:ring-2 focus:ring-accent-red outline-none"
+                />
+                <button type="button" onClick={() => setShowPw(!showPw)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          ))}
+          <button type="submit" disabled={pwSaving}
+            className="flex items-center gap-2 py-2.5 px-5 rounded-xl font-semibold text-white bg-accent-red hover:bg-accent-red/80 disabled:opacity-50 transition-colors">
+            <Check className="w-4 h-4" />{pwSaving ? 'Wird geändert...' : 'Passwort ändern'}
+          </button>
+          {pwMsg && (
+            <div className={`p-3 rounded-lg text-sm font-semibold ${pwMsg.startsWith('✓') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+              {pwMsg}
+            </div>
+          )}
+        </form>
       </div>
     </div>
   );

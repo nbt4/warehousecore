@@ -17,7 +17,7 @@ export function RoleGuard({ requiredRoles, children }: RoleGuardProps) {
     );
   }
 
-  const roles = (user?.Roles ?? user?.roles ?? []) as any[];
+  const roles = (user?.roles ?? []) as any[];
   const hasRequiredRole = roles.some((role) => {
     const name = (role?.name || role?.Name || '').toString().toLowerCase();
     return requiredRoles.some((required) => required.toLowerCase() === name);

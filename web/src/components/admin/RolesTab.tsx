@@ -27,7 +27,7 @@ export function RolesTab() {
   const [saving, setSaving] = useState(false);
 
   const currentRoles = useMemo(
-    () => (user?.Roles ?? user?.roles ?? []) as Role[],
+    () => (user?.roles ?? []) as Role[],
     [user]
   );
   const restrictedRoleNames = useMemo(() => ['admin', 'manager', 'super_admin'], []);

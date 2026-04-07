@@ -9,13 +9,13 @@ export interface Role {
 }
 
 export interface User {
-  UserID: number;
-  Username: string;
-  Email: string;
-  FirstName: string;
-  LastName: string;
-  IsActive: boolean;
-  Roles?: Role[];
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  is_admin?: boolean;
   roles?: Role[];
   force_password_change?: boolean;
 }

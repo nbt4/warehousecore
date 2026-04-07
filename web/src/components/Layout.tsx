@@ -90,7 +90,7 @@ export function Layout({ children }: LayoutProps) {
   // Debug log
   console.log('RentalCore URL:', rentalCoreURL);
 
-  const userRoles = (user?.Roles ?? user?.roles ?? []) as any[];
+  const userRoles = (user?.roles ?? []) as any[];
   const hasAdminAccess = useMemo(() => {
     return userRoles.some((role) => {
       const name = (role?.name || role?.Name || '').toString().toLowerCase();
@@ -360,7 +360,7 @@ export function Layout({ children }: LayoutProps) {
             >
               <div className="flex items-center gap-2 text-sm">
                 <User className="w-4 h-4 text-accent-red" />
-                <span className="text-gray-300 font-medium underline underline-offset-2">{user.Username}</span>
+                <span className="text-gray-300 font-medium underline underline-offset-2">{user.username}</span>
               </div>
             </button>
           )}
