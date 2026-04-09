@@ -1103,9 +1103,10 @@ docker pull nobentie/warehousecore:latest
 # (DO NOT use docker-compose restart manually)
 ```
 
-**Current Version:** 3.36
+**Current Version:** 3.37
 
 **Recent Changes:**
+- 3.37: Product list shows device count badge; product detail modal gains devices tab with lazy loading; LED locate deduplication fix
 - 3.36: PostgreSQL trigger for automatic device ID generation - fixes null deviceID constraint violations
 - 3.35: Produktbilder laden deutlich schneller dank gecachter JPEG-Thumbnails + Admin-UI nutzt die kleinen Varianten
 - 2.71: Gerätebaum als zusätzliche Ansicht direkt in „Produkte“ (View-Toggle)
