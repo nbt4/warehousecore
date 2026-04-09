@@ -1514,6 +1514,7 @@ export function ProductsTab() {
           generic_barcode: viewProduct.generic_barcode || undefined,
           price_per_unit: viewProduct.price_per_unit || undefined,
           count_type_abbreviation: viewProduct.count_type_abbr || undefined,
+          device_count: viewProduct.device_count,
         } : null}
         isOpen={!!viewProduct}
         onClose={closeDetailModal}

@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { X, Package, Ruler, Weight, Zap, Tag, Box, DollarSign, Wrench, Barcode, Info, Image as ImageIcon, UploadCloud, Loader2, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Package, Ruler, Weight, Zap, Tag, Box, DollarSign, Wrench, Barcode, Info, Image as ImageIcon, UploadCloud, Loader2, Eye, Cpu, MapPin } from 'lucide-react';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
-import { productPicturesApi, productWebsiteApi } from '../lib/api';
+import { productPicturesApi, productWebsiteApi, api, ledApi, devicesApi } from '../lib/api';
 import type { ChangeEvent } from 'react';
-import type { ProductPicture } from '../lib/api';
+import type { ProductPicture, Device } from '../lib/api';
+import { DeviceDetailModal } from './DeviceDetailModal';
+import { formatStatus, getStatusColor } from '../lib/utils';
 
 export interface ProductDetail {
   product_id: number;
@@ -59,6 +62,14 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
   const [savingWebsite, setSavingWebsite] = useState(false);
   const [websiteMessage, setWebsiteMessage] = useState<string | null>(null);
 
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'details' | 'devices'>('details');
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [devicesLoaded, setDevicesLoaded] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [deviceDetailOpen, setDeviceDetailOpen] = useState(false);
+
   const formatCurrency = (value?: number) => {
     if (value == null) return '—';
     return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value);
@@ -105,15 +116,66 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
       setSelectedImages(new Set(product.website_images || []));
       setWebsiteThumbnail(product.website_thumbnail || null);
       setWebsiteMessage(null);
+      setActiveTab('details');
+      setDevices([]);
+      setDevicesLoaded(false);
     } else {
       setPictures([]);
       setPictureError(null);
       setSelectedImages(new Set());
       setWebsiteThumbnail(null);
       setWebsiteMessage(null);
+      setDevices([]);
+      setDevicesLoaded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, product?.product_id]);
+
+  const loadDevices = async () => {
+    if (!product || devicesLoaded) return;
+    setLoadingDevices(true);
+    try {
+      const { data } = await api.get<Device[]>(`/admin/products/${product.product_id}/devices`);
+      setDevices(data);
+      setDevicesLoaded(true);
+    } catch (error) {
+      console.error('Failed to load devices:', error);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
+  const handleLocateDevice = async (device: Device) => {
+    if (!device.zone_code) return;
+    try {
+      await ledApi.locateBin(device.zone_code);
+    } catch (error) {
+      console.error('LED locate failed:', error);
+    }
+  };
+
+  const handleOpenZone = (device: Device) => {
+    if (device.zone_id) {
+      navigate(`/zones/${device.zone_id}`);
+    }
+  };
+
+  const handleOpenDevice = async (device: Device) => {
+    try {
+      const { data } = await devicesApi.getById(device.device_id);
+      setSelectedDevice(data);
+      setDeviceDetailOpen(true);
+    } catch (error) {
+      console.error('Failed to load device:', error);
+    }
+  };
+
+  const handleTabChange = (tab: 'details' | 'devices') => {
+    setActiveTab(tab);
+    if (tab === 'devices' && !devicesLoaded) {
+      loadDevices();
+    }
+  };
 
   const handleUploadPictures = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!product) return;
@@ -266,7 +328,38 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
             </button>
           </div>
 
+          {/* Tabs */}
+          <div className="flex border-b border-white/10 px-6">
+            <button
+              onClick={() => handleTabChange('details')}
+              className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                activeTab === 'details'
+                  ? 'border-accent-red text-white'
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              Details
+            </button>
+            <button
+              onClick={() => handleTabChange('devices')}
+              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                activeTab === 'devices'
+                  ? 'border-accent-red text-white'
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              <Cpu className="w-4 h-4" />
+              Geräte
+              {product.device_count !== undefined && product.device_count > 0 && (
+                <span className="ml-1 rounded-full bg-accent-red/20 px-1.5 py-0.5 text-xs text-accent-red">
+                  {product.device_count}
+                </span>
+              )}
+            </button>
+          </div>
+
           {/* Content */}
+          {activeTab === 'details' ? (
           <div className="overflow-y-auto p-6 space-y-6">
             <div className="glass rounded-xl p-4">
               <div className="flex items-center justify-between mb-3 gap-3">
@@ -609,6 +702,80 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
               </div>
             )}
           </div>
+          ) : (
+          <div className="overflow-y-auto p-6">
+            {loadingDevices ? (
+              <div className="flex items-center justify-center gap-2 py-12 text-gray-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Geräte werden geladen...</span>
+              </div>
+            ) : devices.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-gray-500">
+                <Cpu className="w-10 h-10 text-gray-600" />
+                <p className="text-sm">Keine Geräte diesem Produkt zugeordnet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-400 mb-4">{devices.length} Gerät{devices.length === 1 ? '' : 'e'}</p>
+                {devices.map((device) => (
+                  <div
+                    key={device.device_id}
+                    onClick={() => handleOpenDevice(device)}
+                    className="glass rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-white text-sm truncate">{device.device_id}</span>
+                        {device.status && (
+                          <span className={`text-[10px] font-semibold px-2 py-1 rounded-full bg-white/10 uppercase tracking-wide ${getStatusColor(device.status)}`}>
+                            {formatStatus(device.status)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400 mt-1">
+                        {device.zone_name && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {device.zone_name}
+                          </span>
+                        )}
+                        {device.zone_code && (
+                          <span className="text-gray-500 font-mono">({device.zone_code})</span>
+                        )}
+                        {device.case_name && <span>📦 {device.case_name}</span>}
+                        {device.job_number && <span>🔧 Job #{device.job_number}</span>}
+                        {device.serial_number && <span>SN: {device.serial_number}</span>}
+                        {device.barcode && <span>Barcode: {device.barcode}</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleLocateDevice(device)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-white/10 hover:bg-white/20 transition-colors"
+                        title="Fach aufleuchten"
+                      >
+                        <Cpu className="w-4 h-4 text-yellow-300" />
+                      </button>
+                      <button
+                        onClick={() => handleOpenZone(device)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-accent-red/80 hover:bg-accent-red transition-colors text-white"
+                        title="Zone öffnen"
+                      >
+                        <MapPin className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          )}
+
+          <DeviceDetailModal
+            device={selectedDevice}
+            isOpen={deviceDetailOpen}
+            onClose={() => setDeviceDetailOpen(false)}
+          />
 
           {previewIndex !== null && pictures[previewIndex] && (
             <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/90 p-4">
