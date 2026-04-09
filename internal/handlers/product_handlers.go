@@ -63,6 +63,7 @@ type Product struct {
 	ManufacturerName    *string `json:"manufacturer_name,omitempty"`
 	CountTypeName       *string `json:"count_type_name,omitempty"`
 	CountTypeAbbr       *string `json:"count_type_abbr,omitempty"`
+	DeviceCount         int     `json:"device_count"`
 }
 
 // DeviceCreateRequest represents a request to create devices
@@ -121,7 +122,8 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			b.name as brand_name,
 			m.name as manufacturer_name,
 			ct.name as count_type_name,
-			ct.abbreviation as count_type_abbr
+			ct.abbreviation as count_type_abbr,
+			(SELECT COUNT(*) FROM devices WHERE productID = p.productID) AS device_count
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
@@ -202,6 +204,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			&p.ManufacturerName,
 			&p.CountTypeName,
 			&p.CountTypeAbbr,
+			&p.DeviceCount,
 		)
 		if err != nil {
 			log.Printf("Failed to scan product: %v", err)
@@ -260,7 +263,8 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			b.name as brand_name,
 			m.name as manufacturer_name,
 			ct.name as count_type_name,
-			ct.abbreviation as count_type_abbr
+			ct.abbreviation as count_type_abbr,
+			(SELECT COUNT(*) FROM devices WHERE productID = p.productID) AS device_count
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
@@ -307,6 +311,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		&p.ManufacturerName,
 		&p.CountTypeName,
 		&p.CountTypeAbbr,
+		&p.DeviceCount,
 	)
 
 	if err == sql.ErrNoRows {
