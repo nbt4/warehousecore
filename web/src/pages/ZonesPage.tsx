@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { MapPin, Plus, Trash2 } from 'lucide-react';
+import { MapPin, Plus, Trash2, Factory, LayoutList, Package, BookOpen, Truck, Music2, Briefcase, type LucideIcon } from 'lucide-react';
 import { zonesApi } from '../lib/api';
 import { useZoneTypes } from '../lib/useZoneTypes';
 import type { Zone } from '../lib/api';
@@ -42,15 +42,15 @@ export function ZonesPage() {
     }
   }, [searchParams]);
 
-  const iconMap: Record<string, string> = useMemo(() => ({
-    warehouse: '🏭',
-    rack: '🗄️',
-    gitterbox: '📦',
-    shelf: '📚',
-    vehicle: '🚚',
-    stage: '🎤',
-    case: '🧳',
-    other: '📍',
+  const iconMap: Record<string, LucideIcon> = useMemo(() => ({
+    warehouse: Factory,
+    rack: LayoutList,
+    gitterbox: Package,
+    shelf: BookOpen,
+    vehicle: Truck,
+    stage: Music2,
+    case: Briefcase,
+    other: MapPin,
   }), []);
 
   const zoneTypeOptions = useMemo(
@@ -137,7 +137,10 @@ export function ZonesPage() {
   if (loading || zoneTypesLoading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-red"></div>
+        <div
+          className="rounded-full h-10 w-10 border-2 border-t-transparent animate-spin"
+          style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: '#D0021B' }}
+        />
       </div>
     );
   }
@@ -146,37 +149,47 @@ export function ZonesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-white mb-2">Lager</h2>
-          <p className="text-gray-400">{rootZones.length} Hauptzonen • {zones.length} gesamt</p>
+          <h2 className="font-bold text-white mb-1" style={{ fontSize: '1.75rem' }}>Lager</h2>
+          <p className="text-sm" style={{ color: '#A0A0A0' }}>{rootZones.length} Hauptzonen · {zones.length} gesamt</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-accent-red to-red-700 text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-accent-red/50 transition-all transform hover:scale-105"
+          className="flex items-center gap-2 font-semibold rounded-lg cursor-pointer transition-all"
+          style={{
+            padding: '0.625rem 1.25rem',
+            background: '#D0021B',
+            color: 'white',
+            border: 'none',
+            fontSize: '0.9375rem',
+            boxShadow: '0 4px 14px rgba(208,2,27,0.25)',
+          }}
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-4 h-4" />
           {parentZone ? 'Unterzone erstellen' : 'Zone erstellen'}
         </button>
       </div>
 
       {/* Create Form */}
       {showForm && (
-        <div className="glass-dark rounded-2xl p-6 border-2 border-accent-red/30">
-          <h3 className="text-xl font-bold text-white mb-4">
+        <div className="card p-6" style={{ borderColor: 'rgba(208,2,27,0.2)' }}>
+          <h3 className="font-semibold text-white mb-5" style={{ fontSize: '1rem' }}>
             {parentZone ? `Unterzone in ${parentZone.name} erstellen` : 'Neue Zone erstellen'}
           </h3>
           {parentZone && (
-            <div className="mb-4 p-3 bg-white/5 rounded-lg">
-              <p className="text-sm text-gray-400">
-                Übergeordnete Zone: <span className="text-white font-semibold">{parentZone.name}</span> ({parentZone.code})
-              </p>
+            <div
+              className="mb-4 px-4 py-3 rounded-lg text-sm"
+              style={{ background: 'rgba(255,255,255,0.04)', color: '#A0A0A0' }}
+            >
+              Übergeordnete Zone: <span className="text-white font-medium">{parentZone.name}</span> ({parentZone.code})
             </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3">
             {formData.type === 'shelf' && (
-              <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-                <p className="text-sm text-blue-300">
-                  ℹ️ Name und Barcode werden automatisch generiert (Fach 01, Fach 02, etc.)
-                </p>
+              <div
+                className="px-4 py-3 rounded-lg text-sm"
+                style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', color: '#93c5fd' }}
+              >
+                Name und Barcode werden automatisch generiert (Fach 01, Fach 02, ...)
               </div>
             )}
             {formData.type !== 'shelf' && (
@@ -186,18 +199,18 @@ export function ZonesPage() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Name (z.B. Lager Weidelbach, Regal A1)"
                 required
-                className="w-full px-4 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-accent-red transition-colors"
+                className="w-full px-4 py-3"
               />
             )}
             <select
               value={formData.type}
               onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-              className="w-full px-4 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white focus:outline-none focus:border-accent-red transition-colors disabled:opacity-50"
+              className="w-full px-4 py-3"
               disabled={zoneTypeOptions.length === 0}
             >
               {zoneTypeOptions.map((type) => (
-                <option key={type.value} value={type.value} className="bg-dark-200">
-                  {type.icon} {type.label}
+                <option key={type.value} value={type.value}>
+                  {type.label}
                 </option>
               ))}
             </select>
@@ -206,26 +219,32 @@ export function ZonesPage() {
               value={formData.capacity}
               onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
               placeholder="Kapazität (optional)"
-              className="w-full px-4 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-accent-red transition-colors"
+              className="w-full px-4 py-3"
             />
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Beschreibung (optional)"
               rows={3}
-              className="w-full px-4 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-accent-red transition-colors resize-none"
+              className="w-full px-4 py-3 resize-none"
             />
-            <div className="flex gap-3">
+            <div className="flex gap-3 pt-1">
               <button
                 type="submit"
-                className="flex-1 py-3 bg-accent-red text-white font-semibold rounded-xl hover:bg-red-700 transition-colors"
+                className="flex-1 py-3 font-semibold rounded-lg cursor-pointer transition-colors"
+                style={{ background: '#D0021B', color: 'white', border: 'none' }}
               >
                 Erstellen
               </button>
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="px-6 py-3 glass text-gray-400 hover:text-white font-semibold rounded-xl transition-colors"
+                className="px-5 py-3 font-medium rounded-lg cursor-pointer transition-colors"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#A0A0A0',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }}
               >
                 Abbrechen
               </button>
@@ -235,34 +254,46 @@ export function ZonesPage() {
       )}
 
       {/* Zones Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {rootZones.map((zone) => {
           const typeInfo = zoneTypeOptions.find((t) => t.value === zone.type);
-          const icon = typeInfo?.icon || iconMap.other;
+          const ZoneIcon = typeInfo?.icon ?? iconMap.other;
           return (
             <div
               key={zone.zone_id}
-              className="glass rounded-xl p-5 hover:bg-white/20 transition-all cursor-pointer group relative"
+              className="card p-5 cursor-pointer group relative transition-all duration-200"
+              style={{ borderColor: 'rgba(255,255,255,0.08)' }}
               onClick={() => handleZoneClick(zone.zone_id)}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(208,2,27,0.3)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
             >
               <button
                 onClick={(e) => handleDeleteZone(e, zone)}
-                className="absolute top-3 right-3 p-2 glass-dark rounded-lg text-red-400 hover:text-red-300 hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all z-10"
+                className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                style={{ background: 'rgba(208,2,27,0.1)', color: '#f87171', border: '1px solid rgba(208,2,27,0.2)' }}
                 title="Zone löschen"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
               <div className="flex items-start gap-4">
-                <div className="text-3xl">{icon}</div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-white truncate mb-1 group-hover:text-accent-red transition-colors">
+                <div
+                  className="inline-flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.06)' }}
+                >
+                  <ZoneIcon className="w-5 h-5" style={{ color: '#A0A0A0' }} />
+                </div>
+                <div className="flex-1 min-w-0 pr-6">
+                  <h3 className="font-semibold text-white truncate mb-0.5 transition-colors group-hover:text-red-400">
                     {zone.name}
                   </h3>
-                  <p className="text-sm text-gray-400 mb-2 font-mono">{zone.code}</p>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-gray-500">{typeInfo?.label || zone.type}</span>
+                  <p className="text-xs mb-2 font-mono" style={{ color: '#606060' }}>{zone.code}</p>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: '#606060' }}>
+                    <span>{typeInfo?.label || zone.type}</span>
                     {zone.capacity && (
-                      <span className="text-gray-500">Kapazität: {zone.capacity}</span>
+                      <>
+                        <span>·</span>
+                        <span>Kap. {zone.capacity}</span>
+                      </>
                     )}
                   </div>
                 </div>
@@ -273,12 +304,18 @@ export function ZonesPage() {
       </div>
 
       {rootZones.length === 0 && !showForm && (
-        <div className="text-center py-12">
-          <MapPin className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <p className="text-gray-400 mb-4">Noch keine Lagerorte vorhanden</p>
+        <div className="text-center py-16">
+          <div
+            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <MapPin className="w-8 h-8" style={{ color: '#404040' }} />
+          </div>
+          <p className="mb-4 text-sm" style={{ color: '#A0A0A0' }}>Noch keine Lagerorte vorhanden</p>
           <button
             onClick={() => setShowForm(true)}
-            className="text-accent-red hover:text-red-500 font-semibold"
+            className="text-sm font-semibold cursor-pointer transition-colors"
+            style={{ color: '#D0021B', background: 'none', border: 'none' }}
           >
             Erste Zone erstellen
           </button>

@@ -129,36 +129,43 @@ export function Dashboard() {
       title: 'Im Lager',
       value: stats.in_storage,
       icon: Warehouse,
-      color: 'from-gray-600 to-gray-800',
-      textColor: 'text-gray-300',
+      iconColor: '#a0a0a0',
+      iconBg: 'rgba(255,255,255,0.06)',
+      valueColor: '#ffffff',
     },
     {
       title: 'Auf Job',
       value: stats.on_job,
       icon: Package,
-      color: 'from-accent-red to-red-700',
-      textColor: 'text-accent-red',
+      iconColor: '#D0021B',
+      iconBg: 'rgba(208,2,27,0.1)',
+      valueColor: '#f87171',
     },
     {
       title: 'Defekt',
       value: stats.defective,
       icon: AlertTriangle,
-      color: 'from-yellow-600 to-yellow-800',
-      textColor: 'text-yellow-500',
+      iconColor: '#eab308',
+      iconBg: 'rgba(234,179,8,0.1)',
+      valueColor: '#eab308',
     },
     {
       title: 'Gesamt',
       value: stats.total,
       icon: TrendingUp,
-      color: 'from-blue-600 to-blue-800',
-      textColor: 'text-blue-400',
+      iconColor: '#60a5fa',
+      iconBg: 'rgba(96,165,250,0.1)',
+      valueColor: '#60a5fa',
     },
   ];
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-red"></div>
+        <div
+          className="rounded-full h-10 w-10 border-2 border-t-transparent animate-spin"
+          style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: '#D0021B' }}
+        />
       </div>
     );
   }
@@ -166,31 +173,30 @@ export function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-1 sm:mb-2">Dashboard</h2>
-        <p className="text-sm sm:text-base text-gray-400">Lagerübersicht und Statistiken</p>
+        <h2 className="font-bold text-white mb-1" style={{ fontSize: '1.75rem' }}>Dashboard</h2>
+        <p className="text-sm" style={{ color: '#A0A0A0' }}>Lagerübersicht und Statistiken</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (
             <div
               key={card.title}
-              className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 hover:bg-white/20 transition-all duration-300 group"
+              className="card p-4 sm:p-5 transition-all duration-200 hover:border-white/14"
+              style={{ cursor: 'default' }}
             >
-              <div className="flex items-center justify-between mb-3 sm:mb-4">
-                <div className={`p-2 sm:p-3 rounded-lg sm:rounded-xl bg-gradient-to-br ${card.color} bg-opacity-20`}>
-                  <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${card.textColor}`} />
-                </div>
-                <div className="text-xs sm:text-sm text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Live
-                </div>
+              <div
+                className="inline-flex items-center justify-center w-10 h-10 rounded-lg mb-3"
+                style={{ background: card.iconBg }}
+              >
+                <Icon className="w-5 h-5" style={{ color: card.iconColor }} />
               </div>
-              <div className="space-y-1">
-                <p className="text-gray-400 text-xs sm:text-sm font-medium">{card.title}</p>
-                <p className={`text-3xl sm:text-4xl font-bold ${card.textColor}`}>{card.value}</p>
-              </div>
+              <p className="text-xs font-medium mb-1" style={{ color: '#A0A0A0' }}>{card.title}</p>
+              <p className="font-bold leading-none" style={{ fontSize: '2rem', color: card.valueColor }}>
+                {card.value}
+              </p>
             </div>
           );
         })}
@@ -200,27 +206,33 @@ export function Dashboard() {
       <LowStockAlertsWidget />
 
       {/* Recent Activity */}
-      <div className="glass-dark rounded-xl sm:rounded-2xl p-4 sm:p-6">
-        <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">Letzte Aktivität</h3>
+      <div className="card p-4 sm:p-6">
+        <h3 className="font-semibold text-white mb-4" style={{ fontSize: '1rem' }}>Letzte Aktivität</h3>
         {activityItems.length === 0 ? (
-          <div className="text-sm sm:text-base text-gray-400">Noch keine Aktivitäten erfasst.</div>
+          <div className="text-sm py-6 text-center" style={{ color: '#A0A0A0' }}>
+            Noch keine Aktivitäten erfasst.
+          </div>
         ) : (
-          <div className="space-y-2 sm:space-y-3">
+          <div className="space-y-2">
             {activityItems.map((activity) => (
               <div
                 key={activity.movement_id}
-                className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 glass rounded-lg sm:rounded-xl hover:bg-white/10 transition-colors"
+                className="flex items-center gap-3 p-3 rounded-lg transition-colors"
+                style={{ background: 'rgba(255,255,255,0.03)' }}
               >
-                <div className="w-2 h-2 rounded-full bg-accent-red animate-pulse flex-shrink-0"></div>
+                <div
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ background: '#D0021B' }}
+                />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm sm:text-base text-white font-medium truncate">
+                  <p className="text-sm text-white font-medium truncate">
                     {describeMovement(activity)}
                   </p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-400">
+                  <div className="flex items-center gap-2 text-xs mt-0.5" style={{ color: '#A0A0A0' }}>
                     <span>{formatRelativeTime(activity.timestamp) || 'gerade eben'}</span>
                     {activity.performed_by && (
                       <>
-                        <span className="hidden sm:inline text-gray-600">•</span>
+                        <span>·</span>
                         <span className="truncate">{activity.performed_by}</span>
                       </>
                     )}

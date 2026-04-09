@@ -138,43 +138,39 @@ export function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-dark">
       {/* Header */}
-      <header className={`fixed top-0 right-0 z-50 glass-dark border-b border-white/10 transition-all duration-300 ${
-        !isMobile && sidebarOpen ? 'left-64' : !isMobile ? 'left-20' : 'left-0'
-      }`}>
-        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4">
-          <div className="flex items-center gap-2 sm:gap-4">
-            {!isMobile && (
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                aria-label="Toggle sidebar"
-              >
-                {sidebarOpen ? (
-                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-                ) : (
-                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-                )}
-              </button>
-            )}
-            {isMobile && (
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                aria-label="Toggle menu"
-              >
-                <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
-              </button>
-            )}
-            <h1 className="text-lg sm:text-2xl font-bold">
-              <span className="text-accent-red">Warehouse</span>
-              <span className="text-white">Core</span>
+      <header
+        className={`fixed top-0 right-0 z-50 glass-dark transition-all duration-300 ${
+          !isMobile && sidebarOpen ? 'left-64' : !isMobile ? 'left-20' : 'left-0'
+        }`}
+        style={{ height: '60px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+      >
+        <div className="flex items-center justify-between px-4 sm:px-6 h-full">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-lg transition-colors cursor-pointer"
+              style={{ background: 'none', border: 'none', color: '#A0A0A0' }}
+              aria-label="Toggle sidebar"
+            >
+              {isMobile
+                ? <Menu className="w-5 h-5" />
+                : sidebarOpen
+                  ? <ChevronLeft className="w-5 h-5" />
+                  : <ChevronRight className="w-5 h-5" />
+              }
+            </button>
+            <h1 className="font-bold" style={{ fontSize: '1.125rem' }}>
+              <span style={{ color: '#D0021B' }}>Warehouse</span>
+              <span style={{ color: '#ffffff' }}>Core</span>
             </h1>
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
-            <div className="text-xs sm:text-sm text-gray-400 hidden sm:block">
-              {companyName}
-            </div>
+            {companyName && (
+              <span className="text-sm hidden sm:block" style={{ color: '#606060' }}>
+                {companyName}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -182,47 +178,65 @@ export function Layout({ children }: LayoutProps) {
       {/* Mobile Backdrop */}
       {isMobile && sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/70 z-40"
+          className="fixed inset-0 z-40"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
           onClick={closeSidebar}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 bottom-0 z-50 glass-dark border-r border-white/10 transition-all duration-300 ease-in-out ${
+        className={`fixed left-0 top-0 bottom-0 z-50 glass-dark flex flex-col transition-all duration-300 ease-in-out ${
           isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0'
-        } ${
-          isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'
-        } flex flex-col`}
+        } ${isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'}`}
+        style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}
       >
-        {/* Sidebar Header (Mobile only) */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-white/10 md:hidden">
-          <h2 className="text-lg font-bold">
-            <span className="text-accent-red">Warehouse</span>
-            <span className="text-white">Core</span>
+        {/* Mobile sidebar header */}
+        <div
+          className="flex items-center justify-between px-4 py-4 md:hidden"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <h2 className="font-bold" style={{ fontSize: '1.125rem' }}>
+            <span style={{ color: '#D0021B' }}>Warehouse</span>
+            <span style={{ color: '#ffffff' }}>Core</span>
           </h2>
           <button
             onClick={closeSidebar}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 rounded-lg cursor-pointer"
+            style={{ background: 'none', border: 'none', color: '#A0A0A0' }}
             aria-label="Close menu"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className={`flex-1 overflow-y-auto p-4 space-y-2 ${isMobile ? 'mt-12' : 'mt-20'}`}>
-          {/* Cross-navigation to RentalCore */}
+        <nav
+          className={`flex-1 overflow-y-auto p-3 space-y-1 ${isMobile ? 'mt-12' : 'mt-[60px]'}`}
+          style={{ scrollbarWidth: 'none' }}
+        >
+          {/* Cross-nav to RentalCore */}
           <a
             href={rentalCoreURL}
-            className={`flex items-center rounded-lg transition-all bg-accent-red/10 text-accent-red hover:bg-accent-red hover:text-white shadow-lg shadow-accent-red/10 border border-accent-red/20 ${
-              sidebarOpen || isMobile ? 'gap-3 px-4 py-3' : 'justify-center p-3'
+            className={`flex items-center rounded-lg transition-all ${
+              sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
             }`}
+            style={{
+              background: 'rgba(208,2,27,0.08)',
+              color: '#D0021B',
+              border: '1px solid rgba(208,2,27,0.15)',
+              textDecoration: 'none',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+            }}
             title="Switch to RentalCore"
           >
-            <Briefcase className="w-5 h-5 flex-shrink-0" />
-            {(sidebarOpen || isMobile) && <span className="font-semibold">RentalCore</span>}
+            <Briefcase className="w-4 h-4 flex-shrink-0" />
+            {(sidebarOpen || isMobile) && <span>RentalCore</span>}
           </a>
 
+          <div style={{ height: '4px' }} />
+
+          {/* Main nav items */}
           {['dashboard', 'scan'].map((key) => {
             const item = navIndex.get(key);
             if (!item) return null;
@@ -235,49 +249,56 @@ export function Layout({ children }: LayoutProps) {
                 to={item.path}
                 onClick={closeSidebar}
                 className={`flex items-center rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-accent-red text-white shadow-lg shadow-accent-red/20'
-                    : 'text-gray-400 hover:bg-white/10 hover:text-white'
-                } ${
-                  sidebarOpen || isMobile ? 'gap-3 px-4 py-3' : 'justify-center p-3'
+                  sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
                 }`}
+                style={{
+                  background: isActive ? '#D0021B' : 'transparent',
+                  color: isActive ? '#ffffff' : '#A0A0A0',
+                  textDecoration: 'none',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  boxShadow: isActive ? '0 2px 8px rgba(208,2,27,0.3)' : 'none',
+                }}
                 title={!sidebarOpen && !isMobile ? item.label : ''}
               >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {(sidebarOpen || isMobile) && <span className="font-medium">{item.label}</span>}
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                {(sidebarOpen || isMobile) && <span>{item.label}</span>}
               </Link>
             );
           })}
 
+          {/* Product management submenu */}
           <div>
             <button
               type="button"
               onClick={() => setProductMenuOpen(prev => !prev)}
-              className={`flex items-center w-full rounded-lg transition-all ${
-                productNavActive
-                  ? 'bg-accent-red text-white shadow-lg shadow-accent-red/20'
-                  : 'text-gray-400 hover:bg-white/10 hover:text-white'
-              } ${sidebarOpen || isMobile ? 'justify-between gap-3 px-4 py-3' : 'justify-center p-3'}`}
+              className={`flex items-center w-full rounded-lg transition-all cursor-pointer ${
+                sidebarOpen || isMobile ? 'justify-between gap-3 px-3 py-2.5' : 'justify-center p-3'
+              }`}
+              style={{
+                background: productNavActive ? '#D0021B' : 'transparent',
+                color: productNavActive ? '#ffffff' : '#A0A0A0',
+                border: 'none',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                boxShadow: productNavActive ? '0 2px 8px rgba(208,2,27,0.3)' : 'none',
+              }}
               aria-expanded={productMenuOpen}
               title={!sidebarOpen && !isMobile ? t('nav.productManagement') : ''}
             >
               <div className="flex items-center gap-3">
-                <Package className="w-5 h-5 flex-shrink-0" />
-                {(sidebarOpen || isMobile) && (
-                  <span className="font-medium">{t('nav.productManagement')}</span>
-                )}
+                <Package className="w-4 h-4 flex-shrink-0" />
+                {(sidebarOpen || isMobile) && <span>{t('nav.productManagement')}</span>}
               </div>
               {(sidebarOpen || isMobile) && (
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform ${productMenuOpen ? 'rotate-180' : ''}`}
-                />
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${productMenuOpen ? 'rotate-180' : ''}`} />
               )}
             </button>
 
             {(sidebarOpen || isMobile) && (
               <div
-                className={`flex flex-col space-y-1 overflow-hidden transition-all duration-200 ${
-                  productMenuOpen ? 'max-h-96 opacity-100 mt-2' : 'max-h-0 opacity-0'
+                className={`flex flex-col space-y-0.5 overflow-hidden transition-all duration-200 ${
+                  productMenuOpen ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'
                 }`}
               >
                 {productNavItems.map((item) => {
@@ -288,14 +309,19 @@ export function Layout({ children }: LayoutProps) {
                       key={item.path}
                       to={item.path}
                       onClick={closeSidebar}
-                      className={`flex items-center rounded-lg transition-all ${
-                        isActive
-                          ? 'bg-accent-red text-white shadow-lg shadow-accent-red/20'
-                          : 'text-gray-400 hover:bg-white/10 hover:text-white'
-                      } gap-3 px-4 py-2 ml-6`}
+                      className="flex items-center gap-3 rounded-lg transition-all"
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        marginLeft: '1.25rem',
+                        background: isActive ? '#D0021B' : 'transparent',
+                        color: isActive ? '#ffffff' : '#A0A0A0',
+                        textDecoration: 'none',
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                      }}
                     >
-                      <Icon className="w-5 h-5 flex-shrink-0" />
-                      <span className="font-medium">{item.label}</span>
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span>{item.label}</span>
                     </Link>
                   );
                 })}
@@ -303,6 +329,7 @@ export function Layout({ children }: LayoutProps) {
             )}
           </div>
 
+          {/* Remaining nav items */}
           {['labels', 'cases', 'zones', 'jobs', 'maintenance'].map((key) => {
             const item = navIndex.get(key);
             if (!item) return null;
@@ -315,80 +342,92 @@ export function Layout({ children }: LayoutProps) {
                 to={item.path}
                 onClick={closeSidebar}
                 className={`flex items-center rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-accent-red text-white shadow-lg shadow-accent-red/20'
-                    : 'text-gray-400 hover:bg-white/10 hover:text-white'
-                } ${
-                  sidebarOpen || isMobile ? 'gap-3 px-4 py-3' : 'justify-center p-3'
+                  sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
                 }`}
+                style={{
+                  background: isActive ? '#D0021B' : 'transparent',
+                  color: isActive ? '#ffffff' : '#A0A0A0',
+                  textDecoration: 'none',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  boxShadow: isActive ? '0 2px 8px rgba(208,2,27,0.3)' : 'none',
+                }}
                 title={!sidebarOpen && !isMobile ? item.label : ''}
               >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {(sidebarOpen || isMobile) && <span className="font-medium">{item.label}</span>}
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                {(sidebarOpen || isMobile) && <span>{item.label}</span>}
               </Link>
             );
           })}
 
           {hasAdminAccess && (
             <Link
-              key={adminNavItem.path}
               to={adminNavItem.path}
               onClick={closeSidebar}
               className={`flex items-center rounded-lg transition-all ${
-                location.pathname === adminNavItem.path
-                  ? 'bg-accent-red text-white shadow-lg shadow-accent-red/20'
-                  : 'text-gray-400 hover:bg-white/10 hover:text-white'
-              } ${
-                sidebarOpen || isMobile ? 'gap-3 px-4 py-3' : 'justify-center p-3'
+                sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
               }`}
+              style={{
+                background: location.pathname === adminNavItem.path ? '#D0021B' : 'transparent',
+                color: location.pathname === adminNavItem.path ? '#ffffff' : '#A0A0A0',
+                textDecoration: 'none',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+              }}
               title={!sidebarOpen && !isMobile ? adminNavItem.label : ''}
             >
-              <Settings className="w-5 h-5 flex-shrink-0" />
-              {(sidebarOpen || isMobile) && <span className="font-medium">{adminNavItem.label}</span>}
+              <Settings className="w-4 h-4 flex-shrink-0" />
+              {(sidebarOpen || isMobile) && <span>{adminNavItem.label}</span>}
             </Link>
           )}
         </nav>
 
-        <div className={`p-4 border-t border-white/10 bg-dark/50 ${
-          !sidebarOpen && !isMobile ? 'flex flex-col items-center' : ''
-        }`}>
+        {/* Sidebar footer — user + logout */}
+        <div
+          className={`p-3 flex flex-col gap-1 ${!sidebarOpen && !isMobile ? 'items-center' : ''}`}
+          style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
+        >
           {user && (sidebarOpen || isMobile) && (
             <button
               onClick={() => { closeSidebar(); navigate('/profile'); }}
-              className="mb-3 px-4 py-2 rounded-lg bg-white/5 text-left w-full hover:bg-white/10"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg w-full text-left cursor-pointer transition-all"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: '#ffffff' }}
               title="Profil öffnen"
             >
-              <div className="flex items-center gap-2 text-sm">
-                <User className="w-4 h-4 text-accent-red" />
-                <span className="text-gray-300 font-medium underline underline-offset-2">{user.username}</span>
-              </div>
+              <User className="w-4 h-4 flex-shrink-0" style={{ color: '#D0021B' }} />
+              <span className="text-sm font-medium truncate">{user.username}</span>
             </button>
           )}
           {user && !sidebarOpen && !isMobile && (
-            <div className="mb-3 p-2 rounded-lg bg-white/5 flex justify-center">
-              <User className="w-5 h-5 text-accent-red" />
+            <div
+              className="p-2.5 rounded-lg flex justify-center cursor-pointer"
+              style={{ background: 'rgba(255,255,255,0.04)' }}
+              onClick={() => navigate('/profile')}
+              title="Profil"
+            >
+              <User className="w-4 h-4" style={{ color: '#D0021B' }} />
             </div>
           )}
           <button
             onClick={handleLogout}
-            className={`flex items-center rounded-lg transition-all text-gray-400 hover:bg-red-500/10 hover:text-red-400 ${
-              sidebarOpen || isMobile ? 'gap-3 px-4 py-3 w-full' : 'justify-center p-3'
+            className={`flex items-center rounded-lg transition-all cursor-pointer ${
+              sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5 w-full' : 'justify-center p-3'
             }`}
+            style={{ background: 'none', border: 'none', color: '#A0A0A0', fontSize: '0.875rem', fontWeight: 500 }}
             title={!sidebarOpen && !isMobile ? 'Abmelden' : ''}
           >
-            <LogOut className="w-5 h-5 flex-shrink-0" />
-            {(sidebarOpen || isMobile) && <span className="font-medium">Abmelden</span>}
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            {(sidebarOpen || isMobile) && <span>Abmelden</span>}
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
       <main
-        className={`pt-14 sm:pt-16 transition-all duration-300 ${
-          isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'
-        }`}
+        className={`transition-all duration-300 ${isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'}`}
+        style={{ paddingTop: '60px' }}
       >
-        <div className="p-3 sm:p-6">
+        <div className="p-4 sm:p-6">
           {children}
         </div>
       </main>

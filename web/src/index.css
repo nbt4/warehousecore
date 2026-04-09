@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -6,18 +7,43 @@
   --color-dark-100: #111111;
   --color-dark-200: #161616;
   --color-dark-300: #1F1F1F;
+  --color-dark-400: #2A2A2A;
   --color-light: #FFFFFF;
   --color-light-100: #F5F5F5;
   --color-light-200: #EAEAEA;
+  --color-text-muted: #A0A0A0;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.14);
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+/* ===== BASE ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
 }
 
 body {
-  margin: 0;
-  min-height: 100vh;
+  font-family: var(--font-sans);
   background-color: var(--color-dark);
   color: var(--color-light);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  line-height: 1.6;
 }
 
 html.modal-open,
@@ -29,17 +55,56 @@ body.modal-open {
   width: 100vw;
 }
 
-/* Glass Effects */
-.glass {
-  background-color: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+/* ===== SCROLLBAR ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ===== CARD SYSTEM ===== */
+/* Solid card — primary surface, no transparency noise */
+.card {
+  background-color: #111111;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+}
+
+.card-elevated {
+  background-color: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+}
+
+/* Keep glass-dark for header/sidebar (backdrop-blur effect) */
 .glass-dark {
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: rgba(11, 11, 11, 0.85);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Keep glass for subtle overlays */
+.glass {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .text-gradient {
@@ -49,62 +114,23 @@ body.modal-open {
   color: transparent;
 }
 
-/* Custom Scrollbars */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(208, 2, 27, 0.5) rgba(255, 255, 255, 0.1);
-}
-
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-*::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: rgba(208, 2, 27, 0.5);
-  border-radius: 4px;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(208, 2, 27, 0.7);
-}
-
-/* Select/Dropdown Styling */
-select {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-}
-
-select:focus {
-  outline: none;
-  border-color: var(--color-accent-red);
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-select option {
-  background-color: #1a1a1a;
-  color: white;
-  padding: 0.5rem;
-}
-
-/* Input Styling */
+/* ===== FORM ELEMENTS ===== */
 input[type="text"],
 input[type="number"],
 input[type="email"],
 input[type="password"],
 input[type="search"],
-textarea {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+input[type="date"],
+textarea,
+select {
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  background-color: #161616;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
 }
 
 input[type="text"]:focus,
@@ -112,15 +138,54 @@ input[type="number"]:focus,
 input[type="email"]:focus,
 input[type="password"]:focus,
 input[type="search"]:focus,
-textarea:focus {
-  background-color: rgba(255, 255, 255, 0.15);
+input[type="date"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-accent-red);
+  box-shadow: 0 0 0 3px rgba(208, 2, 27, 0.15);
+  background-color: #1a1a1a;
 }
 
-input[type="text"]::placeholder,
-input[type="number"]::placeholder,
-input[type="email"]::placeholder,
-input[type="password"]::placeholder,
-input[type="search"]::placeholder,
+input::placeholder,
 textarea::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.5rem;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+select option {
+  background-color: #1a1a1a;
+  color: #ffffff;
+}
+
+/* ===== BADGE UTILITIES ===== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.badge-success { background: rgba(34, 197, 94, 0.12); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.2); }
+.badge-warning { background: rgba(234, 179, 8, 0.12); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.2); }
+.badge-danger  { background: rgba(208, 2, 27, 0.12); color: #f87171; border: 1px solid rgba(208, 2, 27, 0.2); }
+.badge-info    { background: rgba(96, 165, 250, 0.12); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.2); }
+.badge-neutral { background: rgba(255, 255, 255, 0.06); color: #a0a0a0; border: 1px solid rgba(255, 255, 255, 0.1); }
+
+/* ===== TRANSITIONS ===== */
+@media (prefers-reduced-motion: no-preference) {
+  .transition-smooth {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
 }
