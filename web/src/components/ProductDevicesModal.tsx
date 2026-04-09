@@ -13,6 +13,7 @@ interface ProductDevicesModalProps {
   onOpenZone: (device: Device) => void;
   onOpenDevice: (device: Device) => void;
   loading?: boolean;
+  locatingId?: string | null;
 }
 
 export function ProductDevicesModal({
@@ -24,6 +25,7 @@ export function ProductDevicesModal({
   onOpenZone,
   onOpenDevice,
   loading = false,
+  locatingId = null,
 }: ProductDevicesModalProps) {
   // Block body scroll when modal is open
   useBlockBodyScroll(isOpen);
@@ -113,7 +115,7 @@ export function ProductDevicesModal({
                         e.stopPropagation();
                         onLocate(device);
                       }}
-                      disabled={loading}
+                      disabled={loading || locatingId === device.device_id}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-50"
                     >
                       <Lightbulb className="w-4 h-4 text-yellow-300" /> Fach aufleuchten

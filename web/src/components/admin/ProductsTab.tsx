@@ -186,6 +186,7 @@ export function ProductsTab() {
   const [devicesModalLoading, setDevicesModalLoading] = useState(false);
   const [devicesModalSelectedDevice, setDevicesModalSelectedDevice] = useState<Device | null>(null);
   const [devicesModalDetailOpen, setDevicesModalDetailOpen] = useState(false);
+  const [devicesModalLocatingId, setDevicesModalLocatingId] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<number | ''>('');
@@ -320,10 +321,13 @@ export function ProductsTab() {
 
   const handleDevicesModalLocate = async (device: Device) => {
     if (!device.zone_code) return;
+    setDevicesModalLocatingId(device.device_id);
     try {
       await ledApi.locateBin(device.zone_code);
     } catch (error) {
       console.error('LED locate failed:', error);
+    } finally {
+      setDevicesModalLocatingId(null);
     }
   };
 
@@ -936,6 +940,7 @@ export function ProductsTab() {
           productName={devicesModal.productName}
           devices={devicesModalDevices}
           loading={devicesModalLoading}
+          locatingId={devicesModalLocatingId}
           onLocate={handleDevicesModalLocate}
           onOpenZone={handleDevicesModalOpenZone}
           onOpenDevice={handleDevicesModalOpenDevice}
