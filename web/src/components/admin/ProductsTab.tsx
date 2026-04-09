@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
+  Cpu,
   Eye,
   GitBranch,
   LayoutGrid,
@@ -12,11 +14,13 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { api, devicesApi, ledApi, type Device } from '../../lib/api';
 import { ModalPortal } from '../ModalPortal';
 import { DeviceTreeTab } from './DeviceTreeTab';
 import { ProductDependenciesModal } from '../ProductDependenciesModal';
 import { ProductDetailModal } from '../ProductDetailModal';
+import { ProductDevicesModal } from '../ProductDevicesModal';
+import { DeviceDetailModal } from '../DeviceDetailModal';
 
 interface Product {
   product_id: number;
@@ -53,6 +57,7 @@ interface Product {
   website_visible?: boolean;
   website_thumbnail?: string | null;
   website_images?: string[];
+  device_count?: number;
 }
 
 interface Category {
@@ -111,14 +116,6 @@ interface ProductFormData {
   min_stock_level?: number;
   generic_barcode?: string;
   price_per_unit?: number;
-}
-
-interface Device {
-  device_id: string;
-  product_id?: number;
-  status: string;
-  serial_number?: string;
-  barcode?: string;
 }
 
 interface CountType {
@@ -182,6 +179,14 @@ export function ProductsTab() {
     // Set default based on screen width: mobile (<768px) = cards, desktop = table
     return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table';
   });
+  const navigate = useNavigate();
+
+  const [devicesModal, setDevicesModal] = useState<{ productId: number; productName: string } | null>(null);
+  const [devicesModalDevices, setDevicesModalDevices] = useState<Device[]>([]);
+  const [devicesModalLoading, setDevicesModalLoading] = useState(false);
+  const [devicesModalSelectedDevice, setDevicesModalSelectedDevice] = useState<Device | null>(null);
+  const [devicesModalDetailOpen, setDevicesModalDetailOpen] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<number | ''>('');
   const [refreshing, setRefreshing] = useState(false);
@@ -298,6 +303,45 @@ export function ProductsTab() {
     await fetchProducts(searchTerm, categoryFilter);
     setRefreshing(false);
   }, [fetchProducts, searchTerm, categoryFilter]);
+
+  const handleOpenDevicesModal = async (productId: number, productName: string) => {
+    setDevicesModal({ productId, productName });
+    setDevicesModalDevices([]);
+    setDevicesModalLoading(true);
+    try {
+      const { data } = await api.get<Device[]>(`/admin/products/${productId}/devices`);
+      setDevicesModalDevices(data);
+    } catch (error) {
+      console.error('Failed to load product devices:', error);
+    } finally {
+      setDevicesModalLoading(false);
+    }
+  };
+
+  const handleDevicesModalLocate = async (device: Device) => {
+    if (!device.zone_code) return;
+    try {
+      await ledApi.locateBin(device.zone_code);
+    } catch (error) {
+      console.error('LED locate failed:', error);
+    }
+  };
+
+  const handleDevicesModalOpenZone = (device: Device) => {
+    if (device.zone_id) {
+      navigate(`/zones/${device.zone_id}`);
+    }
+  };
+
+  const handleDevicesModalOpenDevice = async (device: Device) => {
+    try {
+      const { data } = await devicesApi.getById(device.device_id);
+      setDevicesModalSelectedDevice(data);
+      setDevicesModalDetailOpen(true);
+    } catch (error) {
+      console.error('Failed to load device detail:', error);
+    }
+  };
 
   const clearFilters = () => {
     setSearchTerm('');
@@ -723,6 +767,7 @@ export function ProductsTab() {
                   <th className="px-4 py-3 text-left font-semibold">Kategorie</th>
                   <th className="px-4 py-3 text-left font-semibold">Brand / Hersteller</th>
                   <th className="px-4 py-3 text-left font-semibold">Preis pro Tag</th>
+                  <th className="px-4 py-3 text-left font-semibold">Geräte</th>
                   <th className="px-4 py-3 text-right font-semibold">Aktionen</th>
                 </tr>
               </thead>
@@ -758,6 +803,19 @@ export function ProductsTab() {
                     </td>
                     <td className="px-4 py-3 align-top text-sm text-gray-200">
                       {formatCurrency(product.item_cost_per_day)}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      {(product.device_count ?? 0) > 0 ? (
+                        <button
+                          onClick={() => handleOpenDevicesModal(product.product_id, product.name)}
+                          className="flex items-center gap-1.5 rounded-lg bg-accent-red/20 px-2.5 py-1 text-xs font-semibold text-accent-red hover:bg-accent-red/30 transition-colors"
+                        >
+                          <Cpu className="h-3.5 w-3.5" />
+                          {product.device_count} Gerät{product.device_count === 1 ? '' : 'e'}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-500">— Keine</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="flex justify-end gap-2">
@@ -810,6 +868,17 @@ export function ProductsTab() {
                     </span>
                   </div>
                   <p className="text-sm text-gray-400 break-words">{categoryPath(product)}</p>
+                  {(product.device_count ?? 0) > 0 ? (
+                    <button
+                      onClick={() => handleOpenDevicesModal(product.product_id, product.name)}
+                      className="flex items-center gap-1.5 rounded-lg bg-accent-red/20 px-2.5 py-1 text-xs font-semibold text-accent-red hover:bg-accent-red/30 transition-colors w-fit"
+                    >
+                      <Cpu className="h-3.5 w-3.5" />
+                      {product.device_count} Gerät{product.device_count === 1 ? '' : 'e'}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-gray-500">Keine Geräte</span>
+                  )}
                   {(product.brand_name || product.manufacturer_name) && (
                     <p className="text-xs text-gray-500 break-words">
                       {product.brand_name || 'Unbekannte Marke'}
@@ -859,6 +928,25 @@ export function ProductsTab() {
           <DeviceTreeTab />
         </div>
       )}
+
+      {devicesModal && (
+        <ProductDevicesModal
+          isOpen={!!devicesModal}
+          onClose={() => { setDevicesModal(null); setDevicesModalDevices([]); }}
+          productName={devicesModal.productName}
+          devices={devicesModalDevices}
+          loading={devicesModalLoading}
+          onLocate={handleDevicesModalLocate}
+          onOpenZone={handleDevicesModalOpenZone}
+          onOpenDevice={handleDevicesModalOpenDevice}
+        />
+      )}
+
+      <DeviceDetailModal
+        device={devicesModalSelectedDevice}
+        isOpen={devicesModalDetailOpen}
+        onClose={() => setDevicesModalDetailOpen(false)}
+      />
 
       {modalOpen && (
         <ModalPortal>
