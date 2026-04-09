@@ -25,25 +25,19 @@
 }
 
 /* ===== BASE ===== */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* NOTE: No global reset here — Tailwind v4 unlayered CSS overrides @layer utilities.
+   Only set properties that Tailwind's Preflight doesn't cover. */
 
 html {
-  font-size: 16px;
   scroll-behavior: smooth;
 }
 
 body {
-  font-family: var(--font-sans);
-  background-color: var(--color-dark);
-  color: var(--color-light);
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #0B0B0B;
+  color: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
-  line-height: 1.6;
 }
 
 html.modal-open,
