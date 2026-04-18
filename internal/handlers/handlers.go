@@ -1383,7 +1383,15 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 		WHERE 1=1`
 
 	args := []interface{}{}
-	if status != "" {
+	// Exclude completed/cancelled statuses regardless of language (DE+EN)
+	excludedStatuses := []interface{}{"Abgeschlossen", "Abgerechnet", "Storniert", "canceled", "paid"}
+	placeholders := make([]string, len(excludedStatuses))
+	for i := range excludedStatuses {
+		placeholders[i] = qb.NextPlaceholder()
+	}
+	query += " AND (s.status IS NULL OR s.status NOT IN (" + strings.Join(placeholders, ",") + "))"
+	args = append(args, excludedStatuses...)
+	if status != "" && status != "open" {
 		query += " AND s.status = " + qb.NextPlaceholder()
 		args = append(args, status)
 	}
