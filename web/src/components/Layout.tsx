@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Settings, Boxes, Tag, Cable, ChevronDown } from 'lucide-react';
+import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Boxes, Tag, Cable, ChevronDown, LayoutDashboard } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -87,16 +87,17 @@ export function Layout({ children }: LayoutProps) {
 
   const rentalCoreURL = getRentalCoreURL();
 
+  const getCoresDashboardURL = () => {
+    const { hostname, port, protocol } = window.location;
+    if (port === '8082') return `${protocol}//${hostname}:8080`;
+    if (hostname.startsWith('warehouse.')) return `${protocol}//${hostname.replace(/^warehouse\./, 'cores.')}`;
+    return `${protocol}//${hostname}:8080`;
+  };
+  const dashboardURL = getCoresDashboardURL();
+
   // Debug log
   console.log('RentalCore URL:', rentalCoreURL);
 
-  const userRoles = (user?.roles ?? []) as any[];
-  const hasAdminAccess = useMemo(() => {
-    return userRoles.some((role) => {
-      const name = (role?.name || role?.Name || '').toString().toLowerCase();
-      return name === 'admin' || name === 'manager' || name === 'warehouse_admin';
-    });
-  }, [userRoles]);
 
   const mainNavItems = useMemo(() => ([
     { key: 'dashboard', path: '/', icon: Home, label: t('nav.dashboard') },
@@ -118,10 +119,6 @@ export function Layout({ children }: LayoutProps) {
     { path: '/products', icon: Package, label: t('nav.products') },
     { path: '/cables', icon: Cable, label: t('nav.cables') },
   ]), [t]);
-
-  const adminNavItem = useMemo(() => (
-    { path: '/admin', icon: Settings, label: t('nav.admin') }
-  ), [t]);
 
   const productNavActive = useMemo(
     () => productNavItems.some(item => location.pathname.startsWith(item.path)),
@@ -214,6 +211,15 @@ export function Layout({ children }: LayoutProps) {
           className={`flex-1 overflow-y-auto p-3 space-y-1 ${isMobile ? 'mt-12' : 'mt-[60px]'}`}
           style={{ scrollbarWidth: 'none' }}
         >
+          {/* Cores Dashboard link */}
+          <a
+            href={dashboardURL}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-accent-red hover:bg-accent-red/10 transition-colors mb-2"
+          >
+            <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
+            {(sidebarOpen || isMobile) && <span>← Cores</span>}
+          </a>
+
           {/* Cross-nav to RentalCore */}
           <a
             href={rentalCoreURL}
@@ -360,26 +366,6 @@ export function Layout({ children }: LayoutProps) {
             );
           })}
 
-          {hasAdminAccess && (
-            <Link
-              to={adminNavItem.path}
-              onClick={closeSidebar}
-              className={`flex items-center rounded-lg transition-all ${
-                sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
-              }`}
-              style={{
-                background: location.pathname === adminNavItem.path ? '#D0021B' : 'transparent',
-                color: location.pathname === adminNavItem.path ? '#ffffff' : '#A0A0A0',
-                textDecoration: 'none',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-              }}
-              title={!sidebarOpen && !isMobile ? adminNavItem.label : ''}
-            >
-              <Settings className="w-4 h-4 flex-shrink-0" />
-              {(sidebarOpen || isMobile) && <span>{adminNavItem.label}</span>}
-            </Link>
-          )}
         </nav>
 
         {/* Sidebar footer — user + logout */}
