@@ -679,7 +679,7 @@ func (s *Service) getJobDeviceZonesWithCounts(jobID string) (map[string]int, err
 		FROM job_devices jd
 		JOIN devices d ON jd.deviceID = d.deviceID
 		JOIN storage_zones z ON d.zone_id = z.zone_id
-		WHERE jd.jobID = ? AND d.status = 'in_storage' AND z.code IS NOT NULL
+		WHERE jd.jobID = $1 AND d.status = 'in_storage' AND z.code IS NOT NULL
 		GROUP BY z.code
 	`
 
@@ -716,7 +716,7 @@ func (s *Service) getJobDeviceZones(jobID string) (map[string]string, error) {
 		FROM job_devices jd
 		LEFT JOIN devices d ON jd.deviceID = d.deviceID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
-		WHERE jd.jobID = ? AND d.status = 'in_storage' AND z.code IS NOT NULL
+		WHERE jd.jobID = $1 AND d.status = 'in_storage' AND z.code IS NOT NULL
 	`
 
 	rows, err := db.Query(query, jobID)
