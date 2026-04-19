@@ -166,12 +166,12 @@ func exportProducts() ([]byte, error) {
 			sc.name as subcategory_name,
 			p.is_accessory,
 			p.is_consumable,
-			p.item_cost_per_day,
+			p.itemcostperday,
 			p.weight,
 			p.height,
 			p.width,
 			p.depth,
-			p.power_consumption,
+			p.powerconsumption,
 			p.generic_barcode
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryid
@@ -358,21 +358,20 @@ func exportAllDevices() ([]byte, error) {
 
 	query := `
 		SELECT
-			d.deviceID,
-			p.name as product_name,
-			d.serial_number,
+			d.deviceid,
+			COALESCE(p.name, '') as product_name,
+			d.serialnumber,
 			d.status,
-			d.purchase_date,
-			d.purchase_price,
-			d.last_maintenance_date,
+			d.purchasedate,
+			d.lastmaintenance,
 			d.notes,
 			z.name as zone_name,
 			c.name as case_name
 		FROM devices d
-		LEFT JOIN products p ON d.productID = p.productID
+		LEFT JOIN products p ON d.productid = p.productid
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
-		LEFT JOIN cases c ON d.case_id = c.caseid
-		ORDER BY d.deviceID
+		LEFT JOIN cases c ON d.current_case_id = c.caseid
+		ORDER BY d.deviceid
 	`
 
 	rows, err := db.Query(query)
@@ -383,7 +382,7 @@ func exportAllDevices() ([]byte, error) {
 
 	headers := []string{
 		"Geräte-ID", "Produkt", "Seriennummer", "Status", "Kaufdatum",
-		"Kaufpreis", "Letzte Wartung", "Notizen", "Lagerbereich", "Case",
+		"Letzte Wartung", "Notizen", "Lagerbereich", "Case",
 	}
 
 	var csvRows [][]string
@@ -393,11 +392,10 @@ func exportAllDevices() ([]byte, error) {
 		var serialNumber, notes, zoneName, caseName *string
 		var status string
 		var purchaseDate, lastMaintenanceDate *time.Time
-		var purchasePrice *float64
 
 		err := rows.Scan(
 			&deviceID, &productName, &serialNumber, &status, &purchaseDate,
-			&purchasePrice, &lastMaintenanceDate, &notes, &zoneName, &caseName,
+			&lastMaintenanceDate, &notes, &zoneName, &caseName,
 		)
 		if err != nil {
 			return nil, err
@@ -409,7 +407,6 @@ func exportAllDevices() ([]byte, error) {
 			formatNullString(serialNumber),
 			status,
 			formatDate(purchaseDate),
-			formatNullFloat(purchasePrice),
 			formatDate(lastMaintenanceDate),
 			formatNullString(notes),
 			formatNullString(zoneName),
@@ -685,22 +682,21 @@ func exportJobs() ([]byte, error) {
 
 	query := `
 		SELECT
-			j.jobID,
-			j.job_number,
-			j.title,
-			j.customer_name,
-			j.start_date,
-			j.end_date,
-			j.status,
-			j.location,
-			j.notes,
-			COUNT(DISTINCT jd.deviceID) as device_count,
-			SUM(jd.quantity) as total_quantity
+			j.jobid,
+			COALESCE(j.job_code, ''),
+			COALESCE(cu.name, ''),
+			j.startdate,
+			j.enddate,
+			COALESCE(s.status, ''),
+			COALESCE(j.description, ''),
+			COUNT(DISTINCT jd.deviceid) as device_count
 		FROM jobs j
-		LEFT JOIN job_devices jd ON j.jobID = jd.jobID
-		GROUP BY j.jobID, j.job_number, j.title, j.customer_name,
-		         j.start_date, j.end_date, j.status, j.location, j.notes
-		ORDER BY j.start_date DESC
+		LEFT JOIN customers cu ON j.customerid = cu.customerid
+		LEFT JOIN status s ON j.statusid = s.statusid
+		LEFT JOIN job_devices jd ON j.jobid = jd.jobid
+		WHERE j.deleted_at IS NULL
+		GROUP BY j.jobid, j.job_code, cu.name, j.startdate, j.enddate, s.status, j.description
+		ORDER BY j.startdate DESC
 	`
 
 	rows, err := db.Query(query)
@@ -710,22 +706,21 @@ func exportJobs() ([]byte, error) {
 	defer rows.Close()
 
 	headers := []string{
-		"Job-ID", "Job-Nummer", "Titel", "Kunde", "Startdatum",
-		"Enddatum", "Status", "Standort", "Notizen", "Anzahl Gerätetypen", "Gesamtmenge",
+		"Job-ID", "Job-Code", "Kunde", "Startdatum", "Enddatum",
+		"Status", "Beschreibung", "Anzahl Geräte",
 	}
 
 	var csvRows [][]string
 
 	for rows.Next() {
 		var jobID int
-		var jobNumber, title string
-		var customerName, status, location, notes *string
+		var jobCode, customerName, statusName, description string
 		var startDate, endDate *time.Time
-		var deviceCount, totalQuantity int
+		var deviceCount int
 
 		err := rows.Scan(
-			&jobID, &jobNumber, &title, &customerName, &startDate,
-			&endDate, &status, &location, &notes, &deviceCount, &totalQuantity,
+			&jobID, &jobCode, &customerName, &startDate,
+			&endDate, &statusName, &description, &deviceCount,
 		)
 		if err != nil {
 			return nil, err
@@ -733,16 +728,13 @@ func exportJobs() ([]byte, error) {
 
 		csvRows = append(csvRows, []string{
 			strconv.Itoa(jobID),
-			jobNumber,
-			title,
-			formatNullString(customerName),
+			jobCode,
+			customerName,
 			formatDate(startDate),
 			formatDate(endDate),
-			formatNullString(status),
-			formatNullString(location),
-			formatNullString(notes),
+			statusName,
+			description,
 			strconv.Itoa(deviceCount),
-			strconv.Itoa(totalQuantity),
 		})
 	}
 
