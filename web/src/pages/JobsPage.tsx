@@ -23,7 +23,7 @@ export function JobsPage() {
   const [ledLoading, setLedLoading] = useState(false);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<ActiveTab>('devices');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('packlist');
 
   // Packliste state
   const [requirements, setRequirements] = useState<JobRequirement[]>([]);
@@ -149,7 +149,7 @@ export function JobsPage() {
       const { data } = await jobsApi.getById(jobId);
       setSelectedJob(data);
       setRequirements([]);
-      setActiveTab('devices');
+      setActiveTab('packlist');
 
       if (options.highlight !== false) {
         setLedActive(false);
@@ -274,7 +274,7 @@ export function JobsPage() {
     setScanCode('');
     setScanResult(null);
     setRequirements([]);
-    setActiveTab('devices');
+    setActiveTab('packlist');
     loadJobs(); // Reload job list
   };
 
