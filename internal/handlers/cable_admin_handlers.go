@@ -470,3 +470,171 @@ func GetCableTypes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(types)
 }
+
+// CreateCableType creates a new cable type
+func CreateCableType(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	var id int
+	err := db.QueryRow(`INSERT INTO cable_types (name) VALUES ($1) RETURNING cable_typesid`, req.Name).Scan(&id)
+	if err != nil {
+		log.Printf("Error creating cable type: %v", err)
+		http.Error(w, `{"error":"Failed to create cable type"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"cable_type_id": id, "name": req.Name, "count": 0})
+}
+
+// UpdateCableType updates an existing cable type
+func UpdateCableType(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	res, err := db.Exec(`UPDATE cable_types SET name = $1 WHERE cable_typesid = $2`, req.Name, id)
+	if err != nil {
+		log.Printf("Error updating cable type: %v", err)
+		http.Error(w, `{"error":"Failed to update cable type"}`, http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Cable type updated successfully"})
+}
+
+// DeleteCableType deletes a cable type if no cables use it
+func DeleteCableType(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM cables WHERE typ = $1`, id).Scan(&count)
+	if count > 0 {
+		http.Error(w, fmt.Sprintf(`{"error":"Kabel-Typ wird von %d Kabel(n) verwendet"}`, count), http.StatusConflict)
+		return
+	}
+	res, err := db.Exec(`DELETE FROM cable_types WHERE cable_typesid = $1`, id)
+	if err != nil {
+		log.Printf("Error deleting cable type: %v", err)
+		http.Error(w, `{"error":"Failed to delete cable type"}`, http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Cable type deleted successfully"})
+}
+
+// CreateCableConnector creates a new cable connector
+func CreateCableConnector(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	var req struct {
+		Name         string  `json:"name"`
+		Abbreviation *string `json:"abbreviation"`
+		Gender       *string `json:"gender"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	var id int
+	err := db.QueryRow(
+		`INSERT INTO cable_connectors (name, abbreviation, gender) VALUES ($1, $2, $3) RETURNING cable_connectorsid`,
+		req.Name, req.Abbreviation, req.Gender,
+	).Scan(&id)
+	if err != nil {
+		log.Printf("Error creating cable connector: %v", err)
+		http.Error(w, `{"error":"Failed to create cable connector"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(CableConnector{ConnectorID: id, Name: req.Name, Abbreviation: req.Abbreviation, Gender: req.Gender})
+}
+
+// UpdateCableConnector updates an existing cable connector
+func UpdateCableConnector(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Name         string  `json:"name"`
+		Abbreviation *string `json:"abbreviation"`
+		Gender       *string `json:"gender"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	res, err := db.Exec(
+		`UPDATE cable_connectors SET name = $1, abbreviation = $2, gender = $3 WHERE cable_connectorsid = $4`,
+		req.Name, req.Abbreviation, req.Gender, id,
+	)
+	if err != nil {
+		log.Printf("Error updating cable connector: %v", err)
+		http.Error(w, `{"error":"Failed to update cable connector"}`, http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Cable connector updated successfully"})
+}
+
+// DeleteCableConnector deletes a cable connector if no cables use it
+func DeleteCableConnector(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM cables WHERE connector1 = $1 OR connector2 = $1`, id).Scan(&count)
+	if count > 0 {
+		http.Error(w, fmt.Sprintf(`{"error":"Anschluss wird von %d Kabel(n) verwendet"}`, count), http.StatusConflict)
+		return
+	}
+	res, err := db.Exec(`DELETE FROM cable_connectors WHERE cable_connectorsid = $1`, id)
+	if err != nil {
+		log.Printf("Error deleting cable connector: %v", err)
+		http.Error(w, `{"error":"Failed to delete cable connector"}`, http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Cable connector deleted successfully"})
+}

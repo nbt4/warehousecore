@@ -15,8 +15,4 @@
 - **Rentalcore**: glpat-WXH35pLDR5AuJ0OeDHPmG286MQp1OmMH.01.0w170uoa7
 
 ## Project: WarehouseCore
-Warehouse mgmt system for Tsunami Events.
-
----
-
-Minimal compression — text was mostly structured credential data with no natural language filler to remove. Only `management` → `mgmt`.
+Warehouse management system for Tsunami Events.
