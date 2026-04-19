@@ -16,14 +16,14 @@ type CountType struct {
 	CountTypeID  int    `json:"count_type_id"`
 	Name         string `json:"name"`
 	Abbreviation string `json:"abbreviation"`
-	IsActive     bool   `json:"is_active"`
+	IsDecimal    bool   `json:"is_decimal"`
 }
 
 // ListCountTypes returns all measurement units.
 func ListCountTypes(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
-	rows, err := db.Query("SELECT count_type_id, name, abbreviation, is_active FROM count_types ORDER BY name")
+	rows, err := db.Query("SELECT count_type_id, name, abbreviation, is_decimal FROM count_types ORDER BY name")
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch measurement units"})
 		return
@@ -33,7 +33,7 @@ func ListCountTypes(w http.ResponseWriter, r *http.Request) {
 	var countTypes []CountType
 	for rows.Next() {
 		var ct CountType
-		if err := rows.Scan(&ct.CountTypeID, &ct.Name, &ct.Abbreviation, &ct.IsActive); err == nil {
+		if err := rows.Scan(&ct.CountTypeID, &ct.Name, &ct.Abbreviation, &ct.IsDecimal); err == nil {
 			countTypes = append(countTypes, ct)
 		}
 	}
@@ -44,7 +44,7 @@ func ListCountTypes(w http.ResponseWriter, r *http.Request) {
 type countTypeRequest struct {
 	Name         string `json:"name"`
 	Abbreviation string `json:"abbreviation"`
-	IsActive     *bool  `json:"is_active,omitempty"`
+	IsDecimal    *bool  `json:"is_decimal,omitempty"`
 }
 
 // CreateCountType adds a new measurement unit.
@@ -66,16 +66,16 @@ func CreateCountType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isActive := true
-	if req.IsActive != nil {
-		isActive = *req.IsActive
+	isDecimal := false
+	if req.IsDecimal != nil {
+		isDecimal = *req.IsDecimal
 	}
 
 	db := repository.GetSQLDB()
 	var id int64
 	err := db.QueryRow(
-		"INSERT INTO count_types (name, abbreviation, is_active) VALUES ($1, $2, $3) RETURNING count_type_id",
-		req.Name, req.Abbreviation, isActive,
+		"INSERT INTO count_types (name, abbreviation, is_decimal) VALUES ($1, $2, $3) RETURNING count_type_id",
+		req.Name, req.Abbreviation, isDecimal,
 	).Scan(&id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create measurement unit"})
@@ -85,7 +85,7 @@ func CreateCountType(w http.ResponseWriter, r *http.Request) {
 		CountTypeID:  int(id),
 		Name:         req.Name,
 		Abbreviation: req.Abbreviation,
-		IsActive:     isActive,
+		IsDecimal:    isDecimal,
 	})
 }
 
@@ -115,15 +115,15 @@ func UpdateCountType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isActive := true
-	if req.IsActive != nil {
-		isActive = *req.IsActive
+	isDecimal := false
+	if req.IsDecimal != nil {
+		isDecimal = *req.IsDecimal
 	}
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(
-		"UPDATE count_types SET name = ?, abbreviation = ?, is_active = ? WHERE count_type_id = ?",
-		req.Name, req.Abbreviation, isActive, id,
+		"UPDATE count_types SET name = $1, abbreviation = $2, is_decimal = $3 WHERE count_type_id = $4",
+		req.Name, req.Abbreviation, isDecimal, id,
 	)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update measurement unit"})
@@ -149,7 +149,7 @@ func DeleteCountType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	result, err := db.Exec("DELETE FROM count_types WHERE count_type_id = ?", id)
+	result, err := db.Exec("DELETE FROM count_types WHERE count_type_id = $1", id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete measurement unit"})
 		return

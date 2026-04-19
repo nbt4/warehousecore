@@ -566,16 +566,15 @@ func exportStorageZones() ([]byte, error) {
 		SELECT
 			z.zone_id,
 			z.name,
-			zt.label as zone_type,
+			z.type::text as zone_type,
 			z.barcode,
 			z.capacity,
 			z.location,
-			z.notes,
+			z.description,
 			COUNT(DISTINCT d.deviceID) as device_count
 		FROM storage_zones z
-		LEFT JOIN zone_types zt ON z.zone_type = zt.key
-		LEFT JOIN devices d ON z.zone_id = d.current_zone_id
-		GROUP BY z.zone_id, z.name, zt.label, z.barcode, z.capacity, z.location, z.notes
+		LEFT JOIN devices d ON z.zone_id = d.zone_id
+		GROUP BY z.zone_id, z.name, z.type, z.barcode, z.capacity, z.location, z.description
 		ORDER BY z.name
 	`
 
@@ -595,13 +594,13 @@ func exportStorageZones() ([]byte, error) {
 	for rows.Next() {
 		var zoneID int
 		var name string
-		var zoneType, barcode, location, notes *string
+		var zoneType, barcode, location, description *string
 		var capacity *int
 		var deviceCount int
 
 		err := rows.Scan(
 			&zoneID, &name, &zoneType, &barcode, &capacity,
-			&location, &notes, &deviceCount,
+			&location, &description, &deviceCount,
 		)
 		if err != nil {
 			return nil, err
@@ -614,7 +613,7 @@ func exportStorageZones() ([]byte, error) {
 			formatNullString(barcode),
 			formatNullInt(capacity),
 			formatNullString(location),
-			formatNullString(notes),
+			formatNullString(description),
 			strconv.Itoa(deviceCount),
 		})
 	}
@@ -628,20 +627,18 @@ func exportCables() ([]byte, error) {
 
 	query := `
 		SELECT
-			c.id,
-			c.name,
-			ct.name as cable_type,
-			cc1.name as connector_a,
-			cc2.name as connector_b,
-			c.length_meters,
-			c.color,
-			c.notes,
-			c.quantity
+			c.cableid,
+			COALESCE(c.name, ''),
+			COALESCE(ct.name, ''),
+			COALESCE(cc1.name, ''),
+			COALESCE(cc2.name, ''),
+			c.length,
+			c.mm2
 		FROM cables c
-		LEFT JOIN cable_types ct ON c.cable_type_id = ct.id
-		LEFT JOIN cable_connectors cc1 ON c.connector_a_id = cc1.id
-		LEFT JOIN cable_connectors cc2 ON c.connector_b_id = cc2.id
-		ORDER BY c.name
+		LEFT JOIN cable_types ct ON c.typ = ct.cable_typesid
+		LEFT JOIN cable_connectors cc1 ON c.connector1 = cc1.cable_connectorsid
+		LEFT JOIN cable_connectors cc2 ON c.connector2 = cc2.cable_connectorsid
+		ORDER BY c.cableid
 	`
 
 	rows, err := db.Query(query)
@@ -652,21 +649,18 @@ func exportCables() ([]byte, error) {
 
 	headers := []string{
 		"ID", "Name", "Kabeltyp", "Stecker A", "Stecker B",
-		"Länge (m)", "Farbe", "Notizen", "Menge",
+		"Länge (m)", "Querschnitt (mm²)",
 	}
 
 	var csvRows [][]string
 
 	for rows.Next() {
-		var id, quantity int
-		var name string
-		var cableType, connectorA, connectorB, color, notes *string
-		var lengthMeters *float64
+		var id int
+		var name, cableType, connectorA, connectorB string
+		var length *float64
+		var mm2 *float64
 
-		err := rows.Scan(
-			&id, &name, &cableType, &connectorA, &connectorB,
-			&lengthMeters, &color, &notes, &quantity,
-		)
+		err := rows.Scan(&id, &name, &cableType, &connectorA, &connectorB, &length, &mm2)
 		if err != nil {
 			return nil, err
 		}
@@ -674,13 +668,11 @@ func exportCables() ([]byte, error) {
 		csvRows = append(csvRows, []string{
 			strconv.Itoa(id),
 			name,
-			formatNullString(cableType),
-			formatNullString(connectorA),
-			formatNullString(connectorB),
-			formatNullFloat(lengthMeters),
-			formatNullString(color),
-			formatNullString(notes),
-			strconv.Itoa(quantity),
+			cableType,
+			connectorA,
+			connectorB,
+			formatNullFloat(length),
+			formatNullFloat(mm2),
 		})
 	}
 
