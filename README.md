@@ -2,7 +2,7 @@
 
 **Physical Warehouse Management System for RentalCore Deployments**
 
-Version: 5.7
+Version: 5.8.7
 
 WarehouseCore is the digital twin of the Weidelbach warehouse, providing real-time tracking of devices, cases, zones, and movements with barcode/QR scan-driven workflows.
 
@@ -2280,6 +2280,21 @@ For issues or questions:
   - Changed from int64 to string-based maps
   - subcategoryID and subbiercategoryID are VARCHAR(50)
   - Device tree now loads correctly
+
+### Version 5.8.7 (2026-04-19)
+- **Feature: Packliste in Job-Detailansicht**
+  - Neuer Tab "Packliste" neben "Geräte-Liste" in der Job-Detailansicht
+  - Zeigt alle Produktanforderungen (`job_product_requirements`) mit benötigter und gebuchter Menge
+  - Farbkodierter Fortschrittsbalken pro Produkt: grün (erfüllt), orange (teilweise), rot (keine)
+  - Gesamtfortschritt-Balken oben (X von Y Positionen vollständig)
+  - Auto-Refresh alle 3 Sekunden bei aktivem Packliste-Tab
+- **API Endpoint:**
+  - `GET /api/v1/jobs/{id}/requirements` - Produktanforderungen mit Buchungsstatus
+- **Dateien:**
+  - `internal/handlers/handlers.go` - GetJobRequirements Handler
+  - `cmd/server/main.go` - Route registriert
+  - `web/src/pages/JobsPage.tsx` - Tab-Interface mit Packliste
+  - `web/src/lib/api.ts` - JobRequirement Interface + getRequirements()
 
 ### Version 1.42 (2025-10-18)
 - **Bug Fix: Device Tree Database Schema** 🔧

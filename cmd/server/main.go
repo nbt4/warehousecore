@@ -187,6 +187,7 @@ func main() {
 	// Job endpoints
 	api.HandleFunc("/jobs", handlers.GetJobs).Methods("GET")
 	api.HandleFunc("/jobs/{id}", handlers.GetJobSummary).Methods("GET")
+	api.HandleFunc("/jobs/{id}/requirements", handlers.GetJobRequirements).Methods("GET")
 	api.HandleFunc("/jobs/{id}/complete", handlers.CompleteJob).Methods("POST")
 
 	// Public rental equipment endpoint (for RentalCore integration)

@@ -1572,6 +1572,61 @@ func CompleteJob(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Job completed"})
 }
 
+// GetJobRequirements returns product requirements for a job with fulfillment status
+func GetJobRequirements(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	vars := mux.Vars(r)
+	jobID := vars["id"]
+
+	query := `
+		SELECT
+			jpr.id,
+			jpr.product_id,
+			p.name AS product_name,
+			jpr.quantity AS required_quantity,
+			COUNT(DISTINCT d.deviceid) AS booked_quantity
+		FROM job_product_requirements jpr
+		JOIN products p ON jpr.product_id = p.productid
+		LEFT JOIN job_devices jd ON jd.jobid = jpr.job_id
+		LEFT JOIN devices d ON d.deviceid = jd.deviceid AND d.productid = jpr.product_id
+		WHERE jpr.job_id = $1
+		GROUP BY jpr.id, jpr.product_id, p.name, jpr.quantity
+		ORDER BY p.name
+	`
+
+	rows, err := db.Query(query, jobID)
+	if err != nil {
+		log.Printf("Error querying job requirements: %v", err)
+		http.Error(w, `{"error":"Failed to fetch requirements"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type Requirement struct {
+		ID               int    `json:"id"`
+		ProductID        int    `json:"product_id"`
+		ProductName      string `json:"product_name"`
+		RequiredQuantity int    `json:"required_quantity"`
+		BookedQuantity   int    `json:"booked_quantity"`
+	}
+
+	var reqs []Requirement
+	for rows.Next() {
+		var req Requirement
+		if err := rows.Scan(&req.ID, &req.ProductID, &req.ProductName, &req.RequiredQuantity, &req.BookedQuantity); err != nil {
+			log.Printf("Error scanning requirement: %v", err)
+			continue
+		}
+		reqs = append(reqs, req)
+	}
+	if reqs == nil {
+		reqs = []Requirement{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(reqs)
+}
+
 func GetCases(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 

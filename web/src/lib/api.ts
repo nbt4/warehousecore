@@ -340,9 +340,18 @@ export const scansApi = {
   getHistory: (limit: number = 50) => api.get(`/scans/history`, { params: { limit } }),
 };
 
+export interface JobRequirement {
+  id: number;
+  product_id: number;
+  product_name: string;
+  required_quantity: number;
+  booked_quantity: number;
+}
+
 export const jobsApi = {
   getAll: (params?: { status?: string }) => api.get<Job[]>('/jobs', { params }),
   getById: (id: number) => api.get<JobSummary>(`/jobs/${id}`),
+  getRequirements: (id: number) => api.get<JobRequirement[]>(`/jobs/${id}/requirements`),
 };
 
 export interface Defect {

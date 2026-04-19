@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff } from 'lucide-react';
+import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList } from 'lucide-react';
 import { jobsApi, scansApi, ledApi } from '../lib/api';
-import type { Job, JobSummary, JobDevice, LEDStatus } from '../lib/api';
+import type { Job, JobSummary, JobDevice, LEDStatus, JobRequirement } from '../lib/api';
 
 const JOB_CODE_PATTERN = /^JOB\d+$/i;
+
+type ActiveTab = 'devices' | 'packlist';
 
 export function JobsPage() {
   const { id: urlJobId } = useParams<{ id: string }>();
@@ -19,6 +21,13 @@ export function JobsPage() {
   const [ledActive, setLedActive] = useState(false);
   const [ledStatus, setLedStatus] = useState<LEDStatus | null>(null);
   const [ledLoading, setLedLoading] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<ActiveTab>('devices');
+
+  // Packliste state
+  const [requirements, setRequirements] = useState<JobRequirement[]>([]);
+  const [requirementsLoading, setRequirementsLoading] = useState(false);
 
   // Load open jobs and LED status on mount
   useEffect(() => {
@@ -55,6 +64,25 @@ export function JobsPage() {
       return () => clearInterval(interval);
     }
   }, [selectedJob]);
+
+  // Auto-refresh requirements every 3 seconds when packlist tab is active
+  useEffect(() => {
+    if (selectedJob && activeTab === 'packlist') {
+      loadRequirements(selectedJob.job_id);
+      const interval = setInterval(() => {
+        loadRequirements(selectedJob.job_id);
+      }, 3000);
+
+      return () => clearInterval(interval);
+    }
+  }, [selectedJob, activeTab]);
+
+  // Load requirements when switching to packlist tab
+  useEffect(() => {
+    if (selectedJob && activeTab === 'packlist' && requirements.length === 0) {
+      loadRequirements(selectedJob.job_id);
+    }
+  }, [activeTab]);
 
   // Cleanup LEDs when leaving the page or unmounting
   useEffect(() => {
@@ -103,11 +131,25 @@ export function JobsPage() {
     }
   };
 
+  const loadRequirements = async (jobId: number) => {
+    try {
+      setRequirementsLoading(true);
+      const { data } = await jobsApi.getRequirements(jobId);
+      setRequirements(data);
+    } catch (error) {
+      console.error('Failed to load requirements:', error);
+    } finally {
+      setRequirementsLoading(false);
+    }
+  };
+
   const loadJobDetails = async (jobId: number, options: { highlight?: boolean } = {}) => {
     try {
       setLoading(true);
       const { data } = await jobsApi.getById(jobId);
       setSelectedJob(data);
+      setRequirements([]);
+      setActiveTab('devices');
 
       if (options.highlight !== false) {
         setLedActive(false);
@@ -231,6 +273,8 @@ export function JobsPage() {
     setSelectedJob(null);
     setScanCode('');
     setScanResult(null);
+    setRequirements([]);
+    setActiveTab('devices');
     loadJobs(); // Reload job list
   };
 
@@ -261,6 +305,18 @@ export function JobsPage() {
     const scanned = devices.filter(d => d.scanned).length;
     const remaining = total - scanned;
     return { total, scanned, remaining };
+  };
+
+  const getRequirementStats = (reqs: JobRequirement[]) => {
+    const total = reqs.length;
+    const fulfilled = reqs.filter(r => r.booked_quantity >= r.required_quantity).length;
+    return { total, fulfilled };
+  };
+
+  const getRequirementColor = (req: JobRequirement) => {
+    if (req.booked_quantity >= req.required_quantity) return 'green';
+    if (req.booked_quantity > 0) return 'orange';
+    return 'red';
   };
 
   // Job List View
@@ -345,6 +401,7 @@ export function JobsPage() {
   // Job Details & Scan View
   const stats = getDeviceStats(selectedJob.devices);
   const progress = stats.total > 0 ? (stats.scanned / stats.total) * 100 : 0;
+  const reqStats = getRequirementStats(requirements);
 
   return (
     <div className="min-h-screen p-6">
@@ -515,58 +572,179 @@ export function JobsPage() {
             )}
           </div>
 
-          {/* Device List */}
-          <div className="glass-dark rounded-2xl p-6 border-2 border-white/10 max-h-[600px] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-white mb-4">Geräte-Liste</h2>
+          {/* Device List / Packliste with Tabs */}
+          <div className="glass-dark rounded-2xl p-6 border-2 border-white/10 flex flex-col max-h-[600px]">
+            {/* Tab Header */}
+            <div className="flex gap-2 mb-4 flex-shrink-0">
+              <button
+                onClick={() => setActiveTab('devices')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+                  activeTab === 'devices'
+                    ? 'bg-accent-red text-white'
+                    : 'bg-white/10 text-gray-400 hover:text-white hover:bg-white/20'
+                }`}
+              >
+                <Package className="w-4 h-4" />
+                Geräte-Liste
+              </button>
+              <button
+                onClick={() => setActiveTab('packlist')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+                  activeTab === 'packlist'
+                    ? 'bg-accent-red text-white'
+                    : 'bg-white/10 text-gray-400 hover:text-white hover:bg-white/20'
+                }`}
+              >
+                <ClipboardList className="w-4 h-4" />
+                Packliste
+              </button>
+            </div>
 
-            {selectedJob.devices.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">Keine Geräte in diesem Job</p>
-            ) : (
-              <div className="space-y-2">
-                {selectedJob.devices.map((device) => (
-                  <div
-                    key={device.device_id}
-                    className={`p-4 rounded-xl border-2 transition-all ${
-                      device.scanned
-                        ? 'bg-green-500/10 border-green-500/50'
-                        : 'bg-white/5 border-white/10'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="font-semibold text-white">{device.product_name}</p>
-                        <p className="text-sm text-gray-400">ID: {device.device_id}</p>
-                        {device.zone_name && (
-                          <p className="text-sm text-gray-500">Lager: {device.zone_name}</p>
-                        )}
-                      </div>
+            {/* Tab Content */}
+            <div className="overflow-y-auto flex-1">
+              {activeTab === 'devices' && (
+                <>
+                  {selectedJob.devices.length === 0 ? (
+                    <p className="text-gray-400 text-center py-8">Keine Geräte in diesem Job</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedJob.devices.map((device) => (
+                        <div
+                          key={device.device_id}
+                          className={`p-4 rounded-xl border-2 transition-all ${
+                            device.scanned
+                              ? 'bg-green-500/10 border-green-500/50'
+                              : 'bg-white/5 border-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="font-semibold text-white">{device.product_name}</p>
+                              <p className="text-sm text-gray-400">ID: {device.device_id}</p>
+                              {device.zone_name && (
+                                <p className="text-sm text-gray-500">Lager: {device.zone_name}</p>
+                              )}
+                            </div>
 
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <span
-                            className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                              device.status === 'on_job'
-                                ? 'bg-blue-500/20 text-blue-400'
-                                : device.status === 'in_storage'
-                                ? 'bg-green-500/20 text-green-400'
-                                : 'bg-gray-500/20 text-gray-400'
-                            }`}
-                          >
-                            {device.status}
-                          </span>
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <span
+                                  className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                    device.status === 'on_job'
+                                      ? 'bg-blue-500/20 text-blue-400'
+                                      : device.status === 'in_storage'
+                                      ? 'bg-green-500/20 text-green-400'
+                                      : 'bg-gray-500/20 text-gray-400'
+                                  }`}
+                                >
+                                  {device.status}
+                                </span>
+                              </div>
+
+                              {device.scanned ? (
+                                <CheckCircle className="w-8 h-8 text-green-500 flex-shrink-0" />
+                              ) : (
+                                <XCircle className="w-8 h-8 text-gray-600 flex-shrink-0" />
+                              )}
+                            </div>
+                          </div>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
 
-                        {device.scanned ? (
-                          <CheckCircle className="w-8 h-8 text-green-500 flex-shrink-0" />
-                        ) : (
-                          <XCircle className="w-8 h-8 text-gray-600 flex-shrink-0" />
-                        )}
+              {activeTab === 'packlist' && (
+                <>
+                  {/* Packliste overall progress */}
+                  {requirements.length > 0 && (
+                    <div className="mb-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-gray-300">Gesamtfortschritt</span>
+                        <span className="text-sm text-gray-400">
+                          {reqStats.fulfilled} von {reqStats.total} Positionen vollständig
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-orange-500 to-green-500 transition-all duration-500"
+                          style={{ width: reqStats.total > 0 ? `${(reqStats.fulfilled / reqStats.total) * 100}%` : '0%' }}
+                        />
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  )}
+
+                  {requirementsLoading && requirements.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-accent-red"></div>
+                      <p className="text-gray-400 mt-3 text-sm">Lade Packliste...</p>
+                    </div>
+                  ) : requirements.length === 0 ? (
+                    <div className="text-center py-8">
+                      <ClipboardList className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                      <p className="text-gray-400">Keine Produktanforderungen für diesen Job</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {requirements.map((req) => {
+                        const color = getRequirementColor(req);
+                        const pct = req.required_quantity > 0
+                          ? Math.min((req.booked_quantity / req.required_quantity) * 100, 100)
+                          : 0;
+
+                        return (
+                          <div
+                            key={req.id}
+                            className={`p-4 rounded-xl border-2 transition-all ${
+                              color === 'green'
+                                ? 'bg-green-500/10 border-green-500/50'
+                                : color === 'orange'
+                                ? 'bg-orange-500/10 border-orange-500/50'
+                                : 'bg-red-500/10 border-red-500/50'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <p className="font-semibold text-white">{req.product_name}</p>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                <span
+                                  className={`text-sm font-bold ${
+                                    color === 'green'
+                                      ? 'text-green-400'
+                                      : color === 'orange'
+                                      ? 'text-orange-400'
+                                      : 'text-red-400'
+                                  }`}
+                                >
+                                  {req.booked_quantity} / {req.required_quantity}
+                                </span>
+                                {color === 'green' ? (
+                                  <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                ) : (
+                                  <XCircle className={`w-5 h-5 flex-shrink-0 ${color === 'orange' ? 'text-orange-400' : 'text-red-500'}`} />
+                                )}
+                              </div>
+                            </div>
+                            <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-500 ${
+                                  color === 'green'
+                                    ? 'bg-green-500'
+                                    : color === 'orange'
+                                    ? 'bg-orange-500'
+                                    : 'bg-red-500'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
