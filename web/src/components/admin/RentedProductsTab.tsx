@@ -14,6 +14,29 @@ import {
 import { api } from '../../lib/api';
 import { ModalPortal } from '../ModalPortal';
 
+interface FieldDefinition {
+  id: number;
+  name: string;
+  field_type: 'text' | 'number' | 'dropdown';
+  unit: string | null;
+  dropdown_options: string | null;
+  is_active: boolean;
+}
+
+interface FieldValueInput {
+  field_definition_id: number;
+  value: string;
+  sort_order: number;
+}
+
+interface FieldValue {
+  id: number;
+  field_definition_id: number;
+  value: string;
+  sort_order: number;
+  definition?: FieldDefinition;
+}
+
 interface RentalEquipment {
   equipment_id: number;
   product_name: string;
@@ -26,6 +49,7 @@ interface RentalEquipment {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  field_values?: FieldValue[];
 }
 
 interface RentalEquipmentFormData {
@@ -37,6 +61,7 @@ interface RentalEquipmentFormData {
   description: string;
   notes: string;
   is_active: boolean;
+  field_values: FieldValueInput[];
 }
 
 const initialFormData: RentalEquipmentFormData = {
@@ -48,6 +73,7 @@ const initialFormData: RentalEquipmentFormData = {
   description: '',
   notes: '',
   is_active: true,
+  field_values: [],
 };
 
 const parseNumber = (value: string): number => {
@@ -85,9 +111,16 @@ export function RentedProductsTab() {
   const [searchTerm, setSearchTerm] = useState('');
   const [supplierFilter, setSupplierFilter] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
+  const [fieldDefs, setFieldDefs] = useState<FieldDefinition[]>([]);
   const scrollPosition = useRef(0);
 
   const debouncedSearch = useDebouncedValue(searchTerm, 300);
+
+  useEffect(() => {
+    api.get<FieldDefinition[]>('/admin/rental-field-definitions?active_only=true')
+      .then(r => setFieldDefs(r.data || []))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -202,6 +235,11 @@ export function RentedProductsTab() {
       description: item.description || '',
       notes: item.notes || '',
       is_active: item.is_active,
+      field_values: (item.field_values ?? []).map(v => ({
+        field_definition_id: v.field_definition_id,
+        value: v.value,
+        sort_order: v.sort_order,
+      })),
     });
     setEditingId(item.equipment_id);
     setModalOpen(true);
@@ -245,6 +283,7 @@ export function RentedProductsTab() {
       description: formData.description.trim() || null,
       notes: formData.notes.trim() || null,
       is_active: formData.is_active,
+      field_values: formData.field_values,
     };
 
     try {
@@ -736,6 +775,93 @@ export function RentedProductsTab() {
                   </label>
                 </div>
 
+                {/* Custom Fields */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Technische Felder</span>
+                    <select
+                      className="text-xs rounded px-2 py-1 bg-black/40 border border-white/10 text-gray-300 cursor-pointer"
+                      value=""
+                      onChange={e => {
+                        const defId = Number(e.target.value);
+                        if (!defId) return;
+                        const alreadyAdded = formData.field_values.some(v => v.field_definition_id === defId);
+                        if (alreadyAdded) return;
+                        setFormData(prev => ({
+                          ...prev,
+                          field_values: [...prev.field_values, {
+                            field_definition_id: defId,
+                            value: '',
+                            sort_order: prev.field_values.length,
+                          }],
+                        }));
+                      }}
+                    >
+                      <option value="">+ Feld hinzufügen</option>
+                      {fieldDefs
+                        .filter(d => !formData.field_values.some(v => v.field_definition_id === d.id))
+                        .map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                  {formData.field_values.length > 0 && (
+                    <div className="space-y-2">
+                      {formData.field_values.map((fv, idx) => {
+                        const def = fieldDefs.find(d => d.id === fv.field_definition_id);
+                        if (!def) return null;
+                        return (
+                          <div key={fv.field_definition_id} className="flex items-center gap-2">
+                            <span className="text-sm text-gray-300 w-28 flex-shrink-0">{def.name}</span>
+                            {def.field_type === 'dropdown' && def.dropdown_options ? (
+                              <select
+                                className="flex-1 rounded px-2 py-1 text-sm bg-black/40 border border-white/10 text-white"
+                                value={fv.value}
+                                onChange={e => {
+                                  const updated = formData.field_values.map((v, i) =>
+                                    i === idx ? { ...v, value: e.target.value } : v
+                                  );
+                                  setFormData(prev => ({ ...prev, field_values: updated }));
+                                }}
+                              >
+                                <option value="">— wählen —</option>
+                                {JSON.parse(def.dropdown_options).map((opt: string) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type={def.field_type === 'number' ? 'number' : 'text'}
+                                className="flex-1 rounded px-2 py-1 text-sm bg-black/40 border border-white/10 text-white"
+                                value={fv.value}
+                                onChange={e => {
+                                  const updated = formData.field_values.map((v, i) =>
+                                    i === idx ? { ...v, value: e.target.value } : v
+                                  );
+                                  setFormData(prev => ({ ...prev, field_values: updated }));
+                                }}
+                              />
+                            )}
+                            {def.unit && <span className="text-xs text-gray-500 flex-shrink-0">{def.unit}</span>}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = formData.field_values
+                                  .filter((_, i) => i !== idx)
+                                  .map((v, i) => ({ ...v, sort_order: i }));
+                                setFormData(prev => ({ ...prev, field_values: updated }));
+                              }}
+                              className="text-gray-500 hover:text-red-400 transition-colors flex-shrink-0 text-lg leading-none"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
@@ -819,6 +945,20 @@ export function RentedProductsTab() {
                   <div>
                     <p className="text-xs text-gray-500">Notizen</p>
                     <p className="text-gray-300">{viewEquipment.notes}</p>
+                  </div>
+                )}
+
+                {viewEquipment.field_values && viewEquipment.field_values.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Technische Felder</p>
+                    <div className="space-y-1">
+                      {viewEquipment.field_values.map(fv => (
+                        <div key={fv.field_definition_id} className="flex items-center gap-2 text-sm">
+                          <span className="text-gray-400">{fv.definition?.name ?? `Feld ${fv.field_definition_id}`}:</span>
+                          <span className="text-white">{fv.value}{fv.definition?.unit ? ` ${fv.definition.unit}` : ''}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
