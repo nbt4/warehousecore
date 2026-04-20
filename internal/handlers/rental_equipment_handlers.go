@@ -15,31 +15,30 @@ import (
 
 // RentalEquipment represents a product rented from an external supplier
 type RentalEquipment struct {
-	EquipmentID   int        `json:"equipment_id"`
-	ProductName   string     `json:"product_name"`
-	SupplierName  string     `json:"supplier_name"`
-	RentalPrice   float64    `json:"rental_price"`
-	CustomerPrice float64    `json:"customer_price"`
-	Category      *string    `json:"category"`
-	Description   *string    `json:"description"`
-	Notes         *string    `json:"notes"`
-	IsActive      bool       `json:"is_active"`
-	CreatedBy     *int       `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	EquipmentID   int                `json:"equipment_id"`
+	ProductName   string             `json:"product_name"`
+	SupplierName  string             `json:"supplier_name"`
+	RentalPrice   float64            `json:"rental_price"`
+	CustomerPrice float64            `json:"customer_price"`
+	Category      *string            `json:"category"`
+	Description   *string            `json:"description"`
+	Notes         *string            `json:"notes"`
+	IsActive      bool               `json:"is_active"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 	FieldValues   []RentalFieldValue `json:"field_values"`
 }
 
 // RentalEquipmentCreateRequest represents the request to create rental equipment
 type RentalEquipmentCreateRequest struct {
-	ProductName   string   `json:"product_name"`
-	SupplierName  string   `json:"supplier_name"`
-	RentalPrice   float64  `json:"rental_price"`
-	CustomerPrice float64  `json:"customer_price"`
-	Category      *string  `json:"category"`
-	Description   *string  `json:"description"`
-	Notes         *string  `json:"notes"`
-	IsActive      *bool    `json:"is_active"`
+	ProductName   string                  `json:"product_name"`
+	SupplierName  string                  `json:"supplier_name"`
+	RentalPrice   float64                 `json:"rental_price"`
+	CustomerPrice float64                 `json:"customer_price"`
+	Category      *string                 `json:"category"`
+	Description   *string                 `json:"description"`
+	Notes         *string                 `json:"notes"`
+	IsActive      *bool                   `json:"is_active"`
 	FieldValues   []RentalFieldValueInput `json:"field_values"`
 }
 
@@ -53,16 +52,15 @@ func GetRentalEquipment(w http.ResponseWriter, r *http.Request) {
 
 	query := `
 		SELECT
-			equipment_id,
-			product_name,
-			supplier_name,
+			id,
+			name,
+			supplier,
 			rental_price,
 			COALESCE(customer_price, 0) as customer_price,
 			category,
 			description,
 			notes,
 			is_active,
-			created_by,
 			created_at,
 			updated_at
 		FROM rental_equipment
@@ -70,23 +68,26 @@ func GetRentalEquipment(w http.ResponseWriter, r *http.Request) {
 	`
 
 	var args []interface{}
+	argIdx := 1
 
 	if search != "" {
-		query += " AND (product_name LIKE ? OR supplier_name LIKE ? OR description LIKE ?)"
+		query += " AND (name ILIKE $" + strconv.Itoa(argIdx) + " OR supplier ILIKE $" + strconv.Itoa(argIdx+1) + " OR description ILIKE $" + strconv.Itoa(argIdx+2) + ")"
 		searchPattern := "%" + search + "%"
 		args = append(args, searchPattern, searchPattern, searchPattern)
+		argIdx += 3
 	}
 
 	if supplierFilter != "" {
-		query += " AND supplier_name = ?"
+		query += " AND supplier = $" + strconv.Itoa(argIdx)
 		args = append(args, supplierFilter)
+		argIdx++
 	}
 
 	if activeOnly {
 		query += " AND is_active = TRUE"
 	}
 
-	query += " ORDER BY supplier_name, product_name"
+	query += " ORDER BY supplier, name"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -109,7 +110,6 @@ func GetRentalEquipment(w http.ResponseWriter, r *http.Request) {
 			&e.Description,
 			&e.Notes,
 			&e.IsActive,
-			&e.CreatedBy,
 			&e.CreatedAt,
 			&e.UpdatedAt,
 		)
@@ -159,20 +159,19 @@ func GetRentalEquipmentByID(w http.ResponseWriter, r *http.Request) {
 	var e RentalEquipment
 	err = db.QueryRow(`
 		SELECT
-			equipment_id,
-			product_name,
-			supplier_name,
+			id,
+			name,
+			supplier,
 			rental_price,
 			COALESCE(customer_price, 0) as customer_price,
 			category,
 			description,
 			notes,
 			is_active,
-			created_by,
 			created_at,
 			updated_at
 		FROM rental_equipment
-		WHERE equipment_id = $1
+		WHERE id = $1
 	`, id).Scan(
 		&e.EquipmentID,
 		&e.ProductName,
@@ -183,7 +182,6 @@ func GetRentalEquipmentByID(w http.ResponseWriter, r *http.Request) {
 		&e.Description,
 		&e.Notes,
 		&e.IsActive,
-		&e.CreatedBy,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	)
@@ -222,10 +220,6 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Product name is required"})
 		return
 	}
-	if req.SupplierName == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Supplier name is required"})
-		return
-	}
 
 	db := repository.GetSQLDB()
 
@@ -237,8 +231,8 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	err := db.QueryRow(`
 		INSERT INTO rental_equipment (
-			product_name,
-			supplier_name,
+			name,
+			supplier,
 			rental_price,
 			customer_price,
 			category,
@@ -248,7 +242,7 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 			created_at,
 			updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-		RETURNING equipment_id
+		RETURNING id
 	`,
 		req.ProductName,
 		req.SupplierName,
@@ -276,20 +270,19 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 	var e RentalEquipment
 	err = db.QueryRow(`
 		SELECT
-			equipment_id,
-			product_name,
-			supplier_name,
+			id,
+			name,
+			supplier,
 			rental_price,
 			COALESCE(customer_price, 0) as customer_price,
 			category,
 			description,
 			notes,
 			is_active,
-			created_by,
 			created_at,
 			updated_at
 		FROM rental_equipment
-		WHERE equipment_id = $1
+		WHERE id = $1
 	`, id).Scan(
 		&e.EquipmentID,
 		&e.ProductName,
@@ -300,7 +293,6 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		&e.Description,
 		&e.Notes,
 		&e.IsActive,
-		&e.CreatedBy,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	)
@@ -334,20 +326,8 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Product name is required"})
 		return
 	}
-	if req.SupplierName == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Supplier name is required"})
-		return
-	}
 
 	db := repository.GetSQLDB()
-
-	// Check if exists
-	var exists bool
-	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM rental_equipment WHERE equipment_id = ?)", id).Scan(&exists)
-	if err != nil || !exists {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Rental equipment not found"})
-		return
-	}
 
 	isActive := true
 	if req.IsActive != nil {
@@ -356,8 +336,8 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Exec(`
 		UPDATE rental_equipment SET
-			product_name = $1,
-			supplier_name = $2,
+			name = $1,
+			supplier = $2,
 			rental_price = $3,
 			customer_price = $4,
 			category = $5,
@@ -365,7 +345,7 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 			notes = $7,
 			is_active = $8,
 			updated_at = NOW()
-		WHERE equipment_id = $9
+		WHERE id = $9
 	`,
 		req.ProductName,
 		req.SupplierName,
@@ -392,20 +372,19 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 	var e RentalEquipment
 	err = db.QueryRow(`
 		SELECT
-			equipment_id,
-			product_name,
-			supplier_name,
+			id,
+			name,
+			supplier,
 			rental_price,
 			COALESCE(customer_price, 0) as customer_price,
 			category,
 			description,
 			notes,
 			is_active,
-			created_by,
 			created_at,
 			updated_at
 		FROM rental_equipment
-		WHERE equipment_id = $1
+		WHERE id = $1
 	`, id).Scan(
 		&e.EquipmentID,
 		&e.ProductName,
@@ -416,7 +395,6 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		&e.Description,
 		&e.Notes,
 		&e.IsActive,
-		&e.CreatedBy,
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	)
@@ -442,15 +420,7 @@ func DeleteRentalEquipment(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 
-	// Check if exists
-	var exists bool
-	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM rental_equipment WHERE equipment_id = ?)", id).Scan(&exists)
-	if err != nil || !exists {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Rental equipment not found"})
-		return
-	}
-
-	_, err = db.Exec("DELETE FROM rental_equipment WHERE equipment_id = ?", id)
+	_, err = db.Exec("DELETE FROM rental_equipment WHERE id = $1", id)
 	if err != nil {
 		log.Printf("Failed to delete rental equipment: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete rental equipment"})
@@ -465,10 +435,10 @@ func GetRentalEquipmentSuppliers(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
 	rows, err := db.Query(`
-		SELECT DISTINCT supplier_name
+		SELECT DISTINCT supplier
 		FROM rental_equipment
-		WHERE supplier_name IS NOT NULL AND supplier_name != ''
-		ORDER BY supplier_name
+		WHERE supplier IS NOT NULL AND supplier != ''
+		ORDER BY supplier
 	`)
 	if err != nil {
 		log.Printf("Failed to query suppliers: %v", err)
