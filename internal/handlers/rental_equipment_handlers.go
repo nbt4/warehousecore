@@ -27,6 +27,7 @@ type RentalEquipment struct {
 	CreatedBy     *int       `json:"created_by"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	FieldValues   []RentalFieldValue `json:"field_values"`
 }
 
 // RentalEquipmentCreateRequest represents the request to create rental equipment
@@ -39,6 +40,7 @@ type RentalEquipmentCreateRequest struct {
 	Description   *string  `json:"description"`
 	Notes         *string  `json:"notes"`
 	IsActive      *bool    `json:"is_active"`
+	FieldValues   []RentalFieldValueInput `json:"field_values"`
 }
 
 // GetRentalEquipment retrieves all rental equipment with optional filtering
@@ -122,6 +124,23 @@ func GetRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		equipment = []RentalEquipment{}
 	}
 
+	// Load field values for all equipment items
+	ids := make([]int, len(equipment))
+	for i, e := range equipment {
+		ids[i] = e.EquipmentID
+	}
+	if fieldMap, err := fetchFieldValues(db, ids); err != nil {
+		log.Printf("Failed to fetch field values: %v", err)
+	} else {
+		for i := range equipment {
+			if vals, ok := fieldMap[equipment[i].EquipmentID]; ok {
+				equipment[i].FieldValues = vals
+			} else {
+				equipment[i].FieldValues = []RentalFieldValue{}
+			}
+		}
+	}
+
 	respondJSON(w, http.StatusOK, equipment)
 }
 
@@ -177,6 +196,15 @@ func GetRentalEquipmentByID(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to get rental equipment: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch rental equipment"})
 		return
+	}
+
+	if fieldMap, err := fetchFieldValues(db, []int{e.EquipmentID}); err != nil {
+		log.Printf("Failed to fetch field values: %v", err)
+		e.FieldValues = []RentalFieldValue{}
+	} else if vals, ok := fieldMap[e.EquipmentID]; ok {
+		e.FieldValues = vals
+	} else {
+		e.FieldValues = []RentalFieldValue{}
 	}
 
 	respondJSON(w, http.StatusOK, e)
@@ -236,6 +264,12 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to create rental equipment: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create rental equipment"})
 		return
+	}
+
+	if len(req.FieldValues) > 0 {
+		if err := saveFieldValues(db, int(id), req.FieldValues); err != nil {
+			log.Printf("Failed to save field values for new equipment %d: %v", id, err)
+		}
 	}
 
 	// Fetch the created equipment
@@ -348,6 +382,10 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to update rental equipment: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update rental equipment"})
 		return
+	}
+
+	if err := saveFieldValues(db, id, req.FieldValues); err != nil {
+		log.Printf("Failed to save field values for equipment %d: %v", id, err)
 	}
 
 	// Fetch the updated equipment

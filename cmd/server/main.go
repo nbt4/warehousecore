@@ -193,6 +193,7 @@ func main() {
 	// Public rental equipment endpoint (for RentalCore integration)
 	api.HandleFunc("/rental-equipment", handlers.GetRentalEquipment).Methods("GET")
 	api.HandleFunc("/rental-equipment/{id}", handlers.GetRentalEquipmentByID).Methods("GET")
+	api.HandleFunc("/rental-field-definitions", handlers.GetRentalFieldDefinitions).Methods("GET")
 
 	// Inventory endpoints
 	api.HandleFunc("/inventory/low-stock", handlers.GetLowStockAlerts).Methods("GET")
@@ -269,6 +270,7 @@ func main() {
 	adminRead.HandleFunc("/rental-equipment", handlers.GetRentalEquipment).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment/suppliers", handlers.GetRentalEquipmentSuppliers).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment/{id}", handlers.GetRentalEquipmentByID).Methods("GET")
+	adminRead.HandleFunc("/rental-field-definitions", handlers.GetRentalFieldDefinitions).Methods("GET")
 	adminRead.HandleFunc("/api-keys", handlers.ListAPIKeys).Methods("GET")
 
 	// Admin-only routes (write operations)
@@ -327,6 +329,9 @@ func main() {
 	admin.HandleFunc("/rental-equipment", handlers.CreateRentalEquipment).Methods("POST")
 	admin.HandleFunc("/rental-equipment/{id}", handlers.UpdateRentalEquipment).Methods("PUT")
 	admin.HandleFunc("/rental-equipment/{id}", handlers.DeleteRentalEquipment).Methods("DELETE")
+	admin.HandleFunc("/rental-field-definitions", handlers.CreateRentalFieldDefinition).Methods("POST")
+	admin.HandleFunc("/rental-field-definitions/{id}", handlers.UpdateRentalFieldDefinition).Methods("PUT")
+	admin.HandleFunc("/rental-field-definitions/{id}", handlers.DeleteRentalFieldDefinition).Methods("DELETE")
 	admin.HandleFunc("/api-keys", handlers.CreateAPIKey).Methods("POST")
 	admin.HandleFunc("/api-keys/{id}/status", handlers.UpdateAPIKeyStatus).Methods("PUT")
 	admin.HandleFunc("/api-keys/{id}", handlers.DeleteAPIKey).Methods("DELETE")
