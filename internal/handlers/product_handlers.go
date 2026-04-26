@@ -1352,7 +1352,7 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 		FROM products p
 		LEFT JOIN brands b ON p.brandID = b.brandID
 		WHERE p.website_visible = TRUE
-		  AND p.productID NOT IN (SELECT COALESCE(product_id, 0) FROM product_packages)
+		  AND p.productid NOT IN (SELECT product_id FROM product_package_items)
 		ORDER BY COALESCE(p.pos_in_category, 0), p.name
 	`)
 	if err != nil {
@@ -1400,19 +1400,15 @@ func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := db.Query(`
 		SELECT
-			pp.package_id,
-			pp.package_code,
+			pp.id,
+			COALESCE(pp.package_code, pp.code, '') as package_code,
 			pp.name,
 			pp.description,
 			pp.price,
-			pp.website_visible,
-			p.productID,
-			p.website_thumbnail,
-			p.website_images_json
+			pp.website_image_url
 		FROM product_packages pp
-		LEFT JOIN products p ON pp.product_id = p.productID
-		WHERE COALESCE(pp.website_visible, FALSE) = TRUE OR COALESCE(p.website_visible, FALSE) = TRUE
-		ORDER BY pp.name
+		WHERE pp.website_visible = TRUE AND pp.is_active = TRUE
+		ORDER BY pp.website_sort_order, pp.name
 	`)
 	if err != nil {
 		log.Printf("[WEBSITE] Failed to load website packages: %v", err)
@@ -1440,32 +1436,10 @@ func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 	var result []WebsitePackage
 
 	for rows.Next() {
-		var (
-			pkg     WebsitePackage
-			prodID  sql.NullInt64
-			rawImgs json.RawMessage
-		)
-		var websiteVisible bool
-		if err := rows.Scan(&pkg.PackageID, &pkg.PackageCode, &pkg.Name, &pkg.Description, &pkg.Price, &websiteVisible, &prodID, &pkg.Thumbnail, &rawImgs); err != nil {
+		var pkg WebsitePackage
+		if err := rows.Scan(&pkg.PackageID, &pkg.PackageCode, &pkg.Name, &pkg.Description, &pkg.Price, &pkg.Thumbnail); err != nil {
 			log.Printf("[WEBSITE] Failed to scan package: %v", err)
 			continue
-		}
-		if len(rawImgs) > 0 {
-			_ = json.Unmarshal(rawImgs, &pkg.Images)
-		}
-		pkg.Images = sanitizeWebsiteImages(pkg.Images)
-		if prodID.Valid {
-			if len(pkg.Images) > 0 {
-				pkg.Images = buildPublicImageURLs(int(prodID.Int64), pkg.Images)
-			}
-			if pkg.Thumbnail != nil {
-				thumb := buildPublicImageURLs(int(prodID.Int64), []string{*pkg.Thumbnail})
-				if len(thumb) > 0 {
-					pkg.Thumbnail = &thumb[0]
-				} else {
-					pkg.Thumbnail = nil
-				}
-			}
 		}
 
 		items, err := loadPackageItems(db, pkg.PackageID)

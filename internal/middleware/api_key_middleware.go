@@ -35,14 +35,14 @@ func isAPIKeyValid(raw string) bool {
 	hash := hashAPIKey(raw)
 
 	var id int
-	err := db.QueryRow(`SELECT id FROM api_keys WHERE api_key_hash = ? AND is_active = TRUE LIMIT 1`, hash).Scan(&id)
+	err := db.QueryRow(`SELECT id FROM api_keys WHERE key_hash = $1 AND is_active = TRUE LIMIT 1`, hash).Scan(&id)
 	if err != nil {
 		return false
 	}
 
 	// Best effort last_used_at update
 	go func(id int) {
-		_, _ = db.Exec("UPDATE api_keys SET last_used_at = ? WHERE id = ?", time.Now(), id)
+		_, _ = db.Exec("UPDATE api_keys SET last_used_at = $1 WHERE id = $2", time.Now(), id)
 	}(id)
 
 	return true
