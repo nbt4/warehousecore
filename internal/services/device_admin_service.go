@@ -81,7 +81,7 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 				condition_rating, usage_hours, purchaseDate, lastmaintenance, nextmaintenance,
 				notes, barcode, qr_code
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		`,
 			input.ProductID,
 			nullableString(serialValue),
@@ -105,7 +105,7 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 		err = tx.QueryRowContext(ctx, `
 			SELECT deviceID
 			FROM devices
-			WHERE productID = ?
+			WHERE productID = $1
 			ORDER BY deviceID DESC
 			LIMIT 1
 		`, input.ProductID).Scan(&deviceID)
@@ -170,7 +170,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	args := make([]interface{}, 0, 12)
 
 	if input.ProductID.Set {
-		setClauses = append(setClauses, "productID = ?")
+		setClauses = append(setClauses, fmt.Sprintf("productID = $%d", len(args)+1))
 		if input.ProductID.Valid {
 			args = append(args, input.ProductID.Value)
 		} else {
@@ -179,7 +179,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.Status.Set {
-		setClauses = append(setClauses, "status = ?")
+		setClauses = append(setClauses, fmt.Sprintf("status = $%d", len(args)+1))
 		if input.Status.Valid {
 			args = append(args, strings.TrimSpace(input.Status.Value))
 		} else {
@@ -188,7 +188,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.SerialNumber.Set {
-		setClauses = append(setClauses, "serialnumber = ?")
+		setClauses = append(setClauses, fmt.Sprintf("serialnumber = $%d", len(args)+1))
 		if input.SerialNumber.Valid {
 			args = append(args, nullableStringPtr(&input.SerialNumber.Value))
 		} else {
@@ -197,7 +197,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.Barcode.Set {
-		setClauses = append(setClauses, "barcode = ?")
+		setClauses = append(setClauses, fmt.Sprintf("barcode = $%d", len(args)+1))
 		if input.Barcode.Valid {
 			args = append(args, nullableStringPtr(&input.Barcode.Value))
 		} else {
@@ -206,7 +206,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.QRCode.Set {
-		setClauses = append(setClauses, "qr_code = ?")
+		setClauses = append(setClauses, fmt.Sprintf("qr_code = $%d", len(args)+1))
 		if input.QRCode.Valid {
 			args = append(args, nullableStringPtr(&input.QRCode.Value))
 		} else {
@@ -215,7 +215,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.CurrentLocation.Set {
-		setClauses = append(setClauses, "current_location = ?")
+		setClauses = append(setClauses, fmt.Sprintf("current_location = $%d", len(args)+1))
 		if input.CurrentLocation.Valid {
 			args = append(args, nullableStringPtr(&input.CurrentLocation.Value))
 		} else {
@@ -224,7 +224,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.ZoneID.Set {
-		setClauses = append(setClauses, "zone_id = ?")
+		setClauses = append(setClauses, fmt.Sprintf("zone_id = $%d", len(args)+1))
 		if input.ZoneID.Valid {
 			id := input.ZoneID.Value
 			args = append(args, &id)
@@ -234,7 +234,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.ConditionRating.Set {
-		setClauses = append(setClauses, "condition_rating = ?")
+		setClauses = append(setClauses, fmt.Sprintf("condition_rating = $%d", len(args)+1))
 		if input.ConditionRating.Valid {
 			args = append(args, input.ConditionRating.Value)
 		} else {
@@ -243,7 +243,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.UsageHours.Set {
-		setClauses = append(setClauses, "usage_hours = ?")
+		setClauses = append(setClauses, fmt.Sprintf("usage_hours = $%d", len(args)+1))
 		if input.UsageHours.Valid {
 			args = append(args, input.UsageHours.Value)
 		} else {
@@ -252,7 +252,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.PurchaseDate.Set {
-		setClauses = append(setClauses, "purchaseDate = ?")
+		setClauses = append(setClauses, fmt.Sprintf("purchaseDate = $%d", len(args)+1))
 		if input.PurchaseDate.Valid {
 			args = append(args, parseDateValue(input.PurchaseDate.Value))
 		} else {
@@ -261,7 +261,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.LastMaintenance.Set {
-		setClauses = append(setClauses, "lastmaintenance = ?")
+		setClauses = append(setClauses, fmt.Sprintf("lastmaintenance = $%d", len(args)+1))
 		if input.LastMaintenance.Valid {
 			args = append(args, parseDateValue(input.LastMaintenance.Value))
 		} else {
@@ -270,7 +270,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.NextMaintenance.Set {
-		setClauses = append(setClauses, "nextmaintenance = ?")
+		setClauses = append(setClauses, fmt.Sprintf("nextmaintenance = $%d", len(args)+1))
 		if input.NextMaintenance.Valid {
 			args = append(args, parseDateValue(input.NextMaintenance.Value))
 		} else {
@@ -279,7 +279,7 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.Notes.Set {
-		setClauses = append(setClauses, "notes = ?")
+		setClauses = append(setClauses, fmt.Sprintf("notes = $%d", len(args)+1))
 		if input.Notes.Valid {
 			args = append(args, nullableStringPtr(&input.Notes.Value))
 		} else {
@@ -291,8 +291,8 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 		return nil, errors.New("no fields provided for update")
 	}
 
+	query := fmt.Sprintf("UPDATE devices SET %s WHERE deviceID = $%d", strings.Join(setClauses, ", "), len(args)+1)
 	args = append(args, deviceID)
-	query := fmt.Sprintf("UPDATE devices SET %s WHERE deviceID = ?", strings.Join(setClauses, ", "))
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return nil, fmt.Errorf("failed to update device: %w", err)
 	}
@@ -339,7 +339,7 @@ func (s *DeviceAdminService) DeleteDevice(ctx context.Context, deviceID string) 
 	}()
 
 	var labelPath sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT label_path FROM devices WHERE deviceID = ?`, deviceID).Scan(&labelPath)
+	err = tx.QueryRowContext(ctx, `SELECT label_path FROM devices WHERE deviceID = $1`, deviceID).Scan(&labelPath)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repository.ErrNotFound
 	}
@@ -407,7 +407,7 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 		LEFT JOIN cases c ON dc.caseID = c.caseID
 		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID
 		LEFT JOIN jobs j ON jd.jobID = j.jobID
-		WHERE d.deviceID = ?
+		WHERE d.deviceID = $1
 		LIMIT 1
 	`, deviceID).Scan(
 		&device.DeviceID,
@@ -459,18 +459,17 @@ func (s *DeviceAdminService) ensureDeviceCodes(ctx context.Context, tx *sql.Tx, 
 		args := make([]interface{}, 0, 2)
 
 		if regenerate || !hadBarcode {
-			columns = append(columns, "barcode = ?")
+			columns = append(columns, fmt.Sprintf("barcode = $%d", len(args)+1))
 			args = append(args, barcode)
 		}
 		if regenerate || !hadQR {
-			columns = append(columns, "qr_code = ?")
+			columns = append(columns, fmt.Sprintf("qr_code = $%d", len(args)+1))
 			args = append(args, qr)
 		}
 		if len(columns) == 0 {
 			return nil
 		}
-		args = append(args, deviceID)
-		_, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE devices SET %s WHERE deviceID = ?", strings.Join(columns, ", ")), args...)
+		_, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE devices SET %s WHERE deviceID = $%d", strings.Join(columns, ", "), len(args)+1), append(args, deviceID)...)
 		if err != nil {
 			return fmt.Errorf("failed to backfill device codes: %w", err)
 		}
@@ -481,8 +480,8 @@ func (s *DeviceAdminService) ensureDeviceCodes(ctx context.Context, tx *sql.Tx, 
 func (s *DeviceAdminService) resetDeviceCodes(ctx context.Context, tx *sql.Tx, deviceID string) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE devices
-		SET barcode = ?, qr_code = ?
-		WHERE deviceID = ?
+		SET barcode = $1, qr_code = $2
+		WHERE deviceID = $3
 	`, deviceID, fmt.Sprintf("QR-%s", deviceID), deviceID)
 	if err != nil {
 		return fmt.Errorf("failed to regenerate device codes: %w", err)
