@@ -73,7 +73,6 @@ interface PackageFormData {
   subcategory_id: string;
   subbiercategory_id: string;
   device_quantity?: number;
-  device_prefix?: string;
   website_visible: boolean;
   website_thumbnail?: string;
   website_images?: string[];
@@ -97,7 +96,6 @@ const initialFormData: PackageFormData = {
   subcategory_id: '',
   subbiercategory_id: '',
   device_quantity: undefined,
-  device_prefix: '',
   website_visible: false,
   website_thumbnail: undefined,
   website_images: [],
@@ -290,14 +288,13 @@ export function ProductPackagesTab() {
       await api.post(`/admin/products/${productId}/devices`, {
         product_id: productId,
         quantity: quantity,
-        prefix: formData.device_prefix || '',
       });
 
       // Reload devices
       await loadPackageDevices(productId);
 
       // Reset device creation fields
-      setFormData({ ...formData, device_quantity: undefined, device_prefix: '' });
+      setFormData({ ...formData, device_quantity: undefined });
     } catch (error) {
       console.error('Failed to add devices:', error);
       window.alert('Fehler beim Hinzufügen der Geräte.');
@@ -338,7 +335,6 @@ export function ProductPackagesTab() {
           subcategory_id: data.subcategory_id || '',
           subbiercategory_id: '',
           device_quantity: undefined,
-          device_prefix: '',
           website_visible: Boolean(data.website_visible),
         });
         // Load devices for the package's product
@@ -454,7 +450,6 @@ export function ProductPackagesTab() {
             await api.post(`/admin/products/${productId}/devices`, {
               product_id: productId,
               quantity: formData.device_quantity,
-              prefix: formData.device_prefix || '',
             });
           } catch (deviceError) {
             console.error('Failed to create devices:', deviceError);
@@ -1078,23 +1073,6 @@ export function ProductPackagesTab() {
                       className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                     />
                   </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-white">
-                      Geräte-Präfix
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.device_prefix || ''}
-                      onChange={event =>
-                        setFormData({
-                          ...formData,
-                          device_prefix: event.target.value,
-                        })
-                      }
-                      placeholder="z. B. PKG"
-                      className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
-                    />
-                  </div>
                 </div>
 
                 {editingPackage && (
@@ -1114,7 +1092,7 @@ export function ProductPackagesTab() {
                 )}
 
                 <p className="text-xs text-gray-400 mt-3">
-                  Geräte werden automatisch mit aufsteigender Nummerierung erstellt (z. B. {formData.device_prefix || 'PKG'}0001).
+                  Präfix und Nummerierung werden automatisch aus der Subkategorie generiert (z. B. LGT3001).
                 </p>
               </div>
 

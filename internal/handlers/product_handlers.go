@@ -664,7 +664,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this product is linked to a package so we can keep metadata in sync
 	var packageID sql.NullInt64
-	if err := db.QueryRow("SELECT package_id FROM product_packages WHERE product_id = $1", id).Scan(&packageID); err != nil && err != sql.ErrNoRows {
+	if err := db.QueryRow("SELECT package_id FROM product_package_items WHERE product_id = $1 LIMIT 1", id).Scan(&packageID); err != nil && err != sql.ErrNoRows {
 		log.Printf("Failed to check if product is a package: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
 		return
@@ -787,7 +787,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(`
 			UPDATE product_packages
 			SET name = $1, description = $2, price = $3
-			WHERE package_id = $4
+			WHERE id = $4
 		`, req.Name, req.Description, req.ItemCostPerDay, packageID.Int64); err != nil {
 			log.Printf("Failed to update linked product package for product %d: %v", id, err)
 			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update linked product package"})
@@ -842,7 +842,7 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Check if this product is a package product (managed by product_packages)
 	var packageID int
-	err = db.QueryRow("SELECT package_id FROM product_packages WHERE product_id = $1", id).Scan(&packageID)
+	err = db.QueryRow("SELECT package_id FROM product_package_items WHERE product_id = $1 LIMIT 1", id).Scan(&packageID)
 	if err == nil {
 		// Product is managed by a package - cannot be deleted directly
 		respondJSON(w, http.StatusBadRequest, map[string]string{
@@ -1324,8 +1324,8 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 
 	// If this product is a package-product, keep package visibility in sync
 	var pkgID sql.NullInt64
-	if err := db.QueryRow("SELECT package_id FROM product_packages WHERE product_id = $1", id).Scan(&pkgID); err == nil && pkgID.Valid {
-		if _, err := db.Exec("UPDATE product_packages SET website_visible = $1 WHERE package_id = $2", websiteVisible, pkgID.Int64); err != nil {
+	if err := db.QueryRow("SELECT package_id FROM product_package_items WHERE product_id = $1 LIMIT 1", id).Scan(&pkgID); err == nil && pkgID.Valid {
+		if _, err := db.Exec("UPDATE product_packages SET website_visible = $1 WHERE id = $2", websiteVisible, pkgID.Int64); err != nil {
 			log.Printf("[WEBSITE] Failed to sync package visibility for product %d (package %d): %v", id, pkgID.Int64, err)
 		} else {
 			// Also revalidate packages page

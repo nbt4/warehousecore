@@ -107,7 +107,6 @@ interface ProductFormData {
   power_consumption?: number;
   pos_in_category?: number;
   device_quantity?: number;
-  device_prefix?: string;
   // Accessories & Consumables fields
   is_accessory?: boolean;
   is_consumable?: boolean;
@@ -378,7 +377,6 @@ export function ProductsTab() {
       power_consumption: product.power_consumption ?? undefined,
       pos_in_category: product.pos_in_category ?? undefined,
       device_quantity: undefined,
-      device_prefix: '',
       // Accessories & Consumables fields
       is_accessory: product.is_accessory ?? false,
       is_consumable: product.is_consumable ?? false,
@@ -465,14 +463,13 @@ export function ProductsTab() {
       await api.post(`/admin/products/${editingProduct}/devices`, {
         product_id: editingProduct,
         quantity: quantity,
-        prefix: formData.device_prefix || '',
       });
 
       // Reload devices
       await loadProductDevices(editingProduct);
 
       // Reset device creation fields
-      setFormData({ ...formData, device_quantity: undefined, device_prefix: '' });
+      setFormData({ ...formData, device_quantity: undefined });
     } catch (error) {
       console.error('Failed to add devices:', error);
       window.alert('Fehler beim Hinzufügen der Geräte.');
@@ -568,7 +565,6 @@ export function ProductsTab() {
             await api.post(`/admin/products/${productId}/devices`, {
               product_id: productId,
               quantity: formData.device_quantity,
-              prefix: formData.device_prefix || '',
             });
           } catch (deviceError) {
             console.error('Failed to create devices:', deviceError);
@@ -1432,23 +1428,6 @@ export function ProductsTab() {
                         className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                       />
                     </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-white">
-                        Geräte-Präfix
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.device_prefix ?? ''}
-                        onChange={event =>
-                          setFormData({
-                            ...formData,
-                            device_prefix: event.target.value,
-                          })
-                        }
-                        placeholder="z. B. LED"
-                        className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
-                      />
-                    </div>
                   </div>
 
                   {editingProduct && (
@@ -1463,7 +1442,7 @@ export function ProductsTab() {
                   )}
 
                   <p className="text-xs text-gray-400">
-                    Geräte werden automatisch mit aufsteigender Nummerierung erstellt (z. B. {formData.device_prefix || 'XXX'}0001).
+                    Präfix und Nummerierung werden automatisch aus der Subkategorie generiert (z. B. LGT3001).
                   </p>
                 </div>
 
