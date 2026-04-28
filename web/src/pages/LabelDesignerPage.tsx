@@ -1,706 +1,631 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, Download, Printer, QrCode, Barcode, Type, Save, Image as ImageIcon } from 'lucide-react';
+import {
+  Trash2, Download, Printer, QrCode, Barcode, Type, Save,
+  Image as ImageIcon, Lock, Unlock, Grid3x3,
+} from 'lucide-react';
 import { labelsApi, devicesApi, casesApi } from '../lib/api';
 import type { LabelTemplate, LabelElement, Device, CaseSummary } from '../lib/api';
 import JSZip from 'jszip';
 import './LabelDesignerPage.css';
 
+/* ── Types ──────────────────────────────────────────────────────────── */
+
 interface DesignElement extends LabelElement {
   id: string;
-  image_data?: string; // Base64 encoded image data
+  image_data?: string;
+  aspect_ratio_locked?: boolean;
 }
 
-const PRESET_SIZES = [
-  { name: '62x29mm (Standard)', width: 62, height: 29 },
-  { name: '100x50mm (Groß)', width: 100, height: 50 },
-  { name: '50x25mm (Klein)', width: 50, height: 25 },
-  { name: 'Custom', width: 0, height: 0 },
+type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+interface DragState {
+  type: 'move' | 'resize';
+  handle?: ResizeHandle;
+  elementId: string;
+  startX: number;
+  startY: number;
+  origX: number;
+  origY: number;
+  origW: number;
+  origH: number;
+  origRatio: number;
+}
+
+/* ── Constants ──────────────────────────────────────────────────────── */
+
+const ZEBRA_PRESETS = [
+  { label: '62 × 29 mm (Standard)',         w: 62,    h: 29    },
+  { label: '57 × 32 mm  (2.25 × 1.25")',    w: 57.2,  h: 31.8  },
+  { label: '101 × 51 mm (4 × 2")',           w: 101.6, h: 50.8  },
+  { label: '101 × 25 mm (4 × 1")',           w: 101.6, h: 25.4  },
+  { label: '51 × 25 mm  (2 × 1")',           w: 50.8,  h: 25.4  },
+  { label: '38 × 25 mm  (1.5 × 1")',         w: 38.1,  h: 25.4  },
+  { label: '25 × 25 mm  (1 × 1")',           w: 25.4,  h: 25.4  },
+  { label: '101 × 152 mm (4 × 6" Versand)',  w: 101.6, h: 152.4 },
+  { label: 'Custom',                          w: 0,     h: 0     },
 ];
 
-export default function LabelDesignerPage() {
-  const [labelWidth, setLabelWidth] = useState(62);
-  const [labelHeight, setLabelHeight] = useState(29);
-  const [elements, setElements] = useState<DesignElement[]>([]);
-  const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [cases, setCases] = useState<CaseSummary[]>([]);
-  const [previewDevice, setPreviewDevice] = useState<Device | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [templateName, setTemplateName] = useState('Neues Template');
-  const [templates, setTemplates] = useState<LabelTemplate[]>([]);
-  const [currentTemplateId, setCurrentTemplateId] = useState<number | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const FIELD_OPTIONS = [
+  { value: 'device_id',     label: 'Device ID'    },
+  { value: 'product_name',  label: 'Produktname'  },
+  { value: 'serial_number', label: 'Seriennummer' },
+  { value: 'barcode',       label: 'Barcode'      },
+  { value: 'zone_code',     label: 'Zonen-Code'   },
+  { value: 'zone_name',     label: 'Zonenname'    },
+  { value: 'status',        label: 'Status'       },
+];
 
+const EDITOR_MAX = 480;
+const GRID_MM    = 1;
+
+const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
+
+const HANDLE_POS: Record<ResizeHandle, { top: string; left: string; cursor: string }> = {
+  nw: { top: '-4px',             left: '-4px',             cursor: 'nw-resize' },
+  n:  { top: '-4px',             left: 'calc(50% - 4px)',  cursor: 'n-resize'  },
+  ne: { top: '-4px',             left: 'calc(100% - 4px)', cursor: 'ne-resize' },
+  w:  { top: 'calc(50% - 4px)',  left: '-4px',             cursor: 'w-resize'  },
+  e:  { top: 'calc(50% - 4px)',  left: 'calc(100% - 4px)', cursor: 'e-resize'  },
+  sw: { top: 'calc(100% - 4px)', left: '-4px',             cursor: 'sw-resize' },
+  s:  { top: 'calc(100% - 4px)', left: 'calc(50% - 4px)',  cursor: 's-resize'  },
+  se: { top: 'calc(100% - 4px)', left: 'calc(100% - 4px)', cursor: 'se-resize' },
+};
+
+function snapVal(v: number, grid: number, enabled: boolean): number {
+  if (!enabled || grid <= 0) return v;
+  return Math.round(v / grid) * grid;
+}
+
+/* ── Component ──────────────────────────────────────────────────────── */
+
+export default function LabelDesignerPage() {
+  const [labelW, setLabelW]         = useState(62);
+  const [labelH, setLabelH]         = useState(29);
+  const [elements, setElements]     = useState<DesignElement[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+
+  const [templateName, setTemplateName]   = useState('Neues Template');
+  const [templates, setTemplates]         = useState<LabelTemplate[]>([]);
+  const [currentTplId, setCurrentTplId]   = useState<number | null>(null);
+  const [saving, setSaving]               = useState(false);
+  const [exporting, setExporting]         = useState(false);
+
+  const [devices, setDevices]             = useState<Device[]>([]);
+  const [cases, setCases]                 = useState<CaseSummary[]>([]);
+  const [previewDevice, setPreviewDevice] = useState<Device | null>(null);
+
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
+  const dragRef      = useRef<DragState | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Scale: fit label into EDITOR_MAX × EDITOR_MAX px
+  const scale = Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH);
+  const edW   = Math.round(labelW * scale);
+  const edH   = Math.round(labelH * scale);
+
+  useEffect(() => { loadDevices(); loadCases(); loadTemplates(); }, []);
+
+  // Debounced canvas preview – avoids API spam while dragging
   useEffect(() => {
-    loadDevices();
-    loadCases();
-    loadTemplates();
-  }, []);
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = setTimeout(() => {
+      if (previewDevice) renderPreview();
+    }, 600);
+    return () => { if (previewTimer.current) clearTimeout(previewTimer.current); };
+  }, [elements, labelW, labelH, previewDevice]);
+
+  const toast = (type: 'success' | 'error', message: string) =>
+    window.dispatchEvent(new CustomEvent('toast', { detail: { type, message } }));
+
+  /* ── Data loading ── */
 
   const loadDevices = async () => {
     try {
-      // Set high limit to load all devices (default backend limit is only 100)
       const { data } = await devicesApi.getAll({ limit: 50000 });
       setDevices(data);
-      if (data.length > 0) {
-        setPreviewDevice(data[0]);
-      }
-    } catch (error) {
-      console.error('Failed to load devices:', error);
-    }
+      if (data.length > 0) setPreviewDevice(data[0]);
+    } catch { console.error('Failed to load devices'); }
   };
 
   const loadCases = async () => {
     try {
       const { data } = await casesApi.list({});
       setCases(data.cases || []);
-    } catch (error) {
-      console.error('Failed to load cases:', error);
-    }
+    } catch { console.error('Failed to load cases'); }
   };
 
   const loadTemplates = async () => {
     try {
       const { data } = await labelsApi.getTemplates();
       setTemplates(data);
+      const def = data.find(t => t.is_default);
+      if (def) applyTemplate(def);
+    } catch { console.error('Failed to load templates'); }
+  };
 
-      // Load default template if exists
-      const defaultTemplate = data.find((t) => t.is_default);
-      if (defaultTemplate) {
-        loadTemplate(defaultTemplate);
-      }
-    } catch (error) {
-      console.error('Failed to load templates:', error);
+  /* ── Template operations ── */
+
+  const applyTemplate = (tpl: LabelTemplate) => {
+    setCurrentTplId(tpl.id ?? null);
+    setLabelW(tpl.width);
+    setLabelH(tpl.height);
+    setTemplateName(tpl.name);
+    try {
+      const parsed: LabelElement[] = JSON.parse(tpl.template_json || '[]');
+      setElements(parsed.map((e, i) => ({ ...e, id: `elem-${i}` })));
+    } catch {
+      setElements([]);
     }
+    setSelectedId(null);
   };
 
-  const loadTemplate = (template: LabelTemplate) => {
-    setCurrentTemplateId(template.id || null);
-    setLabelWidth(template.width);
-    setLabelHeight(template.height);
-    setTemplateName(template.name);
-    const parsed = JSON.parse(template.template_json);
-    setElements(parsed.map((e: LabelElement, i: number) => ({ ...e, id: `elem-${i}` })));
-  };
-
-  const createNewTemplate = () => {
-    setCurrentTemplateId(null);
+  const newTemplate = () => {
+    setCurrentTplId(null);
     setTemplateName('Neues Template');
-    setLabelWidth(62);
-    setLabelHeight(29);
+    setLabelW(62);
+    setLabelH(29);
     setElements([]);
-    setSelectedElement(null);
+    setSelectedId(null);
+  };
+
+  const saveTemplate = async () => {
+    if (!templateName.trim()) return toast('error', 'Bitte Template-Namen eingeben!');
+    setSaving(true);
+    try {
+      const tpl: LabelTemplate = {
+        name: templateName,
+        description: '',
+        width: labelW,
+        height: labelH,
+        // Strip runtime-only fields before persisting
+        template_json: JSON.stringify(
+          elements.map(({ id: _id, image_data: _img, aspect_ratio_locked: _ar, ...rest }) => rest)
+        ),
+        is_default: false,
+      };
+      if (currentTplId) {
+        await labelsApi.updateTemplate(currentTplId, tpl);
+        toast('success', 'Template aktualisiert');
+      } else {
+        const { data } = await labelsApi.createTemplate(tpl);
+        setCurrentTplId(data.id ?? null);
+        toast('success', 'Template erstellt');
+      }
+      await loadTemplates();
+    } catch { toast('error', 'Fehler beim Speichern'); }
+    finally { setSaving(false); }
+  };
+
+  const setAsDefault = async () => {
+    if (!currentTplId) return toast('error', 'Bitte Template zuerst speichern!');
+    try {
+      await labelsApi.updateTemplate(currentTplId, { is_default: true } as Partial<LabelTemplate>);
+      await loadTemplates();
+      toast('success', 'Als Standard gesetzt ★');
+    } catch { toast('error', 'Fehler'); }
   };
 
   const deleteTemplate = async (id: number) => {
     if (!confirm('Template wirklich löschen?')) return;
-
     try {
       await labelsApi.deleteTemplate(id);
       await loadTemplates();
-      if (currentTemplateId === id) {
-        createNewTemplate();
-      }
-      alert('Template gelöscht!');
-    } catch (error) {
-      console.error('Failed to delete template:', error);
-      alert('Fehler beim Löschen');
-    }
+      if (currentTplId === id) newTemplate();
+      toast('success', 'Template gelöscht');
+    } catch { toast('error', 'Fehler beim Löschen'); }
   };
 
-  const addElement = (type: 'qrcode' | 'barcode' | 'text' | 'image') => {
-    const newElement: DesignElement = {
-      id: `elem-${Date.now()}`,
+  /* ── Element operations ── */
+
+  const addElement = (type: DesignElement['type']) => {
+    const sizes: Record<string, [number, number]> = {
+      qrcode:  [Math.min(25, labelH - 2), Math.min(25, labelH - 2)],
+      barcode: [Math.min(50, labelW - 4), Math.min(15, labelH - 4)],
+      image:   [Math.min(20, labelW - 4), Math.min(20, labelH - 4)],
+      text:    [Math.min(30, labelW - 4), Math.min(6,  labelH - 4)],
+    };
+    const [w, h] = sizes[type];
+    const el: DesignElement = {
+      id:       `elem-${Date.now()}`,
       type,
-      x: 5,
-      y: 5,
-      width: type === 'qrcode' ? 25 : type === 'barcode' ? 50 : type === 'image' ? 20 : 30,
-      height: type === 'qrcode' ? 25 : type === 'barcode' ? 15 : type === 'image' ? 20 : 6,
+      x: 2, y: 2,
+      width:    Math.max(2, w),
+      height:   Math.max(2, h),
       rotation: 0,
-      content: type === 'text' ? 'device_id' : type === 'image' ? '' : 'device_id',
+      content:  type === 'image' ? '' : 'device_id',
       style: {
-        font_size: 10,
+        font_size:   8,
         font_weight: 'normal',
         font_family: 'Arial',
-        color: '#000000',
-        alignment: 'left',
+        color:       '#000000',
+        alignment:   'left',
         format: type === 'barcode' ? 'code128' : type === 'qrcode' ? 'qr' : undefined,
       },
+      aspect_ratio_locked: type === 'qrcode' || type === 'image',
     };
-    setElements([...elements, newElement]);
-    setSelectedElement(newElement.id);
+    setElements(prev => [...prev, el]);
+    setSelectedId(el.id);
   };
 
-  const handleImageUpload = (elementId: string, file: File) => {
+  const deleteElement = (id: string) => {
+    setElements(prev => prev.filter(e => e.id !== id));
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  const updateEl = (id: string, updates: Partial<DesignElement>) =>
+    setElements(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+
+  const handleImageUpload = (id: string, file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = e.target?.result as string;
-      updateElement(elementId, { image_data: base64, content: file.name });
+    reader.onload = ev => {
+      const b64 = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        setElements(prev => prev.map(e => {
+          if (e.id !== id) return e;
+          const up: Partial<DesignElement> = { image_data: b64, content: file.name };
+          if (e.aspect_ratio_locked && img.naturalHeight > 0)
+            up.height = e.width / (img.naturalWidth / img.naturalHeight);
+          return { ...e, ...up };
+        }));
+      };
+      img.src = b64;
     };
     reader.readAsDataURL(file);
   };
 
-  const deleteElement = (id: string) => {
-    setElements(elements.filter((e) => e.id !== id));
-    if (selectedElement === id) {
-      setSelectedElement(null);
-    }
+  /* ── Drag / resize ── */
+
+  const onElementMouseDown = (e: React.MouseEvent, elem: DesignElement) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedId(elem.id);
+    dragRef.current = {
+      type: 'move',
+      elementId: elem.id,
+      startX: e.clientX, startY: e.clientY,
+      origX: elem.x,     origY: elem.y,
+      origW: elem.width, origH: elem.height,
+      origRatio: elem.height > 0 ? elem.width / elem.height : 1,
+    };
   };
 
-  const updateElement = (id: string, updates: Partial<DesignElement>) => {
-    setElements(elements.map((e) => (e.id === id ? { ...e, ...updates } : e)));
+  const onHandleMouseDown = (e: React.MouseEvent, elem: DesignElement, handle: ResizeHandle) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = {
+      type: 'resize',
+      handle,
+      elementId: elem.id,
+      startX: e.clientX, startY: e.clientY,
+      origX: elem.x,     origY: elem.y,
+      origW: elem.width, origH: elem.height,
+      origRatio: elem.height > 0 ? elem.width / elem.height : 1,
+    };
   };
 
-  const saveTemplate = async () => {
-    if (!templateName.trim()) {
-      alert('Bitte Template-Namen eingeben!');
+  const onMouseMove = (e: React.MouseEvent) => {
+    const ds = dragRef.current;
+    if (!ds) return;
+
+    const dx = (e.clientX - ds.startX) / scale;
+    const dy = (e.clientY - ds.startY) / scale;
+
+    if (ds.type === 'move') {
+      const nx = snapVal(Math.max(0, Math.min(labelW - ds.origW, ds.origX + dx)), GRID_MM, snapEnabled);
+      const ny = snapVal(Math.max(0, Math.min(labelH - ds.origH, ds.origY + dy)), GRID_MM, snapEnabled);
+      updateEl(ds.elementId, { x: nx, y: ny });
       return;
     }
 
-    setSaving(true);
-    try {
-      const templateJSON = JSON.stringify(
-        elements.map(({ id, ...rest }) => rest)
-      );
+    const h      = ds.handle!;
+    const locked = elements.find(el => el.id === ds.elementId)?.aspect_ratio_locked ?? false;
 
-      const template: LabelTemplate = {
-        name: templateName,
-        description: '',
-        width: labelWidth,
-        height: labelHeight,
-        template_json: templateJSON,
-        is_default: false,
-      };
+    let nx = ds.origX, ny = ds.origY, nw = ds.origW, nh = ds.origH;
 
-      if (currentTemplateId) {
-        // Update existing template
-        await labelsApi.updateTemplate(currentTemplateId, template);
-        alert('Template aktualisiert!');
-      } else {
-        // Create new template
-        const { data } = await labelsApi.createTemplate(template);
-        setCurrentTemplateId(data.id || null);
-        alert('Template erstellt!');
-      }
+    if (h.includes('e')) nw = Math.max(2, ds.origW + dx);
+    if (h.includes('s')) nh = Math.max(2, ds.origH + dy);
+    if (h.includes('w')) { nw = Math.max(2, ds.origW - dx); nx = ds.origX + ds.origW - nw; }
+    if (h.includes('n')) { nh = Math.max(2, ds.origH - dy); ny = ds.origY + ds.origH - nh; }
 
-      await loadTemplates();
-    } catch (error) {
-      console.error('Failed to save template:', error);
-      alert('Fehler beim Speichern');
-    } finally {
-      setSaving(false);
+    // Maintain aspect ratio on corner drags when locked
+    if (locked && (h === 'nw' || h === 'ne' || h === 'se' || h === 'sw')) {
+      nh = nw / ds.origRatio;
+      if (h === 'ne') ny = ds.origY + ds.origH - nh;
+      if (h === 'sw') nx = ds.origX + ds.origW - nw;
+      if (h === 'nw') { ny = ds.origY + ds.origH - nh; nx = ds.origX + ds.origW - nw; }
     }
+
+    nx = snapVal(Math.max(0, nx), GRID_MM, snapEnabled);
+    ny = snapVal(Math.max(0, ny), GRID_MM, snapEnabled);
+    nw = snapVal(Math.max(2, nw), GRID_MM, snapEnabled);
+    nh = snapVal(Math.max(2, nh), GRID_MM, snapEnabled);
+
+    updateEl(ds.elementId, { x: nx, y: ny, width: nw, height: nh });
   };
 
-  const setAsDefault = async () => {
-    if (!currentTemplateId) {
-      alert('Bitte Template zuerst speichern!');
-      return;
-    }
+  const onMouseUp = () => { dragRef.current = null; };
 
-    try {
-      await labelsApi.updateTemplate(currentTemplateId, { is_default: true });
-      await loadTemplates();
-      alert('Als Standard gesetzt!');
-    } catch (error) {
-      console.error('Failed to set default:', error);
-      alert('Fehler beim Setzen des Standards');
-    }
+  /* ── Canvas preview (300 DPI) ── */
+
+  const resolveContent = (field: string, dev: Device): string => {
+    const map: Record<string, string | undefined> = {
+      device_id:    dev.device_id,
+      product_name: dev.product_name,
+      serial_number:dev.serial_number,
+      barcode:      dev.barcode ?? dev.device_id,
+      zone_code:    dev.zone_code,
+      zone_name:    dev.zone_name,
+      status:       dev.status,
+    };
+    return map[field] ?? field;
   };
+
+  const drawImg = (
+    ctx: CanvasRenderingContext2D,
+    src: string, x: number, y: number, w: number, h: number
+  ): Promise<void> =>
+    new Promise(res => {
+      const img = new Image();
+      img.onload  = () => { ctx.drawImage(img, x, y, w, h); res(); };
+      img.onerror = () => res();
+      img.src = src;
+    });
 
   const renderPreview = async () => {
     if (!previewDevice || !canvasRef.current) return;
-
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx    = canvas.getContext('2d');
     if (!ctx) return;
 
     const dpi = 300;
-    const mmToPx = dpi / 25.4;
-    const width = labelWidth * mmToPx;
-    const height = labelHeight * mmToPx;
+    const mm  = dpi / 25.4;
+    canvas.width  = Math.round(labelW * mm);
+    canvas.height = Math.round(labelH * mm);
 
-    canvas.width = width;
-    canvas.height = height;
-
-    // White background
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
 
-    // Border
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, 0, width, height);
-
-    // Render elements
     for (const elem of elements) {
-      const x = elem.x * mmToPx;
-      const y = elem.y * mmToPx;
-      const w = elem.width * mmToPx;
-      const h = elem.height * mmToPx;
+      const x = elem.x * mm, y = elem.y * mm;
+      const w = elem.width * mm, h = elem.height * mm;
+      const content = resolveContent(elem.content, previewDevice);
 
-      // Get content
-      let content = elem.content;
-      if (elem.content === 'device_id') content = previewDevice.device_id;
-      else if (elem.content === 'product_name') content = previewDevice.product_name || '';
-      else if (elem.content === 'device_name') content = previewDevice.device_id;
-
-      if (elem.type === 'qrcode') {
-        try {
+      try {
+        if (elem.type === 'qrcode') {
           const { data } = await labelsApi.generateQRCode(content, Math.floor(w));
-          const img = new Image();
-          await new Promise<void>((resolve) => {
-            img.onload = () => {
-              ctx.drawImage(img, x, y, w, h);
-              resolve();
-            };
-            img.src = data.image_data;
-          });
-        } catch (err) {
-          console.error('QR code generation failed:', err);
-        }
-      } else if (elem.type === 'barcode') {
-        try {
+          await drawImg(ctx, data.image_data, x, y, w, h);
+        } else if (elem.type === 'barcode') {
           const { data } = await labelsApi.generateBarcode(content, Math.floor(w), Math.floor(h));
-          const img = new Image();
-          await new Promise<void>((resolve) => {
-            img.onload = () => {
-              ctx.drawImage(img, x, y, w, h);
-              resolve();
-            };
-            img.src = data.image_data;
-          });
-        } catch (err) {
-          console.error('Barcode generation failed:', err);
+          await drawImg(ctx, data.image_data, x, y, w, h);
+        } else if (elem.type === 'image' && elem.image_data) {
+          await drawImg(ctx, elem.image_data, x, y, w, h);
+        } else if (elem.type === 'text') {
+          ctx.fillStyle = elem.style.color || '#000000';
+          const fs = (elem.style.font_size || 8) * (dpi / 96);
+          ctx.font      = `${elem.style.font_weight || 'normal'} ${fs}px ${elem.style.font_family || 'Arial'}`;
+          ctx.textAlign = (elem.style.alignment as CanvasTextAlign) || 'left';
+          ctx.fillText(content, x, y + fs);
         }
-      } else if (elem.type === 'image') {
-        if (elem.image_data) {
-          try {
-            const img = new Image();
-            await new Promise<void>((resolve) => {
-              img.onload = () => {
-                ctx.drawImage(img, x, y, w, h);
-                resolve();
-              };
-              img.src = elem.image_data!;
-            });
-          } catch (err) {
-            console.error('Image rendering failed:', err);
-          }
-        }
-      } else if (elem.type === 'text') {
-        ctx.fillStyle = elem.style.color || '#000000';
-        ctx.font = `${elem.style.font_weight || 'normal'} ${(elem.style.font_size || 10) * (dpi / 96)}px ${elem.style.font_family || 'Arial'}`;
-        ctx.textAlign = (elem.style.alignment as CanvasTextAlign) || 'left';
-        ctx.fillText(content, x, y + (elem.style.font_size || 10) * (dpi / 96));
+      } catch (err) {
+        console.error('Render error for element', elem.id, err);
       }
     }
   };
 
-  useEffect(() => {
-    if (previewDevice) {
-      renderPreview();
-    }
-  }, [elements, labelWidth, labelHeight, previewDevice]);
+  /* ── Batch label generation ── */
 
-  const generateAllLabels = async () => {
-    const totalItems = devices.length + cases.length;
-    if (totalItems === 0) {
-      alert('Keine Devices oder Cases gefunden!');
-      return;
-    }
+  const generateLabels = async (devs: Device[], cas: CaseSummary[]) => {
+    const defaultTpl = templates.find(t => t.is_default);
+    if (!defaultTpl) return toast('error', 'Bitte zuerst ein Template als Standard setzen!');
 
-    // Find default template
-    const defaultTemplate = templates.find((t) => t.is_default);
-    if (!defaultTemplate) {
-      alert('Bitte zuerst ein Template als Standard setzen!');
-      return;
-    }
-
-    // Save current state
-    const originalTemplateId = currentTemplateId;
-
+    const origTplId = currentTplId;
     setExporting(true);
-    let successCount = 0;
-    let failCount = 0;
+    let ok = 0, fail = 0;
+
     try {
-      // Load default template temporarily
-      loadTemplate(defaultTemplate);
-      await new Promise((r) => setTimeout(r, 1000)); // Wait for template to fully load
+      applyTemplate(defaultTpl);
+      await new Promise(r => setTimeout(r, 900));
 
-      // Generate labels for all devices
-      for (const device of devices) {
-        setPreviewDevice(device);
-        await new Promise((r) => setTimeout(r, 500)); // Longer wait for canvas render
-
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const imageData = canvas.toDataURL('image/png');
-          try {
-            await labelsApi.saveLabel(device.device_id, imageData);
-            successCount++;
-          } catch (error) {
-            console.error(`Failed to save label for ${device.device_id}:`, error);
-            failCount++;
-          }
+      for (const dev of devs) {
+        setPreviewDevice(dev);
+        await new Promise(r => setTimeout(r, 450));
+        if (canvasRef.current) {
+          try { await labelsApi.saveLabel(dev.device_id, canvasRef.current.toDataURL('image/png')); ok++; }
+          catch { fail++; }
         }
       }
 
-      // Generate labels for all cases
-      for (const caseItem of cases) {
-        // Convert case to device-like object for rendering
-        const caseAsDevice: Device = {
-          device_id: `CASE-${caseItem.case_id}`,
-          product_name: caseItem.name,
-          status: caseItem.status,
-          zone_code: caseItem.zone_code,
-          zone_name: caseItem.zone_name,
-          zone_id: caseItem.zone_id,
+      for (const c of cas) {
+        const fake: Device = {
+          device_id:    `CASE-${c.case_id}`,
+          product_name: c.name,
+          status:       c.status,
+          zone_code:    c.zone_code,
+          zone_name:    c.zone_name,
+          zone_id:      c.zone_id,
         };
-
-        setPreviewDevice(caseAsDevice);
-        await new Promise((r) => setTimeout(r, 500)); // Same wait time as devices for consistent rendering
-
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const imageData = canvas.toDataURL('image/png');
-          try {
-            await labelsApi.saveCaseLabel(caseItem.case_id, imageData);
-            successCount++;
-          } catch (error) {
-            console.error(`Failed to save label for CASE-${caseItem.case_id}:`, error);
-            failCount++;
-          }
+        setPreviewDevice(fake);
+        await new Promise(r => setTimeout(r, 450));
+        if (canvasRef.current) {
+          try { await labelsApi.saveCaseLabel(c.case_id, canvasRef.current.toDataURL('image/png')); ok++; }
+          catch { fail++; }
         }
       }
 
-      alert(`${successCount}/${totalItems} Labels generiert!\n(${devices.length} Devices + ${cases.length} Cases)${failCount > 0 ? `\n${failCount} Fehler` : ''}`);
-    } catch (error) {
-      console.error('Generation failed:', error);
-      alert('Fehler beim Generieren');
-    } finally {
+      toast('success', `${ok}/${devs.length + cas.length} Labels generiert${fail ? ` · ${fail} Fehler` : ''}`);
+    } catch { toast('error', 'Fehler beim Generieren'); }
+    finally {
       setExporting(false);
-      if (devices.length > 0) {
-        setPreviewDevice(devices[0]);
-      }
-      // Restore original template
-      if (originalTemplateId) {
-        const originalTemplate = templates.find((t) => t.id === originalTemplateId);
-        if (originalTemplate) {
-          loadTemplate(originalTemplate);
-        }
+      if (devices.length > 0) setPreviewDevice(devices[0]);
+      if (origTplId) {
+        const orig = templates.find(t => t.id === origTplId);
+        if (orig) applyTemplate(orig);
       }
     }
   };
+
+  const generateAllLabels = () => generateLabels(devices, cases);
 
   const generateMissingLabels = async () => {
-    // Filter devices and cases without labels
-    const devicesWithoutLabels = devices.filter(d => !d.label_path);
-    const casesWithoutLabels = cases.filter(c => !c.label_path);
-    const totalMissing = devicesWithoutLabels.length + casesWithoutLabels.length;
-
-    if (totalMissing === 0) {
-      alert('Alle Devices und Cases haben bereits Labels!');
-      return;
-    }
-
-    if (!confirm(`${totalMissing} Items ohne Labels gefunden (${devicesWithoutLabels.length} Devices + ${casesWithoutLabels.length} Cases).\n\nLabels jetzt generieren?`)) {
-      return;
-    }
-
-    // Find default template
-    const defaultTemplate = templates.find((t) => t.is_default);
-    if (!defaultTemplate) {
-      alert('Bitte zuerst ein Template als Standard setzen!');
-      return;
-    }
-
-    // Save current state
-    const originalTemplateId = currentTemplateId;
-
-    setExporting(true);
-    let successCount = 0;
-    let failCount = 0;
-    try {
-      // Load default template temporarily
-      loadTemplate(defaultTemplate);
-      await new Promise((r) => setTimeout(r, 1000)); // Wait for template to fully load
-
-      // Generate labels for devices without labels
-      for (const device of devicesWithoutLabels) {
-        setPreviewDevice(device);
-        await new Promise((r) => setTimeout(r, 500)); // Longer wait for canvas render
-
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const imageData = canvas.toDataURL('image/png');
-          try {
-            await labelsApi.saveLabel(device.device_id, imageData);
-            successCount++;
-          } catch (error) {
-            console.error(`Failed to save label for ${device.device_id}:`, error);
-            failCount++;
-          }
-        }
-      }
-
-      // Generate labels for cases without labels
-      for (const caseItem of casesWithoutLabels) {
-        // Convert case to device-like object for rendering
-        const caseAsDevice: Device = {
-          device_id: `CASE-${caseItem.case_id}`,
-          product_name: caseItem.name,
-          status: caseItem.status,
-          zone_code: caseItem.zone_code,
-          zone_name: caseItem.zone_name,
-          zone_id: caseItem.zone_id,
-        };
-
-        setPreviewDevice(caseAsDevice);
-        await new Promise((r) => setTimeout(r, 500)); // Same wait time as devices for consistent rendering
-
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const imageData = canvas.toDataURL('image/png');
-          try {
-            await labelsApi.saveCaseLabel(caseItem.case_id, imageData);
-            successCount++;
-          } catch (error) {
-            console.error(`Failed to save label for CASE-${caseItem.case_id}:`, error);
-            failCount++;
-          }
-        }
-      }
-
-      alert(`${successCount}/${totalMissing} fehlende Labels generiert!\n(${devicesWithoutLabels.length} Devices + ${casesWithoutLabels.length} Cases)${failCount > 0 ? `\n${failCount} Fehler` : ''}`);
-
-      // Reload devices and cases to refresh label_path info
-      await loadDevices();
-      await loadCases();
-    } catch (error) {
-      console.error('Generation failed:', error);
-      alert('Fehler beim Generieren');
-    } finally {
-      setExporting(false);
-      if (devices.length > 0) {
-        setPreviewDevice(devices[0]);
-      }
-      // Restore original template
-      if (originalTemplateId) {
-        const originalTemplate = templates.find((t) => t.id === originalTemplateId);
-        if (originalTemplate) {
-          loadTemplate(originalTemplate);
-        }
-      }
-    }
+    const devsNo  = devices.filter(d => !d.label_path);
+    const casesNo = cases.filter(c => !c.label_path);
+    const total   = devsNo.length + casesNo.length;
+    if (total === 0) return toast('success', 'Alle Items haben bereits Labels!');
+    if (!confirm(`${total} Items ohne Labels (${devsNo.length} Devices + ${casesNo.length} Cases).\nJetzt generieren?`)) return;
+    await generateLabels(devsNo, casesNo);
+    await loadDevices();
+    await loadCases();
   };
 
-  const exportAllLabels = async () => {
+  const exportZip = async () => {
     setExporting(true);
     try {
       const zip = new JSZip();
-      let exportedCount = 0;
-      let skippedCount = 0;
-
-      // Export device labels (only those that already have labels)
-      for (const device of devices) {
-        if (device.label_path) {
-          try {
-            const response = await fetch(device.label_path);
-            if (response.ok) {
-              const blob = await response.blob();
-              zip.file(`devices/${device.device_id}_label.png`, blob);
-              exportedCount++;
-            } else {
-              console.warn(`Failed to fetch label for ${device.device_id}`);
-              skippedCount++;
-            }
-          } catch (error) {
-            console.error(`Error fetching label for ${device.device_id}:`, error);
-            skippedCount++;
-          }
-        } else {
-          skippedCount++;
-        }
+      let n = 0;
+      for (const d of devices.filter(d => d.label_path)) {
+        const r = await fetch(d.label_path!);
+        if (r.ok) { zip.file(`devices/${d.device_id}.png`, await r.blob()); n++; }
       }
-
-      // Export case labels (only those that already have labels)
-      for (const caseItem of cases) {
-        if (caseItem.label_path) {
-          try {
-            const response = await fetch(caseItem.label_path);
-            if (response.ok) {
-              const blob = await response.blob();
-              zip.file(`cases/CASE-${caseItem.case_id}_label.png`, blob);
-              exportedCount++;
-            } else {
-              console.warn(`Failed to fetch label for CASE-${caseItem.case_id}`);
-              skippedCount++;
-            }
-          } catch (error) {
-            console.error(`Error fetching label for CASE-${caseItem.case_id}:`, error);
-            skippedCount++;
-          }
-        } else {
-          skippedCount++;
-        }
+      for (const c of cases.filter(c => c.label_path)) {
+        const r = await fetch(c.label_path!);
+        if (r.ok) { zip.file(`cases/CASE-${c.case_id}.png`, await r.blob()); n++; }
       }
-
-      if (exportedCount === 0) {
-        alert('Keine generierten Labels gefunden! Bitte zuerst Labels generieren.');
-        return;
-      }
-
-      // Generate ZIP file and trigger download
+      if (n === 0) return toast('error', 'Keine generierten Labels vorhanden!');
       const blob = await zip.generateAsync({ type: 'blob' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `labels_export_${new Date().toISOString().split('T')[0]}.zip`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-
-      alert(`${exportedCount} Labels erfolgreich in ZIP exportiert!${skippedCount > 0 ? `\n${skippedCount} Labels übersprungen (nicht generiert)` : ''}`);
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert('Fehler beim Export');
-    } finally {
-      setExporting(false);
-    }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `labels_${new Date().toISOString().split('T')[0]}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('success', `${n} Labels als ZIP exportiert`);
+    } catch { toast('error', 'Fehler beim ZIP-Export'); }
+    finally { setExporting(false); }
   };
 
-  const handlePrint = () => {
+  const printPreview = () => {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL('image/png');
-    const printWindow = window.open('', '', 'width=800,height=600');
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head><title>Print Label</title></head>
-          <body style="margin:0;display:flex;justify-content:center;align-items:center;">
-            <img src="${dataUrl}" onload="window.print();window.close();" />
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-    }
+    const win = window.open('', '', 'width=600,height=400');
+    if (!win) return;
+    const img = win.document.createElement('img');
+    img.src = dataUrl;
+    img.onload = () => { win.print(); win.close(); };
+    win.document.body.style.margin = '0';
+    win.document.body.appendChild(img);
   };
 
-  const selectedElem = elements.find((e) => e.id === selectedElement);
+  /* ── Derived ── */
+
+  const selectedElem = elements.find(e => e.id === selectedId);
+  const canGenerate  = !exporting && (devices.length > 0 || cases.length > 0);
+  const currentIsDef = templates.find(t => t.id === currentTplId)?.is_default ?? false;
+
+  /* ── JSX ── */
 
   return (
     <div className="label-designer">
-      <div className="label-designer-header">
-        <h1>🏷️ Label Designer</h1>
-        <p>Erstelle und verwalte Label-Templates für deine Devices</p>
+
+      {/* Header: title + template selector + save controls */}
+      <div className="ld-header">
+        <div>
+          <h1 className="label-designer-header">🏷️ Label Designer</h1>
+          <p className="label-designer-sub">Etikett-Templates für Zebra-Drucker</p>
+        </div>
+        <div className="ld-header-actions">
+          <select
+            className="input-select"
+            value={currentTplId ?? ''}
+            onChange={e => {
+              const v = e.target.value;
+              if (v === 'new') newTemplate();
+              else { const t = templates.find(t => t.id === parseInt(v)); if (t) applyTemplate(t); }
+            }}
+            style={{ minWidth: 180 }}
+          >
+            <option value="new">+ Neues Template</option>
+            {templates.map(t => (
+              <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' ★' : ''}</option>
+            ))}
+          </select>
+
+          <input
+            className="input-field"
+            value={templateName}
+            onChange={e => setTemplateName(e.target.value)}
+            placeholder="Template Name"
+            style={{ width: 180 }}
+          />
+
+          <button onClick={saveTemplate} disabled={saving} className="btn-save">
+            <Save size={15} /> {saving ? 'Speichert…' : currentTplId ? 'Aktualisieren' : 'Speichern'}
+          </button>
+
+          {currentTplId && !currentIsDef && (
+            <button onClick={setAsDefault} className="btn-add">★ Standard</button>
+          )}
+
+          {currentTplId && (
+            <button onClick={() => deleteTemplate(currentTplId)} className="btn-delete-small">
+              <Trash2 size={15} />
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Three-column grid */}
       <div className="designer-grid">
-        {/* Left Panel - Toolbar & Properties */}
+
+        {/* ── Left panel: tools + properties ── */}
         <div className="designer-panel glass-dark">
-          {/* Template Management */}
-          <div className="panel-section">
-            <h3>Template</h3>
-            <input
-              type="text"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              className="input-field"
-              placeholder="Template Name"
-            />
-            <select
-              className="input-select w-full"
-              value={currentTemplateId || ''}
-              onChange={(e) => {
-                const id = e.target.value;
-                if (id === 'new') {
-                  createNewTemplate();
-                } else if (id) {
-                  const template = templates.find((t) => t.id === parseInt(id));
-                  if (template) loadTemplate(template);
-                }
-              }}
-            >
-              <option value="new">+ Neues Template</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} {t.is_default ? '★' : ''}
-                </option>
-              ))}
-            </select>
-            <div className="button-group">
-              <button onClick={saveTemplate} disabled={saving} className="btn-save">
-                <Save size={18} /> {saving ? 'Speichere...' : currentTemplateId ? 'Aktualisieren' : 'Speichern'}
-              </button>
-              {currentTemplateId && !templates.find((t) => t.id === currentTemplateId)?.is_default && (
-                <button onClick={setAsDefault} className="btn-add">
-                  Als Standard setzen ★
-                </button>
-              )}
-              {currentTemplateId && (
-                <button onClick={() => deleteTemplate(currentTemplateId)} className="btn-delete-small">
-                  <Trash2 size={18} /> Löschen
-                </button>
-              )}
-            </div>
-          </div>
 
           <div className="panel-section">
             <h3>Label-Größe</h3>
-            <select
-              className="input-select"
-              onChange={(e) => {
-                const preset = PRESET_SIZES[parseInt(e.target.value)];
-                if (preset.width > 0) {
-                  setLabelWidth(preset.width);
-                  setLabelHeight(preset.height);
-                }
+            <select className="input-select w-full"
+              onChange={e => {
+                const p = ZEBRA_PRESETS[+e.target.value];
+                if (p.w > 0) { setLabelW(p.w); setLabelH(p.h); }
               }}
             >
-              {PRESET_SIZES.map((size, i) => (
-                <option key={i} value={i}>
-                  {size.name}
-                </option>
-              ))}
+              {ZEBRA_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
             </select>
             <div className="input-group">
-              <input
-                type="number"
-                value={labelWidth}
-                onChange={(e) => setLabelWidth(Number(e.target.value))}
-                className="input-field-small"
-                placeholder="Breite"
-              />
+              <input type="number" step="0.1" value={labelW}
+                onChange={e => setLabelW(+e.target.value)} className="input-field-small" />
               <span>×</span>
-              <input
-                type="number"
-                value={labelHeight}
-                onChange={(e) => setLabelHeight(Number(e.target.value))}
-                className="input-field-small"
-                placeholder="Höhe"
-              />
-              <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)' }}>mm</span>
+              <input type="number" step="0.1" value={labelH}
+                onChange={e => setLabelH(+e.target.value)} className="input-field-small" />
+              <span className="ld-unit">mm</span>
             </div>
           </div>
 
           <div className="panel-section">
             <h3>Elemente hinzufügen</h3>
             <div className="button-group">
-              <button onClick={() => addElement('qrcode')} className="btn-add">
-                <QrCode size={18} /> QR-Code
-              </button>
-              <button onClick={() => addElement('barcode')} className="btn-add">
-                <Barcode size={18} /> Barcode
-              </button>
-              <button onClick={() => addElement('text')} className="btn-add">
-                <Type size={18} /> Text
-              </button>
-              <button onClick={() => addElement('image')} className="btn-add">
-                <ImageIcon size={18} /> Bild / Logo
+              <button onClick={() => addElement('qrcode')}  className="btn-add"><QrCode size={15} /> QR-Code</button>
+              <button onClick={() => addElement('barcode')} className="btn-add"><Barcode size={15} /> Barcode</button>
+              <button onClick={() => addElement('text')}    className="btn-add"><Type size={15} /> Text</button>
+              <button onClick={() => addElement('image')}   className="btn-add"><ImageIcon size={15} /> Bild</button>
+            </div>
+          </div>
+
+          <div className="panel-section">
+            <div className="ld-toggle-row">
+              <span>Magnetisches Einrasten ({GRID_MM} mm)</span>
+              <button
+                className={`ld-toggle-btn${snapEnabled ? ' active' : ''}`}
+                onClick={() => setSnapEnabled(v => !v)}
+              >
+                <Grid3x3 size={13} /> {snapEnabled ? 'Ein' : 'Aus'}
               </button>
             </div>
           </div>
 
+          {/* Selected-element properties */}
           {selectedElem && (
             <div className="panel-section">
               <div className="section-header">
@@ -711,68 +636,75 @@ export default function LabelDesignerPage() {
               </div>
 
               <div className="property-grid">
-                <label>X Position (mm)</label>
-                <input
-                  type="number"
-                  value={selectedElem.x}
-                  onChange={(e) => updateElement(selectedElem.id, { x: Number(e.target.value) })}
-                  className="input-field-small"
-                />
+                <label>X (mm)</label>
+                <input type="number" step="0.5"
+                  value={Math.round(selectedElem.x * 10) / 10}
+                  onChange={e => updateEl(selectedElem.id, { x: +e.target.value })}
+                  className="input-field-small" />
 
-                <label>Y Position (mm)</label>
-                <input
-                  type="number"
-                  value={selectedElem.y}
-                  onChange={(e) => updateElement(selectedElem.id, { y: Number(e.target.value) })}
-                  className="input-field-small"
-                />
+                <label>Y (mm)</label>
+                <input type="number" step="0.5"
+                  value={Math.round(selectedElem.y * 10) / 10}
+                  onChange={e => updateEl(selectedElem.id, { y: +e.target.value })}
+                  className="input-field-small" />
 
-                <label>Breite (mm)</label>
-                <input
-                  type="number"
-                  value={selectedElem.width}
-                  onChange={(e) => updateElement(selectedElem.id, { width: Number(e.target.value) })}
-                  className="input-field-small"
-                />
+                <label>Breite</label>
+                <div className="ld-ratio-row">
+                  <input type="number" step="0.5"
+                    value={Math.round(selectedElem.width * 10) / 10}
+                    onChange={e => {
+                      const nw = +e.target.value;
+                      if (selectedElem.aspect_ratio_locked && selectedElem.height > 0)
+                        updateEl(selectedElem.id, { width: nw, height: nw / (selectedElem.width / selectedElem.height) });
+                      else
+                        updateEl(selectedElem.id, { width: nw });
+                    }}
+                    className="input-field-small" />
+                  {(selectedElem.type === 'image' || selectedElem.type === 'qrcode') && (
+                    <button
+                      className={`ld-lock-btn${selectedElem.aspect_ratio_locked ? ' locked' : ''}`}
+                      onClick={() => updateEl(selectedElem.id, { aspect_ratio_locked: !selectedElem.aspect_ratio_locked })}
+                      title={selectedElem.aspect_ratio_locked ? 'Seitenverhältnis gesperrt' : 'Seitenverhältnis frei'}
+                    >
+                      {selectedElem.aspect_ratio_locked ? <Lock size={12} /> : <Unlock size={12} />}
+                    </button>
+                  )}
+                </div>
 
-                <label>Höhe (mm)</label>
-                <input
-                  type="number"
-                  value={selectedElem.height}
-                  onChange={(e) => updateElement(selectedElem.id, { height: Number(e.target.value) })}
-                  className="input-field-small"
-                />
+                <label>Höhe</label>
+                <input type="number" step="0.5"
+                  value={Math.round(selectedElem.height * 10) / 10}
+                  onChange={e => {
+                    const nh = +e.target.value;
+                    if (selectedElem.aspect_ratio_locked && selectedElem.width > 0)
+                      updateEl(selectedElem.id, { height: nh, width: nh * (selectedElem.width / selectedElem.height) });
+                    else
+                      updateEl(selectedElem.id, { height: nh });
+                  }}
+                  className="input-field-small" />
 
                 {selectedElem.type !== 'image' && (
                   <>
                     <label>Inhalt</label>
-                    <select
-                      value={selectedElem.content}
-                      onChange={(e) => updateElement(selectedElem.id, { content: e.target.value })}
+                    <select value={selectedElem.content}
+                      onChange={e => updateEl(selectedElem.id, { content: e.target.value })}
                       className="input-field-small"
                     >
-                      <option value="device_id">Device ID</option>
-                      <option value="product_name">Produktname</option>
-                      <option value="device_name">Device Name</option>
+                      {FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </>
                 )}
 
                 {selectedElem.type === 'image' && (
                   <>
-                    <label>Bild hochladen</label>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/svg+xml"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImageUpload(selectedElem.id, file);
-                      }}
+                    <label>Bild</label>
+                    <input type="file" accept="image/*"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(selectedElem.id, f); }}
                       className="input-field-small"
-                      style={{ padding: '0.25rem' }}
+                      style={{ padding: '0.2rem' }}
                     />
                     {selectedElem.image_data && (
-                      <div style={{ gridColumn: '1 / -1', fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
+                      <div style={{ gridColumn: '1/-1', fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)' }}>
                         ✓ {selectedElem.content}
                       </div>
                     )}
@@ -782,170 +714,223 @@ export default function LabelDesignerPage() {
                 {selectedElem.type === 'text' && (
                   <>
                     <label>Schriftgröße</label>
-                    <input
-                      type="number"
-                      value={selectedElem.style.font_size}
-                      onChange={(e) =>
-                        updateElement(selectedElem.id, {
-                          style: { ...selectedElem.style, font_size: Number(e.target.value) },
-                        })
-                      }
-                      className="input-field-small"
-                    />
+                    <input type="number" value={selectedElem.style.font_size ?? 8}
+                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, font_size: +e.target.value } })}
+                      className="input-field-small" />
 
                     <label>Schriftart</label>
-                    <select
-                      value={selectedElem.style.font_family}
-                      onChange={(e) =>
-                        updateElement(selectedElem.id, {
-                          style: { ...selectedElem.style, font_family: e.target.value },
-                        })
-                      }
+                    <select value={selectedElem.style.font_family ?? 'Arial'}
+                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, font_family: e.target.value } })}
                       className="input-field-small"
                     >
-                      <option value="Arial">Arial</option>
-                      <option value="Ubuntu">Ubuntu</option>
-                      <option value="Aptos">Aptos</option>
-                      <option value="Times New Roman">Times New Roman</option>
-                      <option value="Courier New">Courier New</option>
-                      <option value="Verdana">Verdana</option>
-                      <option value="Georgia">Georgia</option>
+                      {['Arial', 'Ubuntu', 'Times New Roman', 'Courier New', 'Verdana'].map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
                     </select>
 
-                    <label>Schriftstil</label>
-                    <select
-                      value={selectedElem.style.font_weight}
-                      onChange={(e) =>
-                        updateElement(selectedElem.id, {
-                          style: { ...selectedElem.style, font_weight: e.target.value },
-                        })
-                      }
+                    <label>Stil</label>
+                    <select value={selectedElem.style.font_weight ?? 'normal'}
+                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, font_weight: e.target.value } })}
                       className="input-field-small"
                     >
                       <option value="normal">Normal</option>
                       <option value="bold">Fett</option>
                     </select>
+
+                    <label>Farbe</label>
+                    <input type="color"
+                      value={selectedElem.style.color ?? '#000000'}
+                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, color: e.target.value } })}
+                      style={{ width: '100%', height: 32, cursor: 'pointer', border: 'none', borderRadius: 4 }}
+                    />
                   </>
                 )}
               </div>
             </div>
           )}
-
-          <div className="panel-section">
-            <input
-              type="text"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              className="input-field"
-              placeholder="Template Name"
-            />
-            <button onClick={saveTemplate} disabled={saving} className="btn-save">
-              <Save size={18} /> {saving ? 'Speichert...' : 'Template Speichern'}
-            </button>
-          </div>
         </div>
 
-        {/* Center - Canvas Preview */}
+        {/* ── Center: WYSIWYG editor + canvas preview ── */}
         <div className="designer-canvas-area glass-dark">
           <div className="canvas-header">
-            <h3>Vorschau</h3>
-            <select
-              value={previewDevice?.device_id || ''}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value.startsWith('CASE-')) {
-                  // It's a case
-                  const caseId = parseInt(value.replace('CASE-', ''));
-                  const caseItem = cases.find((c) => c.case_id === caseId);
-                  if (caseItem) {
-                    const caseAsDevice: Device = {
-                      device_id: `CASE-${caseItem.case_id}`,
-                      product_name: caseItem.name,
-                      status: caseItem.status,
-                      zone_code: caseItem.zone_code,
-                      zone_name: caseItem.zone_name,
-                      zone_id: caseItem.zone_id,
-                    };
-                    setPreviewDevice(caseAsDevice);
-                  }
+            <h3>Editor</h3>
+            <select className="input-select-small"
+              value={previewDevice?.device_id ?? ''}
+              onChange={e => {
+                const v = e.target.value;
+                if (v.startsWith('CASE-')) {
+                  const cid = parseInt(v.replace('CASE-', ''));
+                  const c   = cases.find(c => c.case_id === cid);
+                  if (c) setPreviewDevice({
+                    device_id: `CASE-${c.case_id}`, product_name: c.name,
+                    status: c.status, zone_code: c.zone_code, zone_name: c.zone_name, zone_id: c.zone_id,
+                  });
                 } else {
-                  // It's a device
-                  const device = devices.find((d) => d.device_id === value);
-                  if (device) setPreviewDevice(device);
+                  const d = devices.find(d => d.device_id === v);
+                  if (d) setPreviewDevice(d);
                 }
               }}
-              className="input-select-small"
             >
               <optgroup label="Devices">
-                {devices.map((d) => (
-                  <option key={d.device_id} value={d.device_id}>
-                    {d.device_id} - {d.product_name}
-                  </option>
-                ))}
+                {devices.map(d => <option key={d.device_id} value={d.device_id}>{d.device_id} – {d.product_name}</option>)}
               </optgroup>
               <optgroup label="Cases">
-                {cases.map((c) => (
-                  <option key={`CASE-${c.case_id}`} value={`CASE-${c.case_id}`}>
-                    CASE-{c.case_id} - {c.name}
-                  </option>
-                ))}
+                {cases.map(c => <option key={c.case_id} value={`CASE-${c.case_id}`}>CASE-{c.case_id} – {c.name}</option>)}
               </optgroup>
             </select>
           </div>
-          <div className="canvas-wrapper">
-            <canvas ref={canvasRef} className="label-canvas" />
+
+          <div className="ld-split">
+
+            {/* Interactive WYSIWYG editor */}
+            <div className="ld-col">
+              <p className="ld-col-label">
+                Design-Editor&nbsp;
+                <span className="ld-dims">{labelW} × {labelH} mm · {elements.length} El.</span>
+              </p>
+              <div className="ld-scroll">
+                <div
+                  className="ld-label-editor"
+                  style={{
+                    width:  edW,
+                    height: edH,
+                    backgroundSize: `${GRID_MM * scale}px ${GRID_MM * scale}px`,
+                  }}
+                  onMouseMove={onMouseMove}
+                  onMouseUp={onMouseUp}
+                  onMouseLeave={onMouseUp}
+                  onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}
+                >
+                  {elements.map(elem => (
+                    <div
+                      key={elem.id}
+                      className={`ld-element${selectedId === elem.id ? ' ld-selected' : ''}`}
+                      style={{
+                        left:   elem.x * scale,
+                        top:    elem.y * scale,
+                        width:  elem.width * scale,
+                        height: elem.height * scale,
+                        cursor: dragRef.current ? 'grabbing' : 'grab',
+                      }}
+                      onMouseDown={e => onElementMouseDown(e, elem)}
+                    >
+                      {elem.type === 'image' && elem.image_data && (
+                        <img src={elem.image_data} draggable={false}
+                          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
+                      )}
+                      {elem.type === 'image' && !elem.image_data && (
+                        <div className="ld-placeholder"><ImageIcon size={Math.min(elem.width * scale * 0.5, 24)} /></div>
+                      )}
+                      {elem.type === 'qrcode' && (
+                        <div className="ld-placeholder"><QrCode size={Math.min(elem.width * scale * 0.65, 28)} /></div>
+                      )}
+                      {elem.type === 'barcode' && (
+                        <div className="ld-barcode-preview">
+                          <div className="ld-barcode-lines" />
+                          <span className="ld-barcode-text"
+                            style={{ fontSize: Math.min(elem.height * scale * 0.28, 9) }}>
+                            {FIELD_OPTIONS.find(o => o.value === elem.content)?.label ?? elem.content}
+                          </span>
+                        </div>
+                      )}
+                      {elem.type === 'text' && (
+                        <div className="ld-text-preview" style={{
+                          fontSize:   Math.min((elem.style.font_size ?? 8) * scale * 0.52, 13),
+                          fontWeight: elem.style.font_weight ?? 'normal',
+                          fontFamily: elem.style.font_family ?? 'Arial',
+                          textAlign:  (elem.style.alignment as React.CSSProperties['textAlign']) ?? 'left',
+                        }}>
+                          {FIELD_OPTIONS.find(o => o.value === elem.content)?.label ?? elem.content}
+                        </div>
+                      )}
+
+                      {/* 8-point resize handles – only on selected element */}
+                      {selectedId === elem.id && HANDLES.map(h => (
+                        <div key={h} className="ld-handle"
+                          style={{ position: 'absolute', ...HANDLE_POS[h] }}
+                          onMouseDown={e => onHandleMouseDown(e, elem, h)} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="ld-hint">Ziehen = verschieben · Ecken/Kanten ziehen = skalieren</p>
+            </div>
+
+            {/* Canvas print preview */}
+            <div className="ld-col">
+              <p className="ld-col-label">Druckvorschau <span className="ld-dims">300 DPI</span></p>
+              <div className="ld-scroll">
+                <canvas ref={canvasRef} className="ld-preview-canvas" />
+              </div>
+            </div>
+
           </div>
         </div>
 
-        {/* Right Panel - Elements List & Actions */}
+        {/* ── Right panel: element list + actions ── */}
         <div className="designer-panel glass-dark">
+
           <div className="panel-section">
             <h3>Elemente ({elements.length})</h3>
             <div className="elements-list">
-              {elements.map((elem) => (
+              {elements.map(elem => (
                 <div
                   key={elem.id}
-                  className={`element-item ${selectedElement === elem.id ? 'active' : ''}`}
-                  onClick={() => setSelectedElement(elem.id)}
+                  className={`element-item${selectedId === elem.id ? ' active' : ''}`}
+                  onClick={() => setSelectedId(elem.id)}
                 >
                   <div className="element-icon">
-                    {elem.type === 'qrcode' && <QrCode size={16} />}
-                    {elem.type === 'barcode' && <Barcode size={16} />}
-                    {elem.type === 'text' && <Type size={16} />}
-                    {elem.type === 'image' && <ImageIcon size={16} />}
+                    {elem.type === 'qrcode'  && <QrCode size={14} />}
+                    {elem.type === 'barcode' && <Barcode size={14} />}
+                    {elem.type === 'text'    && <Type size={14} />}
+                    {elem.type === 'image'   && <ImageIcon size={14} />}
                   </div>
                   <div className="element-info">
-                    <div className="element-type">{elem.type === 'qrcode' ? 'QR-Code' : elem.type === 'barcode' ? 'Barcode' : elem.type === 'image' ? 'Bild/Logo' : 'Text'}</div>
-                    <div className="element-content">{elem.content || 'Kein Bild'}</div>
+                    <div className="element-type">
+                      {elem.type === 'qrcode' ? 'QR-Code'
+                        : elem.type === 'barcode' ? 'Barcode'
+                        : elem.type === 'image'   ? 'Bild'
+                        : 'Text'}
+                    </div>
+                    <div className="element-content">
+                      {Math.round(elem.x * 10) / 10},{Math.round(elem.y * 10) / 10} ·&nbsp;
+                      {Math.round(elem.width * 10) / 10}×{Math.round(elem.height * 10) / 10} mm
+                    </div>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); deleteElement(elem.id); }} className="btn-delete-mini">
-                    <Trash2 size={14} />
+                  <button
+                    onClick={e => { e.stopPropagation(); deleteElement(elem.id); }}
+                    className="btn-delete-mini"
+                  >
+                    <Trash2 size={12} />
                   </button>
                 </div>
               ))}
-              {elements.length === 0 && (
-                <div className="empty-state">Keine Elemente</div>
-              )}
+              {elements.length === 0 && <div className="empty-state">Keine Elemente</div>}
             </div>
           </div>
 
           <div className="panel-section">
             <h3>Aktionen</h3>
             <div className="action-buttons">
-              <button onClick={handlePrint} disabled={!previewDevice} className="btn-action">
-                <Printer size={18} /> Vorschau Drucken
+              <button onClick={printPreview} disabled={!previewDevice} className="btn-action">
+                <Printer size={15} /> Drucken
               </button>
-              <button onClick={generateMissingLabels} disabled={exporting || (devices.length === 0 && cases.length === 0)} className="btn-action btn-primary" style={{ backgroundColor: '#10b981' }}>
-                <Save size={18} /> <span className="hidden sm:inline">{exporting ? 'Generiere...' : 'Fehlende Labels Generieren'}</span><span className="sm:hidden">{exporting ? 'Generiere...' : 'Fehlende'}</span>
+              <button onClick={generateMissingLabels} disabled={!canGenerate}
+                className="btn-action" style={{ background: '#10b981' }}>
+                <Save size={15} /> {exporting ? 'Generiere…' : 'Fehlende Labels'}
               </button>
-              <button onClick={generateAllLabels} disabled={exporting || (devices.length === 0 && cases.length === 0)} className="btn-action btn-primary">
-                <Save size={18} /> <span className="hidden sm:inline">{exporting ? `Generiere ${devices.length + cases.length}...` : `Alle Labels Generieren (${devices.length} Devices + ${cases.length} Cases)`}</span><span className="sm:hidden">{exporting ? 'Generiere...' : 'Alle'}</span>
+              <button onClick={generateAllLabels} disabled={!canGenerate} className="btn-action btn-primary">
+                <Save size={15} /> {exporting
+                  ? `Generiere ${devices.length + cases.length}…`
+                  : `Alle (${devices.length + cases.length})`}
               </button>
-              <button onClick={exportAllLabels} disabled={exporting || (devices.length === 0 && cases.length === 0)} className="btn-action">
-                <Download size={18} /> <span className="hidden sm:inline">{exporting ? 'Exportiere Labels...' : 'Alle Labels Exportieren (ZIP)'}</span><span className="sm:hidden">{exporting ? 'Export...' : 'Export'}</span>
+              <button onClick={exportZip} disabled={!canGenerate} className="btn-action">
+                <Download size={15} /> ZIP Export
               </button>
             </div>
           </div>
+
         </div>
       </div>
     </div>
