@@ -102,7 +102,7 @@ func UpdateCategory(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(
-		"UPDATE categories SET name = ?, abbreviation = ? WHERE categoryID = ?",
+		"UPDATE categories SET name = $1, abbreviation = $2 WHERE categoryID = $3",
 		req.Name, req.Abbreviation, id,
 	)
 	if err != nil {
@@ -129,7 +129,7 @@ func DeleteCategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	result, err := db.Exec("DELETE FROM categories WHERE categoryID = ?", id)
+	result, err := db.Exec("DELETE FROM categories WHERE categoryID = $1", id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete category"})
 		return
@@ -154,7 +154,7 @@ func GetSubcategories(w http.ResponseWriter, r *http.Request) {
 
 	if categoryID != "" {
 		rows, err = db.Query(
-			"SELECT subcategoryID, name, abbreviation, categoryID FROM subcategories WHERE categoryID = ? ORDER BY name",
+			"SELECT subcategoryID, name, abbreviation, categoryID FROM subcategories WHERE categoryID = $1 ORDER BY name",
 			categoryID,
 		)
 	} else {
@@ -193,14 +193,16 @@ func CreateSubcategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	_, err := db.Exec(
-		"INSERT INTO subcategories (name, abbreviation, categoryID) VALUES (?, ?, ?)",
+	var newID string
+	err := db.QueryRow(
+		"INSERT INTO subcategories (subcategoryID, name, abbreviation, categoryID) VALUES (gen_random_uuid()::varchar, $1, $2, $3) RETURNING subcategoryID",
 		req.Name, req.Abbreviation, req.CategoryID,
-	)
+	).Scan(&newID)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create subcategory"})
 		return
 	}
+	req.SubcategoryID = newID
 
 	respondJSON(w, http.StatusCreated, req)
 }
@@ -218,7 +220,7 @@ func UpdateSubcategory(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(
-		"UPDATE subcategories SET name = ?, abbreviation = ?, categoryID = ? WHERE subcategoryID = ?",
+		"UPDATE subcategories SET name = $1, abbreviation = $2, categoryID = $3 WHERE subcategoryID = $4",
 		req.Name, req.Abbreviation, req.CategoryID, id,
 	)
 	if err != nil {
@@ -241,7 +243,7 @@ func DeleteSubcategory(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	db := repository.GetSQLDB()
-	result, err := db.Exec("DELETE FROM subcategories WHERE subcategoryID = ?", id)
+	result, err := db.Exec("DELETE FROM subcategories WHERE subcategoryID = $1", id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete subcategory"})
 		return
@@ -266,7 +268,7 @@ func GetSubbiercategories(w http.ResponseWriter, r *http.Request) {
 
 	if subcategoryID != "" {
 		rows, err = db.Query(
-			"SELECT subbiercategoryID, name, abbreviation, subcategoryID FROM subbiercategories WHERE subcategoryID = ? ORDER BY name",
+			"SELECT subbiercategoryID, name, abbreviation, subcategoryID FROM subbiercategories WHERE subcategoryID = $1 ORDER BY name",
 			subcategoryID,
 		)
 	} else {
@@ -305,14 +307,16 @@ func CreateSubbiercategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	_, err := db.Exec(
-		"INSERT INTO subbiercategories (name, abbreviation, subcategoryID) VALUES (?, ?, ?)",
+	var newID string
+	err := db.QueryRow(
+		"INSERT INTO subbiercategories (subbiercategoryID, name, abbreviation, subcategoryID) VALUES (gen_random_uuid()::varchar, $1, $2, $3) RETURNING subbiercategoryID",
 		req.Name, req.Abbreviation, req.SubcategoryID,
-	)
+	).Scan(&newID)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create subbiercategory"})
 		return
 	}
+	req.SubbiercategoryID = newID
 
 	respondJSON(w, http.StatusCreated, req)
 }
@@ -330,7 +334,7 @@ func UpdateSubbiercategory(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(
-		"UPDATE subbiercategories SET name = ?, abbreviation = ?, subcategoryID = ? WHERE subbiercategoryID = ?",
+		"UPDATE subbiercategories SET name = $1, abbreviation = $2, subcategoryID = $3 WHERE subbiercategoryID = $4",
 		req.Name, req.Abbreviation, req.SubcategoryID, id,
 	)
 	if err != nil {
@@ -353,7 +357,7 @@ func DeleteSubbiercategory(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	db := repository.GetSQLDB()
-	result, err := db.Exec("DELETE FROM subbiercategories WHERE subbiercategoryID = ?", id)
+	result, err := db.Exec("DELETE FROM subbiercategories WHERE subbiercategoryID = $1", id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete subbiercategory"})
 		return

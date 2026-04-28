@@ -110,7 +110,7 @@ func CreateBrand(w http.ResponseWriter, r *http.Request) {
 
 		var manufacturerName sql.NullString
 		if err := db.QueryRow(
-			"SELECT name FROM manufacturer WHERE manufacturerID = ?",
+			"SELECT name FROM manufacturer WHERE manufacturerID = $1",
 			*payload.ManufacturerID,
 		).Scan(&manufacturerName); err == nil && manufacturerName.Valid {
 			name := manufacturerName.String
@@ -146,7 +146,7 @@ func UpdateBrand(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(
-		"UPDATE brands SET name = ?, manufacturerID = ? WHERE brandID = ?",
+		"UPDATE brands SET name = $1, manufacturerID = $2 WHERE brandID = $3",
 		payload.Name,
 		payload.ManufacturerID,
 		id,
@@ -171,7 +171,7 @@ func UpdateBrand(w http.ResponseWriter, r *http.Request) {
 
 		var manufacturerName sql.NullString
 		if err := db.QueryRow(
-			"SELECT name FROM manufacturer WHERE manufacturerID = ?",
+			"SELECT name FROM manufacturer WHERE manufacturerID = $1",
 			*payload.ManufacturerID,
 		).Scan(&manufacturerName); err == nil && manufacturerName.Valid {
 			name := manufacturerName.String
@@ -192,7 +192,7 @@ func DeleteBrand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	result, err := db.Exec("DELETE FROM brands WHERE brandID = ?", id)
+	result, err := db.Exec("DELETE FROM brands WHERE brandID = $1", id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete brand"})
 		return
@@ -305,7 +305,7 @@ func UpdateManufacturer(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(
-		"UPDATE manufacturer SET name = ?, website = ? WHERE manufacturerID = ?",
+		"UPDATE manufacturer SET name = $1, website = $2 WHERE manufacturerID = $3",
 		payload.Name,
 		payload.Website,
 		id,
@@ -338,7 +338,7 @@ func DeleteManufacturer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	result, err := db.Exec("DELETE FROM manufacturer WHERE manufacturerID = ?", id)
+	result, err := db.Exec("DELETE FROM manufacturer WHERE manufacturerID = $1", id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete manufacturer"})
 		return

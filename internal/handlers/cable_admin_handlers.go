@@ -310,30 +310,37 @@ func UpdateCable(w http.ResponseWriter, r *http.Request) {
 	// Build dynamic update query
 	updates := []string{}
 	args := []interface{}{}
+	argNum := 1
 
 	if input.Name != nil {
-		updates = append(updates, "name = ?")
+		updates = append(updates, fmt.Sprintf("name = $%d", argNum))
 		args = append(args, input.Name)
+		argNum++
 	}
 	if input.Connector1 != nil {
-		updates = append(updates, "connector1 = ?")
+		updates = append(updates, fmt.Sprintf("connector1 = $%d", argNum))
 		args = append(args, *input.Connector1)
+		argNum++
 	}
 	if input.Connector2 != nil {
-		updates = append(updates, "connector2 = ?")
+		updates = append(updates, fmt.Sprintf("connector2 = $%d", argNum))
 		args = append(args, *input.Connector2)
+		argNum++
 	}
 	if input.Typ != nil {
-		updates = append(updates, "typ = ?")
+		updates = append(updates, fmt.Sprintf("typ = $%d", argNum))
 		args = append(args, *input.Typ)
+		argNum++
 	}
 	if input.Length != nil {
-		updates = append(updates, "length = ?")
+		updates = append(updates, fmt.Sprintf("length = $%d", argNum))
 		args = append(args, *input.Length)
+		argNum++
 	}
 	if input.MM2 != nil {
-		updates = append(updates, "mm2 = ?")
+		updates = append(updates, fmt.Sprintf("mm2 = $%d", argNum))
 		args = append(args, *input.MM2)
+		argNum++
 	}
 
 	if len(updates) == 0 {
@@ -341,7 +348,7 @@ func UpdateCable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := fmt.Sprintf("UPDATE cables SET %s WHERE cableID = ?", strings.Join(updates, ", "))
+	query := fmt.Sprintf("UPDATE cables SET %s WHERE cableID = $%d", strings.Join(updates, ", "), argNum)
 	args = append(args, id)
 
 	result, err := db.Exec(query, args...)
@@ -376,7 +383,7 @@ func DeleteCable(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 
-	query := "DELETE FROM cables WHERE cableID = ?"
+	query := "DELETE FROM cables WHERE cableID = $1"
 	result, err := db.Exec(query, id)
 	if err != nil {
 		log.Printf("Error deleting cable: %v", err)
