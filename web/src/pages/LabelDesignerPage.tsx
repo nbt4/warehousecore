@@ -118,7 +118,7 @@ export default function LabelDesignerPage() {
   const edW   = Math.round(labelW * scale);
   const edH   = Math.round(labelH * scale);
 
-  useEffect(() => { loadDevices(); loadCases(); loadTemplates(); }, []);
+  useEffect(() => { loadDevices(); loadCases(); loadTemplates(true); }, []);
 
   // Debounced canvas preview
   useEffect(() => {
@@ -175,12 +175,14 @@ export default function LabelDesignerPage() {
     } catch { console.error('Failed to load cases'); }
   };
 
-  const loadTemplates = async () => {
+  const loadTemplates = async (applyDefault = false) => {
     try {
       const { data } = await labelsApi.getTemplates();
       setTemplates(data);
-      const def = data.find(t => t.is_default);
-      if (def) applyTemplate(def);
+      if (applyDefault) {
+        const def = data.find(t => t.is_default);
+        if (def) applyTemplate(def);
+      }
     } catch { console.error('Failed to load templates'); }
   };
 
@@ -232,7 +234,7 @@ export default function LabelDesignerPage() {
         setCurrentTplId(data.id ?? null);
         toast('success', 'Template erstellt');
       }
-      await loadTemplates();
+      await loadTemplates(false);
     } catch { toast('error', 'Fehler beim Speichern'); }
     finally { setSaving(false); }
   };
@@ -498,7 +500,7 @@ export default function LabelDesignerPage() {
 
       for (const dev of devs) {
         setPreviewDevice(dev);
-        await new Promise(r => setTimeout(r, 450));
+        await new Promise(r => setTimeout(r, 700));
         if (canvasRef.current) {
           try { await labelsApi.saveLabel(dev.device_id, canvasRef.current.toDataURL('image/png')); ok++; }
           catch { fail++; }
@@ -515,7 +517,7 @@ export default function LabelDesignerPage() {
           zone_id:      c.zone_id,
         };
         setPreviewDevice(fake);
-        await new Promise(r => setTimeout(r, 450));
+        await new Promise(r => setTimeout(r, 700));
         if (canvasRef.current) {
           try { await labelsApi.saveCaseLabel(c.case_id, canvasRef.current.toDataURL('image/png')); ok++; }
           catch { fail++; }
@@ -934,15 +936,13 @@ export default function LabelDesignerPage() {
               <p className="ld-hint">Ziehen = verschieben · Ecken/Kanten ziehen = skalieren</p>
             </div>
 
-            {/* Canvas print preview */}
-            {showPreview && (
-              <div className="ld-col">
-                <p className="ld-col-label">Druckvorschau <span className="ld-dims">300 DPI</span></p>
-                <div className="ld-scroll">
-                  <canvas ref={canvasRef} className="ld-preview-canvas" />
-                </div>
+            {/* Canvas print preview – always mounted so canvasRef stays valid */}
+            <div className="ld-col" style={{ display: showPreview ? undefined : 'none' }}>
+              <p className="ld-col-label">Druckvorschau <span className="ld-dims">300 DPI</span></p>
+              <div className="ld-scroll">
+                <canvas ref={canvasRef} className="ld-preview-canvas" />
               </div>
-            )}
+            </div>
 
           </div>
         </div>
