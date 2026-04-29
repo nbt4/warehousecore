@@ -11,6 +11,7 @@ services:
       - "8082:8082"
     volumes:
       - led-mapping:/var/lib/warehousecore/led
+      - warehousecore-labels:/root/web/dist/labels
     networks:
       - warehousecore-network
     depends_on:
@@ -74,6 +75,7 @@ networks:
 
 volumes:
   led-mapping:
+  warehousecore-labels:
   mosquitto-config:
   mosquitto-data:
   mosquitto-log:
