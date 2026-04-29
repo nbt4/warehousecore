@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Trash2, Download, Printer, QrCode, Barcode, Type, Save,
-  Image as ImageIcon, Lock, Unlock, Grid3x3,
+  Image as ImageIcon, Lock, Unlock, Grid3x3, Eye, EyeOff,
 } from 'lucide-react';
 import { labelsApi, devicesApi, casesApi } from '../lib/api';
 import type { LabelTemplate, LabelElement, Device, CaseSummary } from '../lib/api';
@@ -83,7 +83,8 @@ export default function LabelDesignerPage() {
   const [labelH, setLabelH]         = useState(29);
   const [elements, setElements]     = useState<DesignElement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapEnabled, setSnapEnabled]   = useState(true);
+  const [showPreview, setShowPreview]   = useState(true);
 
   const [templateName, setTemplateName]   = useState('Neues Template');
   const [templates, setTemplates]         = useState<LabelTemplate[]>([]);
@@ -842,6 +843,14 @@ export default function LabelDesignerPage() {
                 {cases.map(c => <option key={c.case_id} value={`CASE-${c.case_id}`}>CASE-{c.case_id} – {c.name}</option>)}
               </optgroup>
             </select>
+            <button
+              className={`btn-toggle-preview${showPreview ? ' active' : ''}`}
+              onClick={() => setShowPreview(p => !p)}
+              title={showPreview ? 'Vorschau ausblenden' : 'Vorschau anzeigen'}
+            >
+              {showPreview ? <EyeOff size={15} /> : <Eye size={15} />}
+              <span>{showPreview ? 'Vorschau' : 'Vorschau'}</span>
+            </button>
           </div>
 
           <div className="ld-split">
@@ -926,12 +935,14 @@ export default function LabelDesignerPage() {
             </div>
 
             {/* Canvas print preview */}
-            <div className="ld-col">
-              <p className="ld-col-label">Druckvorschau <span className="ld-dims">300 DPI</span></p>
-              <div className="ld-scroll">
-                <canvas ref={canvasRef} className="ld-preview-canvas" />
+            {showPreview && (
+              <div className="ld-col">
+                <p className="ld-col-label">Druckvorschau <span className="ld-dims">300 DPI</span></p>
+                <div className="ld-scroll">
+                  <canvas ref={canvasRef} className="ld-preview-canvas" />
+                </div>
               </div>
-            </div>
+            )}
 
           </div>
         </div>

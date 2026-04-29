@@ -372,6 +372,29 @@
   letter-spacing: 0.8px;
 }
 
+.btn-toggle-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.5);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-toggle-preview:hover {
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.85);
+}
+.btn-toggle-preview.active {
+  background: rgba(99,102,241,0.25);
+  border-color: rgba(99,102,241,0.5);
+  color: rgba(255,255,255,0.9);
+}
+
 /* ── Two-column split inside center panel ── */
 .ld-split {
   display: flex;
