@@ -577,11 +577,19 @@ export default function LabelDesignerPage() {
   const printPreview = () => {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL('image/png');
-    const win = window.open('', '', 'width=600,height=400');
+    const win = window.open('', '_blank');
     if (!win) return;
+    // @page sets physical paper size = label size so printer outputs exact dimensions
+    const style = win.document.createElement('style');
+    style.textContent = [
+      `@page { size: ${labelW}mm ${labelH}mm; margin: 0; }`,
+      `body { margin: 0; padding: 0; background: white; }`,
+      `img { display: block; width: ${labelW}mm; height: ${labelH}mm; }`,
+    ].join(' ');
+    win.document.head.appendChild(style);
     const img = win.document.createElement('img');
     img.src = dataUrl;
-    img.onload = () => { win.print(); win.close(); };
+    img.onload = () => { win.focus(); win.print(); win.close(); };
     win.document.body.style.margin = '0';
     win.document.body.appendChild(img);
   };
