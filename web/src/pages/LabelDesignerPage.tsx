@@ -220,9 +220,9 @@ export default function LabelDesignerPage() {
         description: '',
         width: labelW,
         height: labelH,
-        // Strip runtime-only fields before persisting
+        // Strip only runtime-only UI fields; keep image_data so uploaded logos survive save/reload
         template_json: JSON.stringify(
-          elements.map(({ id: _id, image_data: _img, aspect_ratio_locked: _ar, ...rest }) => rest)
+          elements.map(({ id: _id, aspect_ratio_locked: _ar, ...rest }) => rest)
         ),
         is_default: false,
       };
