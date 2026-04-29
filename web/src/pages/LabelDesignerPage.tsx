@@ -528,7 +528,8 @@ export default function LabelDesignerPage() {
     } catch { toast('error', 'Fehler beim Generieren'); }
     finally {
       setExporting(false);
-      if (devices.length > 0) setPreviewDevice(devices[0]);
+      // Reload so label_path is up to date in state — exportZip depends on this
+      await Promise.all([loadDevices(), loadCases()]);
       if (origTplId) {
         const orig = templates.find(t => t.id === origTplId);
         if (orig) applyTemplate(orig);
