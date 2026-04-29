@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Trash2, Download, Printer, QrCode, Barcode, Type, Save,
   Image as ImageIcon, Lock, Unlock, Grid3x3,
@@ -95,9 +95,22 @@ export default function LabelDesignerPage() {
   const [cases, setCases]                 = useState<CaseSummary[]>([]);
   const [previewDevice, setPreviewDevice] = useState<Device | null>(null);
 
+  const [imgCache, setImgCache] = useState<Record<string, string>>({});
+
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const dragRef      = useRef<DragState | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const imgTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Refs so document-level event handlers always see fresh values
+  const elementsRef   = useRef(elements);
+  const snapRef       = useRef(snapEnabled);
+  const labelWRef     = useRef(labelW);
+  const labelHRef     = useRef(labelH);
+  elementsRef.current = elements;
+  snapRef.current     = snapEnabled;
+  labelWRef.current   = labelW;
+  labelHRef.current   = labelH;
 
   // Scale: fit label into EDITOR_MAX × EDITOR_MAX px
   const scale = Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH);
@@ -106,14 +119,40 @@ export default function LabelDesignerPage() {
 
   useEffect(() => { loadDevices(); loadCases(); loadTemplates(); }, []);
 
-  // Debounced canvas preview – avoids API spam while dragging
+  // Debounced canvas preview
   useEffect(() => {
     if (previewTimer.current) clearTimeout(previewTimer.current);
-    previewTimer.current = setTimeout(() => {
-      if (previewDevice) renderPreview();
-    }, 600);
+    previewTimer.current = setTimeout(() => renderPreview(), 600);
     return () => { if (previewTimer.current) clearTimeout(previewTimer.current); };
   }, [elements, labelW, labelH, previewDevice]);
+
+  // Debounced editor QR/barcode image fetch
+  useEffect(() => {
+    if (imgTimer.current) clearTimeout(imgTimer.current);
+    imgTimer.current = setTimeout(async () => {
+      const codes = elements.filter(e => e.type === 'qrcode' || e.type === 'barcode');
+      if (codes.length === 0) return;
+      const updates: Record<string, string> = {};
+      await Promise.all(codes.map(async elem => {
+        const demoContent = elem.content === 'device_id' ? 'DEMO-001' : elem.content;
+        try {
+          if (elem.type === 'qrcode') {
+            const px = Math.max(60, Math.round(elem.width * Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH)));
+            const { data } = await labelsApi.generateQRCode(demoContent, px);
+            updates[elem.id] = data.image_data;
+          } else {
+            const px = Math.max(123, Math.round(elem.width * Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH)));
+            const ph = Math.max(20, Math.round(elem.height * Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH)));
+            const { data } = await labelsApi.generateBarcode(demoContent, px, ph);
+            updates[elem.id] = data.image_data;
+          }
+        } catch { /* keep placeholder on error */ }
+      }));
+      if (Object.keys(updates).length > 0)
+        setImgCache(prev => ({ ...prev, ...updates }));
+    }, 800);
+    return () => { if (imgTimer.current) clearTimeout(imgTimer.current); };
+  }, [elements.map(e => `${e.id}:${e.content}:${e.width}:${e.height}`).join(','), labelW, labelH]);
 
   const toast = (type: 'success' | 'error', message: string) =>
     window.dispatchEvent(new CustomEvent('toast', { detail: { type, message } }));
@@ -305,22 +344,30 @@ export default function LabelDesignerPage() {
     };
   };
 
-  const onMouseMove = (e: React.MouseEvent) => {
+  // Document-level handlers so drag continues even when mouse leaves the editor div
+  const handleDocMouseMove = useCallback((e: MouseEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
 
-    const dx = (e.clientX - ds.startX) / scale;
-    const dy = (e.clientY - ds.startY) / scale;
+    const lw  = labelWRef.current;
+    const lh  = labelHRef.current;
+    const sc  = Math.min(EDITOR_MAX / lw, EDITOR_MAX / lh);
+    const snap = snapRef.current;
+
+    const dx = (e.clientX - ds.startX) / sc;
+    const dy = (e.clientY - ds.startY) / sc;
 
     if (ds.type === 'move') {
-      const nx = snapVal(Math.max(0, Math.min(labelW - ds.origW, ds.origX + dx)), GRID_MM, snapEnabled);
-      const ny = snapVal(Math.max(0, Math.min(labelH - ds.origH, ds.origY + dy)), GRID_MM, snapEnabled);
-      updateEl(ds.elementId, { x: nx, y: ny });
+      const nx = snapVal(Math.max(0, Math.min(lw - ds.origW, ds.origX + dx)), GRID_MM, snap);
+      const ny = snapVal(Math.max(0, Math.min(lh - ds.origH, ds.origY + dy)), GRID_MM, snap);
+      setElements(prev => prev.map(el =>
+        el.id === ds.elementId ? { ...el, x: nx, y: ny } : el
+      ));
       return;
     }
 
     const h      = ds.handle!;
-    const locked = elements.find(el => el.id === ds.elementId)?.aspect_ratio_locked ?? false;
+    const locked = elementsRef.current.find(el => el.id === ds.elementId)?.aspect_ratio_locked ?? false;
 
     let nx = ds.origX, ny = ds.origY, nw = ds.origW, nh = ds.origH;
 
@@ -329,7 +376,6 @@ export default function LabelDesignerPage() {
     if (h.includes('w')) { nw = Math.max(2, ds.origW - dx); nx = ds.origX + ds.origW - nw; }
     if (h.includes('n')) { nh = Math.max(2, ds.origH - dy); ny = ds.origY + ds.origH - nh; }
 
-    // Maintain aspect ratio on corner drags when locked
     if (locked && (h === 'nw' || h === 'ne' || h === 'se' || h === 'sw')) {
       nh = nw / ds.origRatio;
       if (h === 'ne') ny = ds.origY + ds.origH - nh;
@@ -337,15 +383,26 @@ export default function LabelDesignerPage() {
       if (h === 'nw') { ny = ds.origY + ds.origH - nh; nx = ds.origX + ds.origW - nw; }
     }
 
-    nx = snapVal(Math.max(0, nx), GRID_MM, snapEnabled);
-    ny = snapVal(Math.max(0, ny), GRID_MM, snapEnabled);
-    nw = snapVal(Math.max(2, nw), GRID_MM, snapEnabled);
-    nh = snapVal(Math.max(2, nh), GRID_MM, snapEnabled);
+    nx = snapVal(Math.max(0, nx), GRID_MM, snap);
+    ny = snapVal(Math.max(0, ny), GRID_MM, snap);
+    nw = snapVal(Math.max(2, nw), GRID_MM, snap);
+    nh = snapVal(Math.max(2, nh), GRID_MM, snap);
 
-    updateEl(ds.elementId, { x: nx, y: ny, width: nw, height: nh });
-  };
+    setElements(prev => prev.map(el =>
+      el.id === ds.elementId ? { ...el, x: nx, y: ny, width: nw, height: nh } : el
+    ));
+  }, []);
 
-  const onMouseUp = () => { dragRef.current = null; };
+  const handleDocMouseUp = useCallback(() => { dragRef.current = null; }, []);
+
+  useEffect(() => {
+    document.addEventListener('mousemove', handleDocMouseMove);
+    document.addEventListener('mouseup',   handleDocMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleDocMouseMove);
+      document.removeEventListener('mouseup',   handleDocMouseUp);
+    };
+  }, [handleDocMouseMove, handleDocMouseUp]);
 
   /* ── Canvas preview (300 DPI) ── */
 
@@ -373,8 +430,15 @@ export default function LabelDesignerPage() {
       img.src = src;
     });
 
+  const DEMO_DEVICE: Device = {
+    device_id: 'DEMO-001', product_name: 'Demo Produkt',
+    serial_number: 'SN-000001', barcode: 'DEMO-001',
+    zone_code: 'A1', zone_name: 'Hauptlager', status: 'in_stock',
+  };
+
   const renderPreview = async () => {
-    if (!previewDevice || !canvasRef.current) return;
+    if (!canvasRef.current) return;
+    const dev = previewDevice ?? DEMO_DEVICE;
     const canvas = canvasRef.current;
     const ctx    = canvas.getContext('2d');
     if (!ctx) return;
@@ -393,7 +457,7 @@ export default function LabelDesignerPage() {
     for (const elem of elements) {
       const x = elem.x * mm, y = elem.y * mm;
       const w = elem.width * mm, h = elem.height * mm;
-      const content = resolveContent(elem.content, previewDevice);
+      const content = resolveContent(elem.content, dev);
 
       try {
         if (elem.type === 'qrcode') {
@@ -794,11 +858,9 @@ export default function LabelDesignerPage() {
                   style={{
                     width:  edW,
                     height: edH,
-                    backgroundSize: `${GRID_MM * scale}px ${GRID_MM * scale}px`,
+                    backgroundSize:  snapEnabled ? `${GRID_MM * scale}px ${GRID_MM * scale}px` : undefined,
+                    backgroundImage: snapEnabled ? undefined : 'none',
                   }}
-                  onMouseMove={onMouseMove}
-                  onMouseUp={onMouseUp}
-                  onMouseLeave={onMouseUp}
                   onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}
                 >
                   {elements.map(elem => (
@@ -822,16 +884,22 @@ export default function LabelDesignerPage() {
                         <div className="ld-placeholder"><ImageIcon size={Math.min(elem.width * scale * 0.5, 24)} /></div>
                       )}
                       {elem.type === 'qrcode' && (
-                        <div className="ld-placeholder"><QrCode size={Math.min(elem.width * scale * 0.65, 28)} /></div>
+                        imgCache[elem.id]
+                          ? <img src={imgCache[elem.id]} draggable={false}
+                              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
+                          : <div className="ld-placeholder"><QrCode size={Math.min(elem.width * scale * 0.65, 28)} /></div>
                       )}
                       {elem.type === 'barcode' && (
-                        <div className="ld-barcode-preview">
-                          <div className="ld-barcode-lines" />
-                          <span className="ld-barcode-text"
-                            style={{ fontSize: Math.min(elem.height * scale * 0.28, 9) }}>
-                            {FIELD_OPTIONS.find(o => o.value === elem.content)?.label ?? elem.content}
-                          </span>
-                        </div>
+                        imgCache[elem.id]
+                          ? <img src={imgCache[elem.id]} draggable={false}
+                              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
+                          : <div className="ld-barcode-preview">
+                              <div className="ld-barcode-lines" />
+                              <span className="ld-barcode-text"
+                                style={{ fontSize: Math.min(elem.height * scale * 0.28, 9) }}>
+                                {FIELD_OPTIONS.find(o => o.value === elem.content)?.label ?? elem.content}
+                              </span>
+                            </div>
                       )}
                       {elem.type === 'text' && (
                         <div className="ld-text-preview" style={{
