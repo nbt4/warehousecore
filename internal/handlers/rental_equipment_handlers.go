@@ -462,3 +462,55 @@ func GetRentalEquipmentSuppliers(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, suppliers)
 }
+
+// SearchSupplierContacts searches the customers table for contacts with is_supplier=true
+func SearchSupplierContacts(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Query parameter required"})
+		return
+	}
+
+	db := repository.GetSQLDB()
+	pattern := "%" + q + "%"
+
+	rows, err := db.Query(`
+		SELECT customerid, COALESCE(companyname, ''), COALESCE(firstname, ''), COALESCE(lastname, '')
+		FROM customers
+		WHERE is_supplier = true
+		  AND (companyname ILIKE $1 OR firstname ILIKE $1 OR lastname ILIKE $1)
+		ORDER BY COALESCE(companyname, lastname, firstname)
+		LIMIT 10
+	`, pattern)
+	if err != nil {
+		log.Printf("Failed to search supplier contacts: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Search failed"})
+		return
+	}
+	defer rows.Close()
+
+	type result struct {
+		ID          int    `json:"id"`
+		DisplayName string `json:"display_name"`
+	}
+
+	var results []result
+	for rows.Next() {
+		var id int
+		var company, first, last string
+		if err := rows.Scan(&id, &company, &first, &last); err != nil {
+			continue
+		}
+		name := company
+		if name == "" {
+			name = (first + " " + last)
+		}
+		results = append(results, result{ID: id, DisplayName: name})
+	}
+
+	if results == nil {
+		results = []result{}
+	}
+
+	respondJSON(w, http.StatusOK, results)
+}

@@ -269,6 +269,7 @@ func main() {
 	adminRead.HandleFunc("/product-packages/{id}", handlers.GetProductPackage).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment", handlers.GetRentalEquipment).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment/suppliers", handlers.GetRentalEquipmentSuppliers).Methods("GET")
+	adminRead.HandleFunc("/rental-equipment/supplier-contacts", handlers.SearchSupplierContacts).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment/{id}", handlers.GetRentalEquipmentByID).Methods("GET")
 	adminRead.HandleFunc("/rental-field-definitions", handlers.GetRentalFieldDefinitions).Methods("GET")
 	adminRead.HandleFunc("/api-keys", handlers.ListAPIKeys).Methods("GET")

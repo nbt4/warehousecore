@@ -105,6 +105,7 @@ export function RentedProductsTab() {
   const [formData, setFormData] = useState<RentalEquipmentFormData>(initialFormData);
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [supplierContactResults, setSupplierContactResults] = useState<{ id: number; display_name: string }[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => {
     return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table';
   });
@@ -213,6 +214,7 @@ export function RentedProductsTab() {
     setModalOpen(false);
     setEditingId(null);
     setFormData(initialFormData);
+    setSupplierContactResults([]);
   }, []);
 
   const closeDetailModal = () => {
@@ -642,24 +644,45 @@ export function RentedProductsTab() {
                   />
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="mb-2 block text-sm font-semibold text-white">
                     Lieferant <span className="text-accent-red">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.supplier_name}
-                    onChange={event => setFormData({ ...formData, supplier_name: event.target.value })}
+                    onChange={event => {
+                      const val = event.target.value;
+                      setFormData({ ...formData, supplier_name: val });
+                      if (val.trim().length >= 2) {
+                        api.get<{ id: number; display_name: string }[]>(
+                          `/admin/rental-equipment/supplier-contacts?q=${encodeURIComponent(val.trim())}`
+                        ).then(r => setSupplierContactResults(r.data || [])).catch(() => setSupplierContactResults([]));
+                      } else {
+                        setSupplierContactResults([]);
+                      }
+                    }}
                     placeholder="z.B. Stagetec GmbH"
-                    list="supplier-suggestions"
                     className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                     required
                   />
-                  <datalist id="supplier-suggestions">
-                    {suppliers.map(supplier => (
-                      <option key={supplier} value={supplier} />
-                    ))}
-                  </datalist>
+                  {supplierContactResults.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-white/10 bg-[#1a1a1a] shadow-xl overflow-hidden">
+                      {supplierContactResults.map(s => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, supplier_name: s.display_name }));
+                            setSupplierContactResults([]);
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/10 transition-colors"
+                        >
+                          {s.display_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
