@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { labelsApi, devicesApi, casesApi } from '../lib/api';
 import type { LabelTemplate, LabelElement, Device, CaseSummary } from '../lib/api';
+import { ModalPortal } from '../components/ModalPortal';
+import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
 import JSZip from 'jszip';
 import './LabelDesignerPage.css';
 
@@ -119,6 +121,8 @@ function PrintDialog({ open, onClose, devices, cases, labelW, labelH, onPrintSin
   const [tab, setTab]           = useState<PrintTab>('devices');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  useBlockBodyScroll(open);
+
   if (!open) return null;
 
   const devicesWithLabel = devices.filter(d => d.label_path);
@@ -174,117 +178,139 @@ function PrintDialog({ open, onClose, devices, cases, labelW, labelH, onPrintSin
       ).length;
 
   return (
-    <div className="pd-overlay" onClick={onClose}>
-      <div className="pd-dialog" onClick={e => e.stopPropagation()}>
-        <div className="pd-header">
-          <h2>Labels drucken</h2>
-          <button onClick={onClose} className="pd-close"><X size={18} /></button>
-        </div>
-
-        {/* Step 1: Mode selection */}
-        {!mode && (
-          <div className="pd-modes">
-            <button className="pd-mode-card" onClick={() => { onPrintSingle(); onClose(); }}>
-              <Printer size={24} />
-              <span className="pd-mode-title">Aktuelles Label</span>
-              <span className="pd-mode-desc">Nur das angezeigte Label drucken</span>
-            </button>
-            <button className="pd-mode-card" onClick={() => setMode('selection')}>
-              <Printer size={24} />
-              <span className="pd-mode-title">Auswahl</span>
-              <span className="pd-mode-desc">Bestimmte Labels auswählen</span>
-            </button>
-            <button className="pd-mode-card" onClick={() => setMode('all')}>
-              <Printer size={24} />
-              <span className="pd-mode-title">Alle</span>
-              <span className="pd-mode-desc">Alle Labels eines Typs drucken</span>
+    <ModalPortal>
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+        <div
+          className="glass-dark w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[80vh]"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-white/10">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Printer className="w-5 h-5 text-accent-red" />
+              Labels drucken
+            </h2>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+              <X className="w-5 h-5 text-gray-400" />
             </button>
           </div>
-        )}
 
-        {/* Step 2+3: Tab selection + list */}
-        {mode && (
-          <>
-            <div className="pd-tabs">
-              <button
-                className={`pd-tab${tab === 'devices' ? ' active' : ''}`}
-                onClick={() => { setTab('devices'); setSelected(new Set()); }}
-              >
-                Geräte ({devicesWithLabel.length})
-              </button>
-              <button
-                className={`pd-tab${tab === 'cases' ? ' active' : ''}`}
-                onClick={() => { setTab('cases'); setSelected(new Set()); }}
-              >
-                Cases ({casesWithLabel.length})
-              </button>
+          {/* Mode selection */}
+          {!mode && (
+            <div className="grid grid-cols-3 gap-3 p-6">
+              {([
+                { key: 'single' as const, title: 'Aktuelles Label', desc: 'Nur das angezeigte Label drucken', action: () => { onPrintSingle(); onClose(); } },
+                { key: 'selection' as const, title: 'Auswahl', desc: 'Bestimmte Labels auswählen', action: () => setMode('selection') },
+                { key: 'all' as const, title: 'Alle', desc: 'Alle Labels eines Typs drucken', action: () => setMode('all') },
+              ] as const).map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={opt.action}
+                  className="glass flex flex-col items-center gap-2 p-5 rounded-xl border border-white/10 text-gray-300 hover:border-accent-red/40 hover:bg-accent-red/10 hover:text-white transition-all cursor-pointer"
+                >
+                  <Printer className="w-6 h-6" />
+                  <span className="font-semibold text-sm">{opt.title}</span>
+                  <span className="text-[0.7rem] text-gray-500 text-center leading-tight">{opt.desc}</span>
+                </button>
+              ))}
             </div>
+          )}
 
-            {mode === 'selection' && (
-              <div className="pd-list-container">
-                <div className="pd-list-header">
-                  <label className="pd-checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={currentList.length > 0 && currentList.every(i => {
-                        const id = tab === 'devices' ? (i as Device).device_id : `CASE-${(i as CaseSummary).case_id}`;
-                        return selected.has(id);
-                      })}
-                      onChange={toggleAll}
-                    />
-                    <span>Alle auswählen</span>
-                  </label>
-                  <span className="pd-count">{printCount} von {currentList.length}</span>
-                </div>
-                <div className="pd-list">
-                  {(currentAll as (Device | CaseSummary)[]).map(item => {
-                    const isDevice = tab === 'devices';
-                    const id = isDevice ? (item as Device).device_id : `CASE-${(item as CaseSummary).case_id}`;
-                    const name = isDevice ? (item as Device).product_name ?? (item as Device).device_id : (item as CaseSummary).name;
-                    const hasLabel = isDevice ? !!(item as Device).label_path : !!(item as CaseSummary).label_path;
-                    return (
-                      <label key={id} className={`pd-checkbox-row${!hasLabel ? ' disabled' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={selected.has(id)}
-                          onChange={() => toggleItem(id)}
-                          disabled={!hasLabel}
-                        />
-                        <span className="pd-item-id">{id}</span>
-                        <span className="pd-item-name">{name}</span>
-                        {!hasLabel && <span className="pd-no-label">(kein Label)</span>}
-                      </label>
-                    );
-                  })}
-                </div>
+          {/* Tab selection + list */}
+          {mode && (
+            <>
+              <div className="flex border-b border-white/10 px-6">
+                {(['devices', 'cases'] as PrintTab[]).map(t => (
+                  <button
+                    key={t}
+                    className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                      tab === t
+                        ? 'text-accent-red border-accent-red'
+                        : 'text-gray-500 border-transparent hover:text-white'
+                    }`}
+                    onClick={() => { setTab(t); setSelected(new Set()); }}
+                  >
+                    {t === 'devices' ? 'Geräte' : 'Cases'} ({t === 'devices' ? devicesWithLabel.length : casesWithLabel.length})
+                  </button>
+                ))}
               </div>
-            )}
 
-            {mode === 'all' && (
-              <div className="pd-all-summary">
-                <p>{currentList.length} {tab === 'devices' ? 'Geräte' : 'Cases'} mit Label werden gedruckt.</p>
-                {currentList.length === 0 && (
-                  <p className="pd-warning">Keine Labels vorhanden. Bitte erst Labels generieren.</p>
-                )}
+              {mode === 'selection' && (
+                <div className="flex flex-col flex-1 min-h-0 px-6">
+                  <div className="flex items-center justify-between py-3 border-b border-white/[0.06]">
+                    <label className="flex items-center gap-2.5 text-sm text-gray-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-accent-red cursor-pointer"
+                        checked={currentList.length > 0 && currentList.every(i => {
+                          const id = tab === 'devices' ? (i as Device).device_id : `CASE-${(i as CaseSummary).case_id}`;
+                          return selected.has(id);
+                        })}
+                        onChange={toggleAll}
+                      />
+                      Alle auswählen
+                    </label>
+                    <span className="text-xs text-gray-500">{printCount} von {currentList.length}</span>
+                  </div>
+                  <div className="overflow-y-auto max-h-[320px] py-1">
+                    {(currentAll as (Device | CaseSummary)[]).map(item => {
+                      const isDevice = tab === 'devices';
+                      const id = isDevice ? (item as Device).device_id : `CASE-${(item as CaseSummary).case_id}`;
+                      const name = isDevice ? (item as Device).product_name ?? (item as Device).device_id : (item as CaseSummary).name;
+                      const hasLabel = isDevice ? !!(item as Device).label_path : !!(item as CaseSummary).label_path;
+                      return (
+                        <label
+                          key={id}
+                          className={`flex items-center gap-2.5 py-2 px-1 rounded-md text-sm transition-colors ${
+                            hasLabel ? 'text-gray-300 cursor-pointer hover:bg-white/[0.04]' : 'text-gray-600 cursor-not-allowed opacity-40'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-accent-red cursor-inherit"
+                            checked={selected.has(id)}
+                            onChange={() => toggleItem(id)}
+                            disabled={!hasLabel}
+                          />
+                          <span className="font-mono text-xs text-accent-red min-w-[90px]">{id}</span>
+                          <span className="flex-1 truncate">{name}</span>
+                          {!hasLabel && <span className="text-[0.7rem] text-red-400/60 italic">(kein Label)</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {mode === 'all' && (
+                <div className="py-8 px-6 text-center text-gray-300">
+                  <p>{currentList.length} {tab === 'devices' ? 'Geräte' : 'Cases'} mit Label werden gedruckt.</p>
+                  {currentList.length === 0 && (
+                    <p className="text-sm text-yellow-500/80 mt-2">Keine Labels vorhanden. Bitte erst Labels generieren.</p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between p-6 border-t border-white/10">
+                <button
+                  className="btn-action"
+                  onClick={() => { setMode(null); setSelected(new Set()); }}
+                >
+                  ← Zurück
+                </button>
+                <button
+                  className="btn-action btn-primary"
+                  onClick={handlePrint}
+                  disabled={printCount === 0}
+                >
+                  <Printer size={15} /> {printCount} Label{printCount !== 1 ? 's' : ''} drucken
+                </button>
               </div>
-            )}
-
-            <div className="pd-footer">
-              <button className="btn-action" onClick={() => { setMode(null); setSelected(new Set()); }}>
-                ← Zurück
-              </button>
-              <button
-                className="btn-action btn-primary"
-                onClick={handlePrint}
-                disabled={printCount === 0}
-              >
-                <Printer size={15} /> {printCount} Label{printCount !== 1 ? 's' : ''} drucken
-              </button>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
 
