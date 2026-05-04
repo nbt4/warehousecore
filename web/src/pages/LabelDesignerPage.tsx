@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Trash2, Download, Printer, QrCode, Barcode, Type, Save,
-  Image as ImageIcon, Lock, Unlock, Grid3x3, Eye, EyeOff,
+  Image as ImageIcon, Lock, Unlock, Grid3x3, Eye, EyeOff, X,
 } from 'lucide-react';
 import { labelsApi, devicesApi, casesApi } from '../lib/api';
 import type { LabelTemplate, LabelElement, Device, CaseSummary } from '../lib/api';
@@ -76,7 +76,217 @@ function snapVal(v: number, grid: number, enabled: boolean): number {
   return Math.round(v / grid) * grid;
 }
 
+function printBulkLabels(labelPaths: string[], widthMm: number, heightMm: number) {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.title = `${labelPaths.length} Labels drucken`;
+  const style = win.document.createElement('style');
+  style.textContent = [
+    `@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }`,
+    `body { margin: 0; padding: 0; background: white; }`,
+    `img { display: block; width: ${widthMm}mm; height: ${heightMm}mm; page-break-after: always; }`,
+    `img:last-child { page-break-after: avoid; }`,
+  ].join('\n');
+  win.document.head.appendChild(style);
+  let loaded = 0;
+  for (const path of labelPaths) {
+    const img = win.document.createElement('img');
+    img.src = path;
+    img.onload = img.onerror = () => {
+      if (++loaded === labelPaths.length) { win.focus(); win.print(); }
+    };
+    win.document.body.appendChild(img);
+  }
+}
+
 /* ── Component ──────────────────────────────────────────────────────── */
+
+type PrintMode = 'single' | 'selection' | 'all';
+type PrintTab  = 'devices' | 'cases';
+
+interface PrintDialogProps {
+  open: boolean;
+  onClose: () => void;
+  devices: Device[];
+  cases: CaseSummary[];
+  labelW: number;
+  labelH: number;
+  onPrintSingle: () => void;
+}
+
+function PrintDialog({ open, onClose, devices, cases, labelW, labelH, onPrintSingle }: PrintDialogProps) {
+  const [mode, setMode]         = useState<PrintMode | null>(null);
+  const [tab, setTab]           = useState<PrintTab>('devices');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  if (!open) return null;
+
+  const devicesWithLabel = devices.filter(d => d.label_path);
+  const casesWithLabel   = cases.filter(c => c.label_path);
+  const currentList      = tab === 'devices' ? devicesWithLabel : casesWithLabel;
+  const currentAll       = tab === 'devices' ? devices : cases;
+
+  const toggleItem = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    const ids = currentList.map(i => tab === 'devices' ? (i as Device).device_id : `CASE-${(i as CaseSummary).case_id}`);
+    const allSelected = ids.every(id => selected.has(id));
+    setSelected(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => allSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  };
+
+  const handlePrint = () => {
+    let paths: string[] = [];
+    if (mode === 'all') {
+      if (tab === 'devices') paths = devicesWithLabel.map(d => d.label_path!);
+      else                   paths = casesWithLabel.map(c => c.label_path!);
+    } else {
+      if (tab === 'devices') {
+        paths = devicesWithLabel
+          .filter(d => selected.has(d.device_id))
+          .map(d => d.label_path!);
+      } else {
+        paths = casesWithLabel
+          .filter(c => selected.has(`CASE-${c.case_id}`))
+          .map(c => c.label_path!);
+      }
+    }
+    if (paths.length === 0) return;
+    printBulkLabels(paths, labelW, labelH);
+    onClose();
+  };
+
+  const printCount = mode === 'all'
+    ? currentList.length
+    : [...selected].filter(id =>
+        tab === 'devices'
+          ? devicesWithLabel.some(d => d.device_id === id)
+          : casesWithLabel.some(c => `CASE-${c.case_id}` === id)
+      ).length;
+
+  return (
+    <div className="pd-overlay" onClick={onClose}>
+      <div className="pd-dialog" onClick={e => e.stopPropagation()}>
+        <div className="pd-header">
+          <h2>Labels drucken</h2>
+          <button onClick={onClose} className="pd-close"><X size={18} /></button>
+        </div>
+
+        {/* Step 1: Mode selection */}
+        {!mode && (
+          <div className="pd-modes">
+            <button className="pd-mode-card" onClick={() => { onPrintSingle(); onClose(); }}>
+              <Printer size={24} />
+              <span className="pd-mode-title">Aktuelles Label</span>
+              <span className="pd-mode-desc">Nur das angezeigte Label drucken</span>
+            </button>
+            <button className="pd-mode-card" onClick={() => setMode('selection')}>
+              <Printer size={24} />
+              <span className="pd-mode-title">Auswahl</span>
+              <span className="pd-mode-desc">Bestimmte Labels auswählen</span>
+            </button>
+            <button className="pd-mode-card" onClick={() => setMode('all')}>
+              <Printer size={24} />
+              <span className="pd-mode-title">Alle</span>
+              <span className="pd-mode-desc">Alle Labels eines Typs drucken</span>
+            </button>
+          </div>
+        )}
+
+        {/* Step 2+3: Tab selection + list */}
+        {mode && (
+          <>
+            <div className="pd-tabs">
+              <button
+                className={`pd-tab${tab === 'devices' ? ' active' : ''}`}
+                onClick={() => { setTab('devices'); setSelected(new Set()); }}
+              >
+                Geräte ({devicesWithLabel.length})
+              </button>
+              <button
+                className={`pd-tab${tab === 'cases' ? ' active' : ''}`}
+                onClick={() => { setTab('cases'); setSelected(new Set()); }}
+              >
+                Cases ({casesWithLabel.length})
+              </button>
+            </div>
+
+            {mode === 'selection' && (
+              <div className="pd-list-container">
+                <div className="pd-list-header">
+                  <label className="pd-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={currentList.length > 0 && currentList.every(i => {
+                        const id = tab === 'devices' ? (i as Device).device_id : `CASE-${(i as CaseSummary).case_id}`;
+                        return selected.has(id);
+                      })}
+                      onChange={toggleAll}
+                    />
+                    <span>Alle auswählen</span>
+                  </label>
+                  <span className="pd-count">{printCount} von {currentList.length}</span>
+                </div>
+                <div className="pd-list">
+                  {(currentAll as (Device | CaseSummary)[]).map(item => {
+                    const isDevice = tab === 'devices';
+                    const id = isDevice ? (item as Device).device_id : `CASE-${(item as CaseSummary).case_id}`;
+                    const name = isDevice ? (item as Device).product_name ?? (item as Device).device_id : (item as CaseSummary).name;
+                    const hasLabel = isDevice ? !!(item as Device).label_path : !!(item as CaseSummary).label_path;
+                    return (
+                      <label key={id} className={`pd-checkbox-row${!hasLabel ? ' disabled' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(id)}
+                          onChange={() => toggleItem(id)}
+                          disabled={!hasLabel}
+                        />
+                        <span className="pd-item-id">{id}</span>
+                        <span className="pd-item-name">{name}</span>
+                        {!hasLabel && <span className="pd-no-label">(kein Label)</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {mode === 'all' && (
+              <div className="pd-all-summary">
+                <p>{currentList.length} {tab === 'devices' ? 'Geräte' : 'Cases'} mit Label werden gedruckt.</p>
+                {currentList.length === 0 && (
+                  <p className="pd-warning">Keine Labels vorhanden. Bitte erst Labels generieren.</p>
+                )}
+              </div>
+            )}
+
+            <div className="pd-footer">
+              <button className="btn-action" onClick={() => { setMode(null); setSelected(new Set()); }}>
+                ← Zurück
+              </button>
+              <button
+                className="btn-action btn-primary"
+                onClick={handlePrint}
+                disabled={printCount === 0}
+              >
+                <Printer size={15} /> {printCount} Label{printCount !== 1 ? 's' : ''} drucken
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function LabelDesignerPage() {
   const [labelW, setLabelW]         = useState(62);
@@ -97,6 +307,7 @@ export default function LabelDesignerPage() {
   const [previewDevice, setPreviewDevice] = useState<Device | null>(null);
 
   const [imgCache, setImgCache] = useState<Record<string, string>>({});
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
 
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const dragRef      = useRef<DragState | null>(null);
@@ -1001,7 +1212,7 @@ export default function LabelDesignerPage() {
           <div className="panel-section">
             <h3>Aktionen</h3>
             <div className="action-buttons">
-              <button onClick={printPreview} disabled={!previewDevice} className="btn-action">
+              <button onClick={() => setPrintDialogOpen(true)} className="btn-action">
                 <Printer size={15} /> Drucken
               </button>
               <button onClick={generateMissingLabels} disabled={!canGenerate}
@@ -1021,6 +1232,16 @@ export default function LabelDesignerPage() {
 
         </div>
       </div>
+
+      <PrintDialog
+        open={printDialogOpen}
+        onClose={() => setPrintDialogOpen(false)}
+        devices={devices}
+        cases={cases}
+        labelW={labelW}
+        labelH={labelH}
+        onPrintSingle={printPreview}
+      />
     </div>
   );
 }
