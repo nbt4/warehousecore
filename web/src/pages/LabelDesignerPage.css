@@ -264,8 +264,10 @@
 }
 
 .btn-action:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .btn-action:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -276,8 +278,9 @@
 }
 
 .btn-action.btn-primary:hover:not(:disabled) {
-  background: #b8001a;
-  box-shadow: 0 4px 14px rgba(208, 2, 27, 0.35);
+  background: #a30017;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(208, 2, 27, 0.4);
 }
 
 /* ── Property grid ── */

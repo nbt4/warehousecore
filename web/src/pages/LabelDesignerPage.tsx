@@ -206,7 +206,7 @@ function PrintDialog({ open, onClose, devices, cases, labelW, labelH, onPrintSin
                 <button
                   key={opt.key}
                   onClick={opt.action}
-                  className="glass flex flex-col items-center gap-2 p-5 rounded-xl border border-white/10 text-gray-300 hover:border-accent-red/40 hover:bg-accent-red/10 hover:text-white transition-all cursor-pointer"
+                  className="glass flex flex-col items-center gap-2 p-5 rounded-xl border border-white/10 text-gray-300 hover:border-accent-red hover:bg-accent-red/20 hover:text-white hover:scale-[1.03] hover:shadow-[0_0_20px_rgba(208,2,27,0.15)] transition-all cursor-pointer"
                 >
                   <Printer className="w-6 h-6" />
                   <span className="font-semibold text-sm">{opt.title}</span>
@@ -223,10 +223,10 @@ function PrintDialog({ open, onClose, devices, cases, labelW, labelH, onPrintSin
                 {(['devices', 'cases'] as PrintTab[]).map(t => (
                   <button
                     key={t}
-                    className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${
                       tab === t
                         ? 'text-accent-red border-accent-red'
-                        : 'text-gray-500 border-transparent hover:text-white'
+                        : 'text-gray-500 border-transparent hover:text-white hover:border-white/30 hover:bg-white/[0.04]'
                     }`}
                     onClick={() => { setTab(t); setSelected(new Set()); }}
                   >
