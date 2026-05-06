@@ -354,6 +354,37 @@ export const jobsApi = {
   getRequirements: (id: number) => api.get<JobRequirement[]>(`/jobs/${id}/requirements`),
 };
 
+export interface PicklistPositionDevice {
+  device_id: string;
+  scanned_at: string;
+  scanned_by: string;
+}
+
+export interface PicklistPosition {
+  position_id: number;
+  product_id: number | null;
+  product_name: string;
+  needed: number;
+  scanned: number;
+  fulfilled: boolean;
+  devices: PicklistPositionDevice[];
+}
+
+export interface JobPicklist {
+  job_id: number;
+  positions: PicklistPosition[];
+}
+
+export const picklistApi = {
+  getByJob: (jobId: number) =>
+    api.get<JobPicklist>(`/jobs/${jobId}/picklist`),
+  scanDevice: (jobId: number, deviceId: string, scannedBy?: string) =>
+    api.post<{ position_id: number; device_id: string; message: string }>(
+      `/jobs/${jobId}/picklist/scan`,
+      { device_id: deviceId, scanned_by: scannedBy || '' }
+    ),
+};
+
 export interface Defect {
   defect_id: number;
   device_id: string;

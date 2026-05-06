@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList, ScanLine } from 'lucide-react';
 import { jobsApi, scansApi, ledApi } from '../lib/api';
 import type { Job, JobSummary, JobDevice, LEDStatus, JobRequirement } from '../lib/api';
 
@@ -10,6 +10,7 @@ type ActiveTab = 'devices' | 'packlist';
 
 export function JobsPage() {
   const { id: urlJobId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -424,9 +425,17 @@ export function JobsPage() {
                   <p className="text-gray-400">{selectedJob.description}</p>
                 )}
               </div>
-              <span className="px-4 py-2 rounded-full bg-green-500/20 text-green-400 font-semibold">
-                {selectedJob.status}
-              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => navigate(`/jobs/${selectedJob.job_id}/picklist`)}
+                  className="flex items-center gap-2 px-4 py-2 bg-accent-red/10 hover:bg-accent-red/20 text-accent-red rounded-lg text-sm font-medium transition-colors"
+                >
+                  <ScanLine className="w-4 h-4" /> Picklist
+                </button>
+                <span className="px-4 py-2 rounded-full bg-green-500/20 text-green-400 font-semibold">
+                  {selectedJob.status}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">

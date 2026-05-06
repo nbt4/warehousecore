@@ -16,6 +16,7 @@ import { ProductsPage } from './pages/ProductsPage';
 import { CablesPage } from './pages/CablesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import LabelDesignerPage from './pages/LabelDesignerPage';
+import { JobPicklistPage } from './pages/JobPicklistPage';
 
 function App() {
   return (
@@ -59,6 +60,7 @@ function App() {
           />
           <Route path="/jobs" element={<ProtectedRoute><Layout><JobsPage /></Layout></ProtectedRoute>} />
           <Route path="/jobs/:id" element={<ProtectedRoute><Layout><JobsPage /></Layout></ProtectedRoute>} />
+          <Route path="/jobs/:id/picklist" element={<ProtectedRoute><Layout><JobPicklistPage /></Layout></ProtectedRoute>} />
           <Route path="/maintenance" element={<ProtectedRoute><Layout><MaintenancePage /></Layout></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Layout><ProfilePage /></Layout></ProtectedRoute>} />
         </Routes>
