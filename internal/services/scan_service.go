@@ -402,14 +402,39 @@ func (s *ScanService) getDeviceWithDetails(deviceID string) *models.DeviceWithDe
 
 // logScanEvent records a scan event
 func (s *ScanService) logScanEvent(tx *sql.Tx, scanCode string, deviceID *string, action string, jobID, zoneID, userID *int64, success bool, errorMsg, ipAddr, userAgent string) {
+	scanResult := "success"
+	if !success {
+		scanResult = "error"
+	}
+	meta := fmt.Sprintf(`{"job_id":%s,"error_message":"%s","ip_address":"%s","user_agent":"%s"}`,
+		nullInt64JSON(jobID), escapeJSON(errorMsg), escapeJSON(ipAddr), escapeJSON(userAgent))
 	_, err := tx.Exec(`
 		INSERT INTO scan_events
-		(scan_code, device_id, action, job_id, zone_id, user_id, success, error_message, ip_address, user_agent, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, scanCode, deviceID, action, jobID, zoneID, userID, success, errorMsg, ipAddr, userAgent, time.Now())
+		(device_id, zone_id, scan_type, barcode_value, scanned_by, scan_result, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, deviceID, zoneID, action, scanCode, userID, scanResult, meta)
 	if err != nil {
 		log.Printf("Failed to log scan event: %v", err)
 	}
+}
+
+func nullInt64JSON(v *int64) string {
+	if v == nil {
+		return "null"
+	}
+	return strconv.FormatInt(*v, 10)
+}
+
+func escapeJSON(s string) string {
+	result := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' || c == '\\' {
+			result = append(result, '\\')
+		}
+		result = append(result, c)
+	}
+	return string(result)
 }
 
 // syncProductStockFromLocations recalculates product.stock_quantity from sum of product_locations
