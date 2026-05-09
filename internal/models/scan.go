@@ -45,6 +45,8 @@ type ScanResponse struct {
 	Duplicate        bool                           `json:"duplicate"`
 	JobInfo          *JobInfo                       `json:"job_info,omitempty"`
 	SuggestedDeps    []ProductDependencyWithDetails `json:"suggested_dependencies,omitempty"`
+	Swapped          bool                           `json:"swapped,omitempty"`
+	SwappedFrom      string                         `json:"swapped_from,omitempty"`
 }
 
 // JobInfo contains basic job information for scan responses

@@ -185,6 +185,34 @@ func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *i
 		fromZoneID = &device.ZoneID.Int64
 	}
 
+	// Device-Swap: if a pending device of the same product is in this job, replace it with the scanned one
+	swapped := false
+	swappedFrom := ""
+	var alreadyAssigned int
+	tx.QueryRow(`SELECT COUNT(*) FROM job_devices WHERE deviceID = $1 AND jobID = $2`, device.DeviceID, *jobID).Scan(&alreadyAssigned)
+	if alreadyAssigned == 0 {
+		var candidateDeviceID string
+		err := tx.QueryRow(`
+			SELECT jd.deviceID
+			FROM job_devices jd
+			JOIN devices d ON d.deviceID = jd.deviceID
+			WHERE jd.jobID = $1
+			  AND d.productID = $2
+			  AND jd.pack_status = 'pending'
+			  AND jd.deviceID != $3
+			LIMIT 1
+		`, *jobID, device.ProductID, device.DeviceID).Scan(&candidateDeviceID)
+		if err == nil && candidateDeviceID != "" {
+			if _, delErr := tx.Exec(`DELETE FROM job_devices WHERE deviceID = $1 AND jobID = $2`, candidateDeviceID, *jobID); delErr != nil {
+				log.Printf("[WARN] device swap: failed to remove old device %s: %v", candidateDeviceID, delErr)
+			} else {
+				swapped = true
+				swappedFrom = candidateDeviceID
+				log.Printf("[INFO] device swap: replaced %s with %s for job %d", candidateDeviceID, device.DeviceID, *jobID)
+			}
+		}
+	}
+
 	// Update device status to on_job
 	_, err := tx.Exec(`
 		UPDATE devices
@@ -286,6 +314,8 @@ func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *i
 		PreviousStatus: previousStatus,
 		NewStatus:      "on_job",
 		SuggestedDeps:  suggestedDeps,
+		Swapped:        swapped,
+		SwappedFrom:    swappedFrom,
 	}, movement, nil
 }
 
