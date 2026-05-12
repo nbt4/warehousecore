@@ -126,7 +126,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
   return (
     <ModalPortal>
       <div className="fixed inset-0 z-[120] flex min-h-screen items-center justify-center bg-black/80 p-4">
-        <div className="glass rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="bg-[#111111]/98 backdrop-blur-xl border border-white/10 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div>

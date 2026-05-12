@@ -2,7 +2,7 @@
 
 **Physical Warehouse Management System for RentalCore Deployments**
 
-Version: 5.9.17
+Version: 5.9.18
 
 WarehouseCore is the digital twin of the Weidelbach warehouse, providing real-time tracking of devices, cases, zones, and movements with barcode/QR scan-driven workflows.
 
@@ -1103,9 +1103,10 @@ docker pull nobentie/warehousecore:latest
 # (DO NOT use docker-compose restart manually)
 ```
 
-**Current Version:** 3.37
+**Current Version:** 3.38
 
 **Recent Changes:**
+- 3.38: ProductDependenciesModal background changed from semi-transparent glass to solid dark overlay for improved readability
 - 3.37: Product list shows device count badge; product detail modal gains devices tab with lazy loading; LED locate deduplication fix
 - 3.36: PostgreSQL trigger for automatic device ID generation - fixes null deviceID constraint violations
 - 3.35: Produktbilder laden deutlich schneller dank gecachter JPEG-Thumbnails + Admin-UI nutzt die kleinen Varianten
