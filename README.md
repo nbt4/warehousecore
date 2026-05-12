@@ -2,7 +2,7 @@
 
 **Physical Warehouse Management System for RentalCore Deployments**
 
-Version: 5.9.18
+Version: 5.9.19
 
 WarehouseCore is the digital twin of the Weidelbach warehouse, providing real-time tracking of devices, cases, zones, and movements with barcode/QR scan-driven workflows.
 
@@ -1346,6 +1346,12 @@ For issues or questions:
 ---
 
 ## Changelog
+
+### Version 5.9.19 (2026-05-12)
+- **fix(backend): correct PostgreSQL column casing in product_dependencies**
+  - Replaced all `p.productID` references in raw SQL with `p.productid` (PostgreSQL lowercases unquoted identifiers)
+  - Fixed GORM struct tag and `Where` clause from `productID` to `productid`
+  - Rewrote `migrations/021_create_product_dependencies.sql` from MySQL syntax (`AUTO_INCREMENT`, `ENGINE=InnoDB`) to valid PostgreSQL DDL
 
 ### Version 2.71 (2025-11-21)
 - **Gerätebaum als Ansicht auf der Produktseite**

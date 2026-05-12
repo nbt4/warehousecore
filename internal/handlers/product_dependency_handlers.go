@@ -40,7 +40,7 @@ func GetProductDependencies(w http.ResponseWriter, r *http.Request) {
 			pd.notes,
 			TO_CHAR(pd.created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at
 		FROM product_dependencies pd
-		JOIN products p ON pd.dependency_product_id = p.productID
+		JOIN products p ON pd.dependency_product_id = p.productid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
 		WHERE pd.product_id = ?
 		ORDER BY pd.created_at DESC
@@ -77,14 +77,14 @@ func CreateProductDependency(w http.ResponseWriter, r *http.Request) {
 	// Validate that dependency product exists and is accessory/consumable
 	db := repository.GetDB()
 	var depProduct struct {
-		ProductID    int  `gorm:"column:productID"`
+		ProductID    int  `gorm:"column:productid"`
 		IsAccessory  bool `gorm:"column:is_accessory"`
 		IsConsumable bool `gorm:"column:is_consumable"`
 	}
 
 	err = db.Table("products").
-		Select("productID, COALESCE(is_accessory, false) as is_accessory, COALESCE(is_consumable, false) as is_consumable").
-		Where("productID = ?", req.DependencyProductID).
+		Select("productid, COALESCE(is_accessory, false) as is_accessory, COALESCE(is_consumable, false) as is_consumable").
+		Where("productid = ?", req.DependencyProductID).
 		First(&depProduct).Error
 
 	if err != nil {
@@ -147,7 +147,7 @@ func CreateProductDependency(w http.ResponseWriter, r *http.Request) {
 			pd.notes,
 			TO_CHAR(pd.created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at
 		FROM product_dependencies pd
-		JOIN products p ON pd.dependency_product_id = p.productID
+		JOIN products p ON pd.dependency_product_id = p.productid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
 		WHERE pd.product_id = ? AND pd.dependency_product_id = ?
 	`, productID, req.DependencyProductID).Scan(&dependency).Error
