@@ -91,12 +91,20 @@ function printBulkLabels(labelPaths: string[], widthMm: number, heightMm: number
   ].join('\n');
   win.document.head.appendChild(style);
   let loaded = 0;
+  const total = labelPaths.length;
+  const tryPrint = () => {
+    if (++loaded === total) {
+      win.focus();
+      // Delay ensures browser has fully painted all images before print dialog opens.
+      setTimeout(() => win.print(), 300);
+    }
+  };
   for (const path of labelPaths) {
     const img = win.document.createElement('img');
+    // Handler must be set before src to avoid missing cached-image load events.
+    img.onload = tryPrint;
+    img.onerror = tryPrint;
     img.src = path;
-    img.onload = img.onerror = () => {
-      if (++loaded === labelPaths.length) { win.focus(); win.print(); }
-    };
     win.document.body.appendChild(img);
   }
 }

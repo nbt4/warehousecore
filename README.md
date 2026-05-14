@@ -2,7 +2,7 @@
 
 **Physical Warehouse Management System for RentalCore Deployments**
 
-Version: 5.9.19
+Version: 5.9.20
 
 WarehouseCore is the digital twin of the Weidelbach warehouse, providing real-time tracking of devices, cases, zones, and movements with barcode/QR scan-driven workflows.
 
@@ -1346,6 +1346,11 @@ For issues or questions:
 ---
 
 ## Changelog
+
+### Version 5.9.20 (2026-05-14)
+- **fix(labels): behebe leere Labels beim Bulk-Druck**
+  - `img.onload`/`onerror`-Handler wird jetzt vor `img.src` gesetzt, um gecachte Bilder sicher zu erfassen
+  - `win.print()` wird nach 300 ms Verzögerung aufgerufen, damit der Browser alle Bilder vollständig malen kann bevor der Druckdialog öffnet
 
 ### Version 5.9.19 (2026-05-12)
 - **fix(backend): correct PostgreSQL column casing in product_dependencies**
