@@ -684,25 +684,31 @@ export default function LabelDesignerPage() {
     zone_code: 'A1', zone_name: 'Hauptlager', status: 'in_stock',
   };
 
-  const renderPreview = async () => {
+  // Renders a device onto the canvas and fully awaits all async operations (QR, barcode API calls).
+  // Reads labelW/labelH/elements from refs so it always reflects the latest state even when called
+  // from inside async loops like generateLabels where the closure may be stale.
+  const renderDeviceToCanvas = async (dev: Device) => {
     if (!canvasRef.current) return;
-    const dev = previewDevice ?? DEMO_DEVICE;
     const canvas = canvasRef.current;
     const ctx    = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpi = 300;
-    const mm  = dpi / 25.4;
-    canvas.width  = Math.round(labelW * mm);
-    canvas.height = Math.round(labelH * mm);
+    const lw    = labelWRef.current;
+    const lh    = labelHRef.current;
+    const elems = elementsRef.current;
+    const dpi   = 300;
+    const mm    = dpi / 25.4;
+
+    canvas.width  = Math.round(lw * mm);
+    canvas.height = Math.round(lh * mm);
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = '#cccccc';
-    ctx.lineWidth = 1;
+    ctx.lineWidth   = 1;
     ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
 
-    for (const elem of elements) {
+    for (const elem of elems) {
       const x = elem.x * mm, y = elem.y * mm;
       const w = elem.width * mm, h = elem.height * mm;
       const content = resolveContent(elem.content, dev);
@@ -714,11 +720,11 @@ export default function LabelDesignerPage() {
         } else if (elem.type === 'barcode') {
           const { data } = await labelsApi.generateBarcode(content, Math.floor(w), Math.floor(h));
           await drawImg(ctx, data.image_data, x, y, w, h);
-        } else if (elem.type === 'image' && elem.image_data) {
-          await drawImg(ctx, elem.image_data, x, y, w, h);
+        } else if (elem.type === 'image' && (elem as DesignElement).image_data) {
+          await drawImg(ctx, (elem as DesignElement).image_data!, x, y, w, h);
         } else if (elem.type === 'text') {
           ctx.fillStyle = elem.style.color || '#000000';
-          const fs = (elem.style.font_size || 8) * (dpi / 96);
+          const fs      = (elem.style.font_size || 8) * (dpi / 96);
           ctx.font      = `${elem.style.font_weight || 'normal'} ${fs}px ${elem.style.font_family || 'Arial'}`;
           ctx.textAlign = (elem.style.alignment as CanvasTextAlign) || 'left';
           ctx.fillText(content, x, y + fs);
@@ -727,6 +733,10 @@ export default function LabelDesignerPage() {
         console.error('Render error for element', elem.id, err);
       }
     }
+  };
+
+  const renderPreview = async () => {
+    await renderDeviceToCanvas(previewDevice ?? DEMO_DEVICE);
   };
 
   /* ── Batch label generation ── */
@@ -741,11 +751,13 @@ export default function LabelDesignerPage() {
 
     try {
       applyTemplate(defaultTpl);
-      await new Promise(r => setTimeout(r, 900));
+      // Wait two animation frames so React re-renders and the elementsRef/labelWRef/labelHRef
+      // refs are updated with the new template values before we start rendering.
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
       for (const dev of devs) {
-        setPreviewDevice(dev);
-        await new Promise(r => setTimeout(r, 700));
+        setPreviewDevice(dev);  // visual feedback only
+        await renderDeviceToCanvas(dev);
         if (canvasRef.current) {
           try { await labelsApi.saveLabel(dev.device_id, canvasRef.current.toDataURL('image/png')); ok++; }
           catch { fail++; }
@@ -761,8 +773,8 @@ export default function LabelDesignerPage() {
           zone_name:    c.zone_name,
           zone_id:      c.zone_id,
         };
-        setPreviewDevice(fake);
-        await new Promise(r => setTimeout(r, 700));
+        setPreviewDevice(fake);  // visual feedback only
+        await renderDeviceToCanvas(fake);
         if (canvasRef.current) {
           try { await labelsApi.saveCaseLabel(c.case_id, canvasRef.current.toDataURL('image/png')); ok++; }
           catch { fail++; }

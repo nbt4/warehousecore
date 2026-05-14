@@ -2,7 +2,7 @@
 
 **Physical Warehouse Management System for RentalCore Deployments**
 
-Version: 5.9.20
+Version: 5.9.21
 
 WarehouseCore is the digital twin of the Weidelbach warehouse, providing real-time tracking of devices, cases, zones, and movements with barcode/QR scan-driven workflows.
 
@@ -1346,6 +1346,13 @@ For issues or questions:
 ---
 
 ## Changelog
+
+### Version 5.9.21 (2026-05-14)
+- **fix(labels): behebe leere/weiße Labels bei der Generierung**
+  - Root Cause: `canvas.toDataURL()` wurde nach festem 700ms-Timeout aufgerufen, während `renderPreview` erst nach 600ms Debounce startete und danach async API-Calls (QR-Code, Barcode) machte — Canvas war beim Erfassen noch leer
+  - `renderDeviceToCanvas(dev)` extrahiert, liest Refs statt React-State-Closures, ist direkt awaitable
+  - `generateLabels` ruft `await renderDeviceToCanvas(dev)` direkt auf statt auf willkürliche Timeouts zu vertrauen
+  - Template-Wechsel wartet jetzt auf React-Re-Render via `requestAnimationFrame` (doppelt) statt 900ms-Timeout
 
 ### Version 5.9.20 (2026-05-14)
 - **fix(labels): behebe leere Labels beim Bulk-Druck**
