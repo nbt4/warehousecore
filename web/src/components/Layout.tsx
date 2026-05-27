@@ -340,7 +340,7 @@ export function Layout({ children }: LayoutProps) {
             const item = navIndex.get(key);
             if (!item) return null;
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
 
             return (
               <Link

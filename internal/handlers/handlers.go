@@ -1211,12 +1211,37 @@ func GetZoneDevices(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, devices)
 }
 
+func ensureProductLocationTable(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS product_locations (
+			location_id SERIAL PRIMARY KEY,
+			product_id  INT NOT NULL,
+			zone_id     INT NOT NULL,
+			quantity    NUMERIC(10,3) NOT NULL DEFAULT 0,
+			updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT fk_pl_product FOREIGN KEY (product_id) REFERENCES products(productid) ON DELETE CASCADE,
+			CONSTRAINT fk_pl_zone    FOREIGN KEY (zone_id)    REFERENCES storage_zones(zone_id) ON DELETE CASCADE,
+			CONSTRAINT uq_pl_product_zone UNIQUE (product_id, zone_id)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_product_locations_zone ON product_locations(zone_id)`)
+	return nil
+}
+
 // GetZoneProducts returns all products (consumables/accessories) in a zone
 func GetZoneProducts(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	zoneID := vars["id"]
 
 	db := repository.GetSQLDB()
+
+	if err := ensureProductLocationTable(db); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 
 	type ProductInZone struct {
 		ProductID    int     `json:"product_id"`
