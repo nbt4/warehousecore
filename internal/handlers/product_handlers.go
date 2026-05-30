@@ -1352,7 +1352,6 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 		FROM products p
 		LEFT JOIN brands b ON p.brandID = b.brandID
 		WHERE p.website_visible = TRUE
-		  AND p.productid NOT IN (SELECT product_id FROM product_package_items)
 		ORDER BY COALESCE(p.pos_in_category, 0), p.name
 	`)
 	if err != nil {
