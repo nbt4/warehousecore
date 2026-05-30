@@ -1366,14 +1366,14 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var (
 			p       WebsiteProduct
-			rawImgs json.RawMessage
+			rawImgs sql.NullString
 		)
 		if err := rows.Scan(&p.ProductID, &p.Name, &p.Brand, &p.Description, &p.PricePerUnit, &p.Thumbnail, &rawImgs); err != nil {
 			log.Printf("[WEBSITE] Failed to scan product: %v", err)
 			continue
 		}
-		if len(rawImgs) > 0 {
-			_ = json.Unmarshal(rawImgs, &p.Images)
+		if rawImgs.Valid && len(rawImgs.String) > 0 {
+			_ = json.Unmarshal([]byte(rawImgs.String), &p.Images)
 		}
 		p.Images = sanitizeWebsiteImages(p.Images)
 		if len(p.Images) == 0 && p.Thumbnail != nil {
