@@ -45,7 +45,7 @@ func NewNextcloudClient(rawURL, username, password, basePath string) (*Nextcloud
 		username:   username,
 		password:   password,
 		basePath:   strings.Trim(basePath, "/"),
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}, nil
 }
 
