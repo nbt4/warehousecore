@@ -139,14 +139,14 @@ export function Layout({ children }: LayoutProps) {
         className={`fixed top-0 right-0 z-50 glass-dark transition-all duration-300 ${
           !isMobile && sidebarOpen ? 'left-64' : !isMobile ? 'left-20' : 'left-0'
         }`}
-        style={{ height: '60px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+        style={{ height: '60px', borderBottom: '1px solid var(--border-subtle)' }}
       >
         <div className="flex items-center justify-between px-4 sm:px-6 h-full">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 rounded-lg transition-colors cursor-pointer"
-              style={{ background: 'none', border: 'none', color: '#A0A0A0' }}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
               aria-label="Toggle sidebar"
             >
               {isMobile
@@ -157,14 +157,14 @@ export function Layout({ children }: LayoutProps) {
               }
             </button>
             <h1 className="font-bold" style={{ fontSize: '1.125rem' }}>
-              <span style={{ color: '#D0021B' }}>Warehouse</span>
-              <span style={{ color: '#ffffff' }}>Core</span>
+              <span style={{ color: 'var(--accent-red)' }}>Warehouse</span>
+              <span style={{ color: 'var(--text-primary)' }}>Core</span>
             </h1>
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
             {companyName && (
-              <span className="text-sm hidden sm:block" style={{ color: '#606060' }}>
+              <span className="text-sm hidden sm:block" style={{ color: 'var(--text-tertiary)' }}>
                 {companyName}
               </span>
             )}
@@ -176,7 +176,7 @@ export function Layout({ children }: LayoutProps) {
       {isMobile && sidebarOpen && (
         <div
           className="fixed inset-0 z-40"
-          style={{ background: 'rgba(0,0,0,0.7)' }}
+          style={{ background: 'var(--bg-overlay)' }}
           onClick={closeSidebar}
         />
       )}
@@ -186,21 +186,21 @@ export function Layout({ children }: LayoutProps) {
         className={`fixed left-0 top-0 bottom-0 z-50 glass-dark flex flex-col transition-all duration-300 ease-in-out ${
           isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0'
         } ${isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'}`}
-        style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}
+        style={{ borderRight: '1px solid var(--border-subtle)' }}
       >
         {/* Mobile sidebar header */}
         <div
           className="flex items-center justify-between px-4 py-4 md:hidden"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
         >
           <h2 className="font-bold" style={{ fontSize: '1.125rem' }}>
-            <span style={{ color: '#D0021B' }}>Warehouse</span>
-            <span style={{ color: '#ffffff' }}>Core</span>
+            <span style={{ color: 'var(--accent-red)' }}>Warehouse</span>
+            <span style={{ color: 'var(--text-primary)' }}>Core</span>
           </h2>
           <button
             onClick={closeSidebar}
             className="p-2 rounded-lg cursor-pointer"
-            style={{ background: 'none', border: 'none', color: '#A0A0A0' }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
             aria-label="Close menu"
           >
             <X className="w-5 h-5" />
@@ -227,9 +227,9 @@ export function Layout({ children }: LayoutProps) {
               sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
             }`}
             style={{
-              background: 'rgba(208,2,27,0.08)',
-              color: '#D0021B',
-              border: '1px solid rgba(208,2,27,0.15)',
+              background: 'rgba(var(--accent-red-rgb), 0.08)',
+              color: 'var(--accent-red)',
+              border: '1px solid rgba(var(--accent-red-rgb), 0.15)',
               textDecoration: 'none',
               fontSize: '0.875rem',
               fontWeight: 600,
@@ -258,12 +258,12 @@ export function Layout({ children }: LayoutProps) {
                   sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
                 }`}
                 style={{
-                  background: isActive ? '#D0021B' : 'transparent',
-                  color: isActive ? '#ffffff' : '#A0A0A0',
+                  background: isActive ? 'var(--accent-red)' : 'transparent',
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                   textDecoration: 'none',
                   fontSize: '0.875rem',
                   fontWeight: 500,
-                  boxShadow: isActive ? '0 2px 8px rgba(208,2,27,0.3)' : 'none',
+                  boxShadow: isActive ? 'var(--shadow-accent)' : 'none',
                 }}
                 title={!sidebarOpen && !isMobile ? item.label : ''}
               >
@@ -282,12 +282,12 @@ export function Layout({ children }: LayoutProps) {
                 sidebarOpen || isMobile ? 'justify-between gap-3 px-3 py-2.5' : 'justify-center p-3'
               }`}
               style={{
-                background: productNavActive ? '#D0021B' : 'transparent',
-                color: productNavActive ? '#ffffff' : '#A0A0A0',
+                background: productNavActive ? 'var(--accent-red)' : 'transparent',
+                color: productNavActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                 border: 'none',
                 fontSize: '0.875rem',
                 fontWeight: 500,
-                boxShadow: productNavActive ? '0 2px 8px rgba(208,2,27,0.3)' : 'none',
+                boxShadow: productNavActive ? 'var(--shadow-accent)' : 'none',
               }}
               aria-expanded={productMenuOpen}
               title={!sidebarOpen && !isMobile ? t('nav.productManagement') : ''}
@@ -319,8 +319,8 @@ export function Layout({ children }: LayoutProps) {
                       style={{
                         padding: '0.5rem 0.75rem',
                         marginLeft: '1.25rem',
-                        background: isActive ? '#D0021B' : 'transparent',
-                        color: isActive ? '#ffffff' : '#A0A0A0',
+                        background: isActive ? 'var(--accent-red)' : 'transparent',
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                         textDecoration: 'none',
                         fontSize: '0.875rem',
                         fontWeight: 500,
@@ -351,12 +351,12 @@ export function Layout({ children }: LayoutProps) {
                   sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
                 }`}
                 style={{
-                  background: isActive ? '#D0021B' : 'transparent',
-                  color: isActive ? '#ffffff' : '#A0A0A0',
+                  background: isActive ? 'var(--accent-red)' : 'transparent',
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                   textDecoration: 'none',
                   fontSize: '0.875rem',
                   fontWeight: 500,
-                  boxShadow: isActive ? '0 2px 8px rgba(208,2,27,0.3)' : 'none',
+                  boxShadow: isActive ? 'var(--shadow-accent)' : 'none',
                 }}
                 title={!sidebarOpen && !isMobile ? item.label : ''}
               >
@@ -371,27 +371,27 @@ export function Layout({ children }: LayoutProps) {
         {/* Sidebar footer — user + logout */}
         <div
           className={`p-3 flex flex-col gap-1 ${!sidebarOpen && !isMobile ? 'items-center' : ''}`}
-          style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          style={{ borderTop: '1px solid var(--border-subtle)' }}
         >
           {user && (sidebarOpen || isMobile) && (
             <button
               onClick={() => { closeSidebar(); navigate('/profile'); }}
               className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg w-full text-left cursor-pointer transition-all"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: '#ffffff' }}
+              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
               title="Profil öffnen"
             >
-              <User className="w-4 h-4 flex-shrink-0" style={{ color: '#D0021B' }} />
+              <User className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-red)' }} />
               <span className="text-sm font-medium truncate">{user.username}</span>
             </button>
           )}
           {user && !sidebarOpen && !isMobile && (
             <div
               className="p-2.5 rounded-lg flex justify-center cursor-pointer"
-              style={{ background: 'rgba(255,255,255,0.04)' }}
+              style={{ background: 'var(--bg-subtle)' }}
               onClick={() => navigate('/profile')}
               title="Profil"
             >
-              <User className="w-4 h-4" style={{ color: '#D0021B' }} />
+              <User className="w-4 h-4" style={{ color: 'var(--accent-red)' }} />
             </div>
           )}
           <button
@@ -399,7 +399,7 @@ export function Layout({ children }: LayoutProps) {
             className={`flex items-center rounded-lg transition-all cursor-pointer ${
               sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5 w-full' : 'justify-center p-3'
             }`}
-            style={{ background: 'none', border: 'none', color: '#A0A0A0', fontSize: '0.875rem', fontWeight: 500 }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}
             title={!sidebarOpen && !isMobile ? 'Abmelden' : ''}
           >
             <LogOut className="w-4 h-4 flex-shrink-0" />

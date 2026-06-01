@@ -129,33 +129,33 @@ export function Dashboard() {
       title: 'Im Lager',
       value: stats.in_storage,
       icon: Warehouse,
-      iconColor: '#a0a0a0',
-      iconBg: 'rgba(255,255,255,0.06)',
-      valueColor: '#ffffff',
+      iconColor: 'var(--text-secondary)',
+      iconBg: 'var(--bg-hover)',
+      valueColor: 'var(--text-primary)',
     },
     {
       title: 'Auf Job',
       value: stats.on_job,
       icon: Package,
-      iconColor: '#D0021B',
-      iconBg: 'rgba(208,2,27,0.1)',
-      valueColor: '#f87171',
+      iconColor: 'var(--accent-red)',
+      iconBg: 'rgba(var(--accent-red-rgb), 0.1)',
+      valueColor: 'var(--accent-red-light)',
     },
     {
       title: 'Defekt',
       value: stats.defective,
       icon: AlertTriangle,
-      iconColor: '#eab308',
-      iconBg: 'rgba(234,179,8,0.1)',
-      valueColor: '#eab308',
+      iconColor: 'var(--color-warning)',
+      iconBg: 'rgba(var(--color-warning-rgb), 0.1)',
+      valueColor: 'var(--color-warning)',
     },
     {
       title: 'Gesamt',
       value: stats.total,
       icon: TrendingUp,
-      iconColor: '#60a5fa',
-      iconBg: 'rgba(96,165,250,0.1)',
-      valueColor: '#60a5fa',
+      iconColor: 'var(--color-info)',
+      iconBg: 'rgba(var(--color-info-rgb), 0.1)',
+      valueColor: 'var(--color-info)',
     },
   ];
 
@@ -163,8 +163,7 @@ export function Dashboard() {
     return (
       <div className="flex items-center justify-center h-96">
         <div
-          className="rounded-full h-10 w-10 border-2 border-t-transparent animate-spin"
-          style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: '#D0021B' }}
+          className="rounded-full h-10 w-10 border-2 border-white/10 border-t-[var(--accent-red)] animate-spin"
         />
       </div>
     );
@@ -173,8 +172,8 @@ export function Dashboard() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
-        <h2 className="font-bold text-white mb-1" style={{ fontSize: '1.75rem' }}>Dashboard</h2>
-        <p className="text-sm" style={{ color: '#A0A0A0' }}>Lagerübersicht und Statistiken</p>
+        <h2 className="font-bold text-white mb-1 text-[1.75rem]">Dashboard</h2>
+        <p className="text-sm text-[var(--text-secondary)]">Lagerübersicht und Statistiken</p>
       </div>
 
       {/* Stats Grid */}
@@ -184,8 +183,7 @@ export function Dashboard() {
           return (
             <div
               key={card.title}
-              className="card p-4 sm:p-5 transition-all duration-200 hover:border-white/14"
-              style={{ cursor: 'default' }}
+              className="card p-4 sm:p-5 transition-all duration-200 hover:border-white/14 cursor-default"
             >
               <div
                 className="inline-flex items-center justify-center w-10 h-10 rounded-lg mb-3"
@@ -193,8 +191,8 @@ export function Dashboard() {
               >
                 <Icon className="w-5 h-5" style={{ color: card.iconColor }} />
               </div>
-              <p className="text-xs font-medium mb-1" style={{ color: '#A0A0A0' }}>{card.title}</p>
-              <p className="font-bold leading-none" style={{ fontSize: '2rem', color: card.valueColor }}>
+              <p className="text-xs font-medium mb-1 text-[var(--text-secondary)]">{card.title}</p>
+              <p className="font-bold leading-none text-[2rem]" style={{ color: card.valueColor }}>
                 {card.value}
               </p>
             </div>
@@ -207,9 +205,9 @@ export function Dashboard() {
 
       {/* Recent Activity */}
       <div className="card p-4 sm:p-6">
-        <h3 className="font-semibold text-white mb-4" style={{ fontSize: '1rem' }}>Letzte Aktivität</h3>
+        <h3 className="font-semibold text-white mb-4 text-base">Letzte Aktivität</h3>
         {activityItems.length === 0 ? (
-          <div className="text-sm py-6 text-center" style={{ color: '#A0A0A0' }}>
+          <div className="text-sm py-6 text-center text-[var(--text-secondary)]">
             Noch keine Aktivitäten erfasst.
           </div>
         ) : (
@@ -217,18 +215,17 @@ export function Dashboard() {
             {activityItems.map((activity) => (
               <div
                 key={activity.movement_id}
-                className="flex items-center gap-3 p-3 rounded-lg transition-colors"
-                style={{ background: 'rgba(255,255,255,0.03)' }}
+                className="flex items-center gap-3 p-3 rounded-lg transition-colors bg-white/[0.03]"
               >
                 <div
                   className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{ background: '#D0021B' }}
+                  style={{ background: 'var(--accent-red)' }}
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white font-medium truncate">
                     {describeMovement(activity)}
                   </p>
-                  <div className="flex items-center gap-2 text-xs mt-0.5" style={{ color: '#A0A0A0' }}>
+                  <div className="flex items-center gap-2 text-xs mt-0.5 text-[var(--text-secondary)]">
                     <span>{formatRelativeTime(activity.timestamp) || 'gerade eben'}</span>
                     {activity.performed_by && (
                       <>

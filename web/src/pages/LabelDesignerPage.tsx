@@ -1037,7 +1037,7 @@ export default function LabelDesignerPage() {
                       style={{ padding: '0.2rem' }}
                     />
                     {selectedElem.image_data && (
-                      <div style={{ gridColumn: '1/-1', fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)' }}>
+                      <div style={{ gridColumn: '1/-1', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                         ✓ {selectedElem.content}
                       </div>
                     )}
@@ -1262,7 +1262,7 @@ export default function LabelDesignerPage() {
                 <Printer size={15} /> Drucken
               </button>
               <button onClick={generateMissingLabels} disabled={!canGenerate}
-                className="btn-action" style={{ background: '#10b981' }}>
+                className="btn-action" style={{ background: 'var(--color-success)' }}>
                 <Save size={15} /> {exporting ? 'Generiere…' : 'Fehlende Labels'}
               </button>
               <button onClick={generateAllLabels} disabled={!canGenerate} className="btn-action btn-primary">

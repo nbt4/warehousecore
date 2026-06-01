@@ -33,7 +33,7 @@ export function Login() {
       className="min-h-screen flex items-center justify-center p-4"
       style={{
         background:
-          'radial-gradient(ellipse at 20% 80%, rgba(208,2,27,0.04) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(208,2,27,0.06) 0%, transparent 50%), #0B0B0B',
+          'radial-gradient(ellipse at 20% 80%, rgba(var(--accent-red-rgb), 0.04) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(var(--accent-red-rgb), 0.06) 0%, transparent 50%), var(--color-dark)',
       }}
     >
       <div className="w-full" style={{ maxWidth: '400px' }}>
@@ -41,11 +41,11 @@ export function Login() {
         {/* Brand */}
         <div className="text-center mb-8">
           <h1 className="font-bold tracking-tight mb-2" style={{ fontSize: '2.25rem' }}>
-            <span style={{ color: '#D0021B' }}>Warehouse</span>
-            <span style={{ color: '#ffffff' }}>Core</span>
+            <span style={{ color: 'var(--accent-red)' }}>Warehouse</span>
+            <span style={{ color: 'var(--text-primary)' }}>Core</span>
           </h1>
           {companyName && (
-            <p className="text-sm" style={{ color: '#A0A0A0' }}>{companyName}</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{companyName}</p>
           )}
         </div>
 
@@ -62,7 +62,7 @@ export function Login() {
               left: 0,
               right: 0,
               height: '3px',
-              background: '#D0021B',
+              background: 'var(--accent-red)',
               borderRadius: '0.75rem 0.75rem 0 0',
             }}
           />
@@ -75,9 +75,9 @@ export function Login() {
             <div
               className="mb-5 px-4 py-3 rounded-lg text-sm"
               style={{
-                background: 'rgba(208,2,27,0.08)',
-                border: '1px solid rgba(208,2,27,0.2)',
-                color: '#f87171',
+                background: 'rgba(var(--accent-red-rgb), 0.08)',
+                border: '1px solid rgba(var(--accent-red-rgb), 0.2)',
+                color: 'var(--accent-red-light)',
               }}
             >
               {error}
@@ -90,14 +90,14 @@ export function Login() {
               <label
                 htmlFor="username"
                 className="block text-sm font-medium mb-2"
-                style={{ color: '#A0A0A0' }}
+                style={{ color: 'var(--text-secondary)' }}
               >
                 Benutzername
               </label>
               <div className="relative">
                 <User
                   className="absolute top-1/2 -translate-y-1/2 w-4 h-4"
-                  style={{ left: '0.75rem', color: '#A0A0A0' }}
+                  style={{ left: '0.75rem', color: 'var(--text-secondary)' }}
                 />
                 <input
                   id="username"
@@ -120,14 +120,14 @@ export function Login() {
               <label
                 htmlFor="password"
                 className="block text-sm font-medium mb-2"
-                style={{ color: '#A0A0A0' }}
+                style={{ color: 'var(--text-secondary)' }}
               >
                 Passwort
               </label>
               <div className="relative">
                 <Lock
                   className="absolute top-1/2 -translate-y-1/2 w-4 h-4"
-                  style={{ left: '0.75rem', color: '#A0A0A0' }}
+                  style={{ left: '0.75rem', color: 'var(--text-secondary)' }}
                 />
                 <input
                   id="password"
@@ -153,11 +153,11 @@ export function Login() {
                 paddingTop: '0.75rem',
                 paddingBottom: '0.75rem',
                 marginTop: '0.5rem',
-                background: loading ? 'rgba(208,2,27,0.5)' : '#D0021B',
-                color: 'white',
+                background: loading ? 'rgba(var(--accent-red-rgb), 0.5)' : 'var(--accent-red)',
+                color: 'var(--text-primary)',
                 border: 'none',
                 fontSize: '1rem',
-                boxShadow: loading ? 'none' : '0 4px 14px rgba(208,2,27,0.25)',
+                boxShadow: loading ? 'none' : 'var(--shadow-accent-lg)',
               }}
             >
               {loading ? (
@@ -177,8 +177,8 @@ export function Login() {
           <div
             className="mt-6 pt-5 text-center text-xs"
             style={{
-              borderTop: '1px solid rgba(255,255,255,0.08)',
-              color: '#606060',
+              borderTop: '1px solid var(--border-subtle)',
+              color: 'var(--text-tertiary)',
             }}
           >
             Sicher verschlüsselt · WarehouseCore

@@ -139,7 +139,7 @@ export function ZonesPage() {
       <div className="flex items-center justify-center h-96">
         <div
           className="rounded-full h-10 w-10 border-2 border-t-transparent animate-spin"
-          style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: '#D0021B' }}
+          style={{ borderColor: 'var(--border-subtle)', borderTopColor: 'var(--accent-red)' }}
         />
       </div>
     );
@@ -150,18 +150,18 @@ export function ZonesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-bold text-white mb-1" style={{ fontSize: '1.75rem' }}>Lager</h2>
-          <p className="text-sm" style={{ color: '#A0A0A0' }}>{rootZones.length} Hauptzonen · {zones.length} gesamt</p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{rootZones.length} Hauptzonen · {zones.length} gesamt</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
           className="flex items-center gap-2 font-semibold rounded-lg cursor-pointer transition-all"
           style={{
             padding: '0.625rem 1.25rem',
-            background: '#D0021B',
-            color: 'white',
+            background: 'var(--accent-red)',
+            color: 'var(--text-primary)',
             border: 'none',
             fontSize: '0.9375rem',
-            boxShadow: '0 4px 14px rgba(208,2,27,0.25)',
+            boxShadow: 'var(--shadow-accent)',
           }}
         >
           <Plus className="w-4 h-4" />
@@ -171,14 +171,14 @@ export function ZonesPage() {
 
       {/* Create Form */}
       {showForm && (
-        <div className="card p-6" style={{ borderColor: 'rgba(208,2,27,0.2)' }}>
+        <div className="card p-6" style={{ borderColor: 'rgba(var(--accent-red-rgb), 0.2)' }}>
           <h3 className="font-semibold text-white mb-5" style={{ fontSize: '1rem' }}>
             {parentZone ? `Unterzone in ${parentZone.name} erstellen` : 'Neue Zone erstellen'}
           </h3>
           {parentZone && (
             <div
               className="mb-4 px-4 py-3 rounded-lg text-sm"
-              style={{ background: 'rgba(255,255,255,0.04)', color: '#A0A0A0' }}
+              style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}
             >
               Übergeordnete Zone: <span className="text-white font-medium">{parentZone.name}</span> ({parentZone.code})
             </div>
@@ -187,7 +187,7 @@ export function ZonesPage() {
             {formData.type === 'shelf' && (
               <div
                 className="px-4 py-3 rounded-lg text-sm"
-                style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', color: '#93c5fd' }}
+                style={{ background: 'rgba(var(--color-info-rgb), 0.08)', border: '1px solid rgba(var(--color-info-rgb), 0.2)', color: 'var(--color-info)' }}
               >
                 Name und Barcode werden automatisch generiert (Fach 01, Fach 02, ...)
               </div>
@@ -232,7 +232,7 @@ export function ZonesPage() {
               <button
                 type="submit"
                 className="flex-1 py-3 font-semibold rounded-lg cursor-pointer transition-colors"
-                style={{ background: '#D0021B', color: 'white', border: 'none' }}
+                style={{ background: 'var(--accent-red)', color: 'var(--text-primary)', border: 'none' }}
               >
                 Erstellen
               </button>
@@ -241,9 +241,9 @@ export function ZonesPage() {
                 onClick={() => setShowForm(false)}
                 className="px-5 py-3 font-medium rounded-lg cursor-pointer transition-colors"
                 style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  color: '#A0A0A0',
-                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-subtle)',
                 }}
               >
                 Abbrechen
@@ -262,15 +262,15 @@ export function ZonesPage() {
             <div
               key={zone.zone_id}
               className="card p-5 cursor-pointer group relative transition-all duration-200"
-              style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+              style={{ borderColor: 'var(--border-subtle)' }}
               onClick={() => handleZoneClick(zone.zone_id)}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(208,2,27,0.3)')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(var(--accent-red-rgb), 0.3)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border-subtle)')}
             >
               <button
                 onClick={(e) => handleDeleteZone(e, zone)}
                 className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-                style={{ background: 'rgba(208,2,27,0.1)', color: '#f87171', border: '1px solid rgba(208,2,27,0.2)' }}
+                style={{ background: 'rgba(var(--accent-red-rgb), 0.1)', color: 'var(--accent-red-light)', border: '1px solid rgba(var(--accent-red-rgb), 0.2)' }}
                 title="Zone löschen"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -278,16 +278,16 @@ export function ZonesPage() {
               <div className="flex items-start gap-4">
                 <div
                   className="inline-flex items-center justify-center w-10 h-10 rounded-lg flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.06)' }}
+                  style={{ background: 'var(--bg-subtle)' }}
                 >
-                  <ZoneIcon className="w-5 h-5" style={{ color: '#A0A0A0' }} />
+                  <ZoneIcon className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                 </div>
                 <div className="flex-1 min-w-0 pr-6">
                   <h3 className="font-semibold text-white truncate mb-0.5 transition-colors group-hover:text-red-400">
                     {zone.name}
                   </h3>
-                  <p className="text-xs mb-2 font-mono" style={{ color: '#606060' }}>{zone.code}</p>
-                  <div className="flex items-center gap-2 text-xs" style={{ color: '#606060' }}>
+                  <p className="text-xs mb-2 font-mono" style={{ color: 'var(--text-tertiary)' }}>{zone.code}</p>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     <span>{typeInfo?.label || zone.type}</span>
                     {zone.capacity && (
                       <>
@@ -307,15 +307,15 @@ export function ZonesPage() {
         <div className="text-center py-16">
           <div
             className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
           >
-            <MapPin className="w-8 h-8" style={{ color: '#404040' }} />
+            <MapPin className="w-8 h-8" style={{ color: 'var(--text-tertiary)' }} />
           </div>
-          <p className="mb-4 text-sm" style={{ color: '#A0A0A0' }}>Noch keine Lagerorte vorhanden</p>
+          <p className="mb-4 text-sm" style={{ color: 'var(--text-secondary)' }}>Noch keine Lagerorte vorhanden</p>
           <button
             onClick={() => setShowForm(true)}
             className="text-sm font-semibold cursor-pointer transition-colors"
-            style={{ color: '#D0021B', background: 'none', border: 'none' }}
+            style={{ color: 'var(--accent-red)', background: 'none', border: 'none' }}
           >
             Erste Zone erstellen
           </button>

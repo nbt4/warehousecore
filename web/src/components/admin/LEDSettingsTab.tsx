@@ -29,13 +29,13 @@ interface ZoneTypeLED {
 const defaultJobSettings: LEDJobHighlightSettings = {
   mode: 'all_bins',
   required: {
-    color: '#00FF00',
+    color: 'var(--color-led-green)',
     pattern: 'solid',
     intensity: 220,
     speed: 1200,
   },
   non_required: {
-    color: '#FF0000',
+    color: 'var(--color-led-red)',
     pattern: 'solid',
     intensity: 160,
     speed: 1200,
@@ -44,7 +44,7 @@ const defaultJobSettings: LEDJobHighlightSettings = {
 
 export function LEDSettingsTab() {
   const [defaults, setDefaults] = useState<LEDDefault>({
-    color: '#FF7A00',
+    color: 'var(--color-led-orange)',
     pattern: 'breathe',
     intensity: 180,
   });
