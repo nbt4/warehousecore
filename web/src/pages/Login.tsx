@@ -39,11 +39,12 @@ export function Login() {
       <div className="w-full" style={{ maxWidth: '400px' }}>
 
         {/* Brand */}
-        <div className="text-center mb-8">
-          <h1 className="font-bold tracking-tight mb-2" style={{ fontSize: '2.25rem' }}>
-            <span style={{ color: 'var(--accent-red)' }}>Warehouse</span>
-            <span style={{ color: 'var(--text-primary)' }}>Core</span>
-          </h1>
+        <div className="text-center mb-8 flex flex-col items-center gap-2">
+          <img
+            src="/logos/warehousecore_white_full.svg"
+            alt="WarehouseCore"
+            className="h-10"
+          />
           {companyName && (
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{companyName}</p>
           )}

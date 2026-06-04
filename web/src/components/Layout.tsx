@@ -156,10 +156,11 @@ export function Layout({ children }: LayoutProps) {
                   : <ChevronRight className="w-5 h-5" />
               }
             </button>
-            <h1 className="font-bold" style={{ fontSize: '1.125rem' }}>
-              <span style={{ color: 'var(--accent-red)' }}>Warehouse</span>
-              <span style={{ color: 'var(--text-primary)' }}>Core</span>
-            </h1>
+            <img
+              src="/logos/warehousecore_white_full.svg"
+              alt="WarehouseCore"
+              className="h-6"
+            />
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
@@ -188,27 +189,32 @@ export function Layout({ children }: LayoutProps) {
         } ${isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'}`}
         style={{ borderRight: '1px solid var(--border-subtle)' }}
       >
-        {/* Mobile sidebar header */}
+        {/* Sidebar header (mobile + desktop) */}
         <div
-          className="flex items-center justify-between px-4 py-4 md:hidden"
+          className="flex items-center justify-between px-4 py-4"
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
         >
-          <h2 className="font-bold" style={{ fontSize: '1.125rem' }}>
-            <span style={{ color: 'var(--accent-red)' }}>Warehouse</span>
-            <span style={{ color: 'var(--text-primary)' }}>Core</span>
-          </h2>
-          <button
-            onClick={closeSidebar}
-            className="p-2 rounded-lg cursor-pointer"
-            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
-            aria-label="Close menu"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <img
+            src={sidebarOpen || isMobile
+              ? '/logos/warehousecore_white_full.svg'
+              : '/logos/warehousecore_white_icon.svg'}
+            alt="WarehouseCore"
+            className={sidebarOpen || isMobile ? 'h-6' : 'h-7 mx-auto'}
+          />
+          {isMobile && (
+            <button
+              onClick={closeSidebar}
+              className="p-2 rounded-lg cursor-pointer"
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
+              aria-label="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <nav
-          className={`flex-1 overflow-y-auto p-3 space-y-1 ${isMobile ? 'mt-12' : 'mt-[60px]'}`}
+          className="flex-1 overflow-y-auto p-3 space-y-1"
           style={{ scrollbarWidth: 'none' }}
         >
           {/* Cores Dashboard link */}
