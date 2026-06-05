@@ -43,7 +43,7 @@ export function Login() {
           <img
             src="/logos/warehousecore_white_side.svg"
             alt="WarehouseCore"
-            className="h-10"
+            className="h-20"
           />
           {companyName && (
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{companyName}</p>

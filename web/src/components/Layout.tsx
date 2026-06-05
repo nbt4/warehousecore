@@ -159,7 +159,7 @@ export function Layout({ children }: LayoutProps) {
             <img
               src="/logos/warehousecore_white_side.svg"
               alt="WarehouseCore"
-              className="h-7"
+              className="h-10"
             />
           </div>
           <div className="flex items-center gap-3">
@@ -199,7 +199,7 @@ export function Layout({ children }: LayoutProps) {
               ? '/logos/warehousecore_white_side.svg'
               : '/logos/warehousecore_white_icon.svg'}
             alt="WarehouseCore"
-            className={sidebarOpen || isMobile ? 'h-7' : 'h-8 mx-auto'}
+            className={sidebarOpen || isMobile ? 'h-10' : 'h-12 mx-auto'}
           />
           {isMobile && (
             <button
