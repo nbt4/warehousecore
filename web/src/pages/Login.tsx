@@ -41,7 +41,7 @@ export function Login() {
         {/* Brand */}
         <div className="text-center mb-8 flex flex-col items-center gap-2">
           <img
-            src="/logos/warehousecore_white_full.svg"
+            src="/logos/warehousecore_white_side.svg"
             alt="WarehouseCore"
             className="h-10"
           />
