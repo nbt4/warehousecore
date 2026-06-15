@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Clock, ScanLine, Package } from 'lucide-react';
 import { picklistApi, jobsApi } from '../lib/api';
 import type { JobPicklist, JobSummary } from '../lib/api';
+import { toast } from '../lib/toast';
 
 export function JobPicklistPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +23,7 @@ export function JobPicklistPage() {
       const res = await picklistApi.getByJob(jobId);
       setPicklist(res.data);
     } catch (e) {
-      console.error(e);
+      toast.error(String(e));
     }
   }, [jobId]);
 
@@ -33,7 +34,7 @@ export function JobPicklistPage() {
     ]).then(([jRes, pRes]) => {
       setJob(jRes.data);
       setPicklist(pRes.data);
-    }).catch(console.error).finally(() => setLoading(false));
+    }).catch((e) => toast.error(String(e))).finally(() => setLoading(false));
 
     const interval = setInterval(loadPicklist, 5000);
     return () => clearInterval(interval);

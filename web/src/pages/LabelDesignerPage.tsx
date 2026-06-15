@@ -9,6 +9,7 @@ import { ModalPortal } from '../components/ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
 import JSZip from 'jszip';
 import './LabelDesignerPage.css';
+import { toast } from '../lib/toast';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 
@@ -400,7 +401,7 @@ export default function LabelDesignerPage() {
     return () => { if (imgTimer.current) clearTimeout(imgTimer.current); };
   }, [elements.map(e => `${e.id}:${e.content}:${e.width}:${e.height}`).join(','), labelW, labelH]);
 
-  const toast = (type: 'success' | 'error', message: string) =>
+  const showToast = (type: 'success' | 'error', message: string) =>
     window.dispatchEvent(new CustomEvent('toast', { detail: { type, message } }));
 
   /* ── Data loading ── */
@@ -410,14 +411,14 @@ export default function LabelDesignerPage() {
       const { data } = await devicesApi.getAll({ limit: 50000 });
       setDevices(data);
       if (data.length > 0) setPreviewDevice(data[0]);
-    } catch { console.error('Failed to load devices'); }
+    } catch { toast.error('Failed to load devices'); }
   };
 
   const loadCases = async () => {
     try {
       const { data } = await casesApi.list({});
       setCases(data.cases || []);
-    } catch { console.error('Failed to load cases'); }
+    } catch { toast.error('Failed to load cases'); }
   };
 
   const loadTemplates = async (applyDefault = false) => {
@@ -428,7 +429,7 @@ export default function LabelDesignerPage() {
         const def = data.find(t => t.is_default);
         if (def) applyTemplate(def);
       }
-    } catch { console.error('Failed to load templates'); }
+    } catch { toast.error('Failed to load templates'); }
   };
 
   /* ── Template operations ── */
@@ -457,7 +458,7 @@ export default function LabelDesignerPage() {
   };
 
   const saveTemplate = async () => {
-    if (!templateName.trim()) return toast('error', 'Bitte Template-Namen eingeben!');
+    if (!templateName.trim()) return showToast('error', 'Bitte Template-Namen eingeben!');
     setSaving(true);
     try {
       const tpl: LabelTemplate = {
@@ -473,24 +474,24 @@ export default function LabelDesignerPage() {
       };
       if (currentTplId) {
         await labelsApi.updateTemplate(currentTplId, tpl);
-        toast('success', 'Template aktualisiert');
+        showToast('success', 'Template aktualisiert');
       } else {
         const { data } = await labelsApi.createTemplate(tpl);
         setCurrentTplId(data.id ?? null);
-        toast('success', 'Template erstellt');
+        showToast('success', 'Template erstellt');
       }
       await loadTemplates(false);
-    } catch { toast('error', 'Fehler beim Speichern'); }
+    } catch { showToast('error', 'Fehler beim Speichern'); }
     finally { setSaving(false); }
   };
 
   const setAsDefault = async () => {
-    if (!currentTplId) return toast('error', 'Bitte Template zuerst speichern!');
+    if (!currentTplId) return showToast('error', 'Bitte Template zuerst speichern!');
     try {
       await labelsApi.updateTemplate(currentTplId, { is_default: true } as Partial<LabelTemplate>);
       await loadTemplates();
-      toast('success', 'Als Standard gesetzt ★');
-    } catch { toast('error', 'Fehler'); }
+      showToast('success', 'Als Standard gesetzt ★');
+    } catch { showToast('error', 'Fehler'); }
   };
 
   const deleteTemplate = async (id: number) => {
@@ -499,8 +500,8 @@ export default function LabelDesignerPage() {
       await labelsApi.deleteTemplate(id);
       await loadTemplates();
       if (currentTplId === id) newTemplate();
-      toast('success', 'Template gelöscht');
-    } catch { toast('error', 'Fehler beim Löschen'); }
+      showToast('success', 'Template gelöscht');
+    } catch { showToast('error', 'Fehler beim Löschen'); }
   };
 
   /* ── Element operations ── */
@@ -730,7 +731,7 @@ export default function LabelDesignerPage() {
           ctx.fillText(content, x, y + fs);
         }
       } catch (err) {
-        console.error('Render error for element', elem.id, err);
+        toast.error('Render error for element ' + elem.id + ': ' + String(err));
       }
     }
   };
@@ -743,7 +744,7 @@ export default function LabelDesignerPage() {
 
   const generateLabels = async (devs: Device[], cas: CaseSummary[]) => {
     const defaultTpl = templates.find(t => t.is_default);
-    if (!defaultTpl) return toast('error', 'Bitte zuerst ein Template als Standard setzen!');
+    if (!defaultTpl) return showToast('error', 'Bitte zuerst ein Template als Standard setzen!');
 
     const origTplId = currentTplId;
     setExporting(true);
@@ -781,8 +782,8 @@ export default function LabelDesignerPage() {
         }
       }
 
-      toast('success', `${ok}/${devs.length + cas.length} Labels generiert${fail ? ` · ${fail} Fehler` : ''}`);
-    } catch { toast('error', 'Fehler beim Generieren'); }
+      showToast('success', `${ok}/${devs.length + cas.length} Labels generiert${fail ? ` · ${fail} Fehler` : ''}`);
+    } catch { showToast('error', 'Fehler beim Generieren'); }
     finally {
       setExporting(false);
       // Reload so label_path is up to date in state — exportZip depends on this
@@ -800,7 +801,7 @@ export default function LabelDesignerPage() {
     const devsNo  = devices.filter(d => !d.label_path);
     const casesNo = cases.filter(c => !c.label_path);
     const total   = devsNo.length + casesNo.length;
-    if (total === 0) return toast('success', 'Alle Items haben bereits Labels!');
+    if (total === 0) return showToast('success', 'Alle Items haben bereits Labels!');
     if (!confirm(`${total} Items ohne Labels (${devsNo.length} Devices + ${casesNo.length} Cases).\nJetzt generieren?`)) return;
     await generateLabels(devsNo, casesNo);
     await loadDevices();
@@ -820,15 +821,15 @@ export default function LabelDesignerPage() {
         const r = await fetch(c.label_path!);
         if (r.ok) { zip.file(`cases/CASE-${c.case_id}.png`, await r.blob()); n++; }
       }
-      if (n === 0) return toast('error', 'Keine generierten Labels vorhanden!');
+      if (n === 0) return showToast('error', 'Keine generierten Labels vorhanden!');
       const blob = await zip.generateAsync({ type: 'blob' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `labels_${new Date().toISOString().split('T')[0]}.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast('success', `${n} Labels als ZIP exportiert`);
-    } catch { toast('error', 'Fehler beim ZIP-Export'); }
+      showToast('success', `${n} Labels als ZIP exportiert`);
+    } catch { showToast('error', 'Fehler beim ZIP-Export'); }
     finally { setExporting(false); }
   };
 

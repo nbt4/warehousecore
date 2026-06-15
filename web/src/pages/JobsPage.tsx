@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList, ScanLine } from 'lucide-react';
 import { jobsApi, scansApi, ledApi } from '../lib/api';
 import type { Job, JobSummary, JobDevice, LEDStatus, JobRequirement } from '../lib/api';
+import { toast } from '../lib/toast';
 
 const JOB_CODE_PATTERN = /^JOB\d+$/i;
 
@@ -51,7 +52,7 @@ export function JobsPage() {
       const { data } = await ledApi.getStatus();
       setLedStatus(data);
     } catch (error) {
-      console.error('Failed to load LED status:', error);
+      toast.error('Failed to load LED status:' + " " + String(error));
     }
   };
 
@@ -92,7 +93,7 @@ export function JobsPage() {
         try {
           await ledApi.clear();
         } catch (error) {
-          console.error('Failed to clear LEDs on exit:', error);
+          toast.error('Failed to clear LEDs on exit:' + " " + String(error));
         }
       }
     };
@@ -111,7 +112,7 @@ export function JobsPage() {
           // Use navigator.sendBeacon for reliable cleanup on page unload
           await ledApi.clear();
         } catch (error) {
-          console.error('Failed to clear LEDs on unload:', error);
+          toast.error('Failed to clear LEDs on unload:' + " " + String(error));
         }
       }
     };
@@ -126,7 +127,7 @@ export function JobsPage() {
       const { data } = await jobsApi.getAll({ status: 'open' });
       setJobs(data);
     } catch (error) {
-      console.error('Failed to load jobs:', error);
+      toast.error('Failed to load jobs:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -138,7 +139,7 @@ export function JobsPage() {
       const { data } = await jobsApi.getRequirements(jobId);
       setRequirements(data);
     } catch (error) {
-      console.error('Failed to load requirements:', error);
+      toast.error('Failed to load requirements:' + " " + String(error));
     } finally {
       setRequirementsLoading(false);
     }
@@ -158,12 +159,12 @@ export function JobsPage() {
           await ledApi.highlightJob(jobId);
           setLedActive(true);
         } catch (error) {
-          console.error('Failed to highlight job LEDs:', error);
+          toast.error('Failed to highlight job LEDs:' + " " + String(error));
           setLedActive(false);
         }
       }
     } catch (error) {
-      console.error('Failed to load job details:', error);
+      toast.error('Failed to load job details:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -174,7 +175,7 @@ export function JobsPage() {
       const { data } = await jobsApi.getById(jobId);
       setSelectedJob(data);
     } catch (error) {
-      console.error('Failed to refresh job:', error);
+      toast.error('Failed to refresh job:' + " " + String(error));
     }
   };
 
@@ -201,7 +202,7 @@ export function JobsPage() {
         await loadJobDetails(numericPart, { highlight: true });
         setScanResult({ success: true, message: `Job ${normalizedCode} geladen` });
       } catch (error: any) {
-        console.error('Job scan failed:', error);
+        toast.error('Job scan failed:' + " " + String(error));
         setScanResult({
           success: false,
           message: error.response?.data?.error || error.message || 'Job nicht gefunden',
@@ -248,7 +249,7 @@ export function JobsPage() {
         await refreshJobDetails(selectedJob.job_id);
       }
     } catch (error: any) {
-      console.error('Scan failed:', error);
+      toast.error('Scan failed:' + " " + String(error));
       setScanResult({
         success: false,
         message: error.response?.data?.error || 'Scan fehlgeschlagen',
@@ -267,7 +268,7 @@ export function JobsPage() {
         await ledApi.clear();
         setLedActive(false);
       } catch (error) {
-        console.error('Failed to clear LEDs:', error);
+        toast.error('Failed to clear LEDs:' + " " + String(error));
       }
     }
 
@@ -294,7 +295,7 @@ export function JobsPage() {
         setLedActive(true);
       }
     } catch (error: any) {
-      console.error('LED toggle failed:', error);
+      toast.error('LED toggle failed:' + " " + String(error));
       alert(error.response?.data?.error || 'LED-Steuerung fehlgeschlagen');
     } finally {
       setLedLoading(false);

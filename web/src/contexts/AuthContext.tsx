@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { authService } from '../services/auth';
 import type { User } from '../services/auth';
+import { toast } from '../lib/toast';
 
 interface AuthContextType {
   user: User | null;
@@ -35,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setForcePasswordChange(true);
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
+      toast.error('Auth check failed:' + " " + String(error));
       setUser(null);
     } finally {
       setLoading(false);

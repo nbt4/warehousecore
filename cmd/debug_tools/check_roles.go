@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -22,7 +23,8 @@ func (Role) TableName() string {
 }
 
 func main() {
-	dsn := "host=localhost user=rentalcore password=rentalcore123 dbname=rentalcore port=5432 sslmode=disable"
+	// FIXED: removed hardcoded password — this debug tool now requires DB_PASS env var
+	dsn := fmt.Sprintf("host=localhost user=rentalcore password=%s dbname=rentalcore port=5432 sslmode=disable", os.Getenv("DB_PASS"))
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})

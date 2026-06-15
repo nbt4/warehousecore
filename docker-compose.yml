@@ -33,7 +33,7 @@ services:
       - "9001:9001"
     environment:
       MQTT_USER: "${LED_MQTT_USER:-leduser}"
-      MQTT_PASS: "${LED_MQTT_PASS:-ledpassword123}"
+      MQTT_PASS: "${LED_MQTT_PASS}"
     volumes:
       - mosquitto-config:/mosquitto/config
       - mosquitto-data:/mosquitto/data

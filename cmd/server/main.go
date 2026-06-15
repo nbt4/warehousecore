@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -24,7 +25,7 @@ import (
 	"warehousecore/internal/services"
 )
 
-var brandingService *services.CompanyBrandingService
+var brandingSvc *services.BrandingService
 
 // spaHandler serves the SPA and falls back to index.html for client-side routes
 func spaHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,12 +73,35 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 	warehouseCoreDomain := os.Getenv("WAREHOUSECORE_DOMAIN")
 
 	// Resolve company branding
-	companyName := "RentalCore"
-	if brandingService != nil {
-		companyName = brandingService.CompanyName()
+	companyName := "WarehouseCore"
+	if brandingSvc != nil {
+		cfg := brandingSvc.GetConfig()
+		companyName = cfg.CompanyName
+		// Build full config script
+		configScript := fmt.Sprintf(
+			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
+			template.JSEscapeString(rentalCoreDomain),
+			template.JSEscapeString(warehouseCoreDomain),
+			template.JSEscapeString(companyName),
+			template.JSEscapeString(cfg.CompanyName),
+			template.JSEscapeString(cfg.BrandName),
+			template.JSEscapeString(cfg.LogoSidebar),
+			template.JSEscapeString(cfg.LogoLogin),
+			template.JSEscapeString(cfg.FaviconPath),
+			cfg.LogoSizeSidebar,
+			cfg.LogoSizeLogin,
+		)
+		var appleIcon string
+		if cfg.FaviconPath != "" {
+			appleIcon = fmt.Sprintf(`<link rel="apple-touch-icon" sizes="180x180" href="%s">`, template.HTMLEscapeString(cfg.FaviconPath))
+		}
+		modifiedContent := bytes.Replace(content, []byte("</head>"), []byte(configScript+appleIcon+"</head>"), 1)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(modifiedContent)
+		return
 	}
 
-	// Create config injection script
+	// Fallback: old format
 	configScript := fmt.Sprintf(
 		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",companyName:"%s"};</script>`,
 		template.JSEscapeString(rentalCoreDomain),
@@ -106,7 +130,7 @@ func main() {
 	}
 	defer repository.CloseDatabase()
 
-	brandingService = services.NewCompanyBrandingService(repository.GetDB())
+	brandingSvc = services.NewBrandingService(repository.GetDB(), "warehouse")
 
 	// Initialize LED service
 	log.Println("[LED] Initializing LED service...")
@@ -374,6 +398,20 @@ func main() {
 	// Apply middleware
 	api.Use(middleware.Logger)
 	api.Use(middleware.RecoveryMiddleware)
+
+	// Serve branding logos from shared volume
+	router.PathPrefix("/logos/").Handler(http.StripPrefix("/logos/", http.FileServer(http.Dir("/var/lib/branding/logos"))))
+
+	// Public branding config endpoint (for live polling by SPA)
+	router.HandleFunc("/api/v1/branding", func(w http.ResponseWriter, r *http.Request) {
+		if brandingSvc == nil {
+			http.Error(w, "{}", http.StatusServiceUnavailable)
+			return
+		}
+		cfg := brandingSvc.GetConfig()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cfg)
+	}).Methods("GET")
 
 	// Serve static frontend files with SPA fallback
 	router.PathPrefix("/").HandlerFunc(spaHandler)

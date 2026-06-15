@@ -18,6 +18,7 @@ import { CaseDetailModal } from '../components/CaseDetailModal';
 import { DeviceDetailModal } from '../components/DeviceDetailModal';
 import { DeviceTreeModal } from '../components/DeviceTreeModal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
+import { toast } from '../lib/toast';
 
 type StatusFilter = 'all' | 'free' | 'rented' | 'maintance';
 
@@ -101,7 +102,7 @@ export function CasesPage() {
       const { data } = await casesApi.list(params);
       setCases(data.cases ?? []);
     } catch (error) {
-      console.error('Failed to load cases:', error);
+      toast.error('Failed to load cases:' + " " + String(error));
       setCases([]);
     } finally {
       setLoading(false);
@@ -130,7 +131,7 @@ export function CasesPage() {
       setCaseDevices(devicesRes.data);
       setCaseModalOpen(true);
     } catch (error) {
-      console.error('Failed to load case:', error);
+      toast.error('Failed to load case:' + " " + String(error));
     } finally {
       setCaseModalLoading(false);
     }
@@ -175,7 +176,7 @@ export function CasesPage() {
       setSelectedDevice(data);
       setDeviceModalOpen(true);
     } catch (error) {
-      console.error('Failed to load device:', error);
+      toast.error('Failed to load device:' + " " + String(error));
       setActionMessage({
         type: 'error',
         text: 'Gerätedetails konnten nicht geladen werden.',
@@ -294,7 +295,7 @@ export function CasesPage() {
       setCaseDevices(devicesRes.data);
       void loadCases();
     } catch (error) {
-      console.error('Failed to refresh case devices:', error);
+      toast.error('Failed to refresh case devices:' + " " + String(error));
     }
   };
 
@@ -303,7 +304,7 @@ export function CasesPage() {
       const { data } = await zonesApi.getAll();
       setZones(data);
     } catch (error) {
-      console.error('Failed to load zones:', error);
+      toast.error('Failed to load zones:' + " " + String(error));
     }
   };
 
@@ -339,7 +340,7 @@ export function CasesPage() {
       const devicesRes = await casesApi.getDevices(caseItem.case_id);
       setEditingCaseDevices(devicesRes.data);
     } catch (error) {
-      console.error('Failed to load case devices:', error);
+      toast.error('Failed to load case devices:' + " " + String(error));
       setEditingCaseDevices([]);
     }
 
@@ -499,7 +500,7 @@ export function CasesPage() {
       labelWindow.document.write(html);
       labelWindow.document.close();
     } catch (error: any) {
-      console.error('Failed to generate label:', error);
+      toast.error('Failed to generate label:' + " " + String(error));
       alert('Fehler beim Erstellen des Labels: ' + (error.response?.data?.error || error.message));
     }
   };

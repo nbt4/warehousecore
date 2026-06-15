@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { api } from '../../lib/api';
+import { toast } from '../../lib/toast';
 
 interface Category {
   category_id: number;
@@ -45,7 +46,7 @@ export function CategoriesTab() {
       const { data } = await api.get('/admin/categories');
       setCategories(data || []);
     } catch (error) {
-      console.error('Failed to load categories:', error);
+      toast.error('Failed to load categories:' + " " + String(error));
     }
   };
 
@@ -54,7 +55,7 @@ export function CategoriesTab() {
       const { data } = await api.get('/admin/subcategories');
       setSubcategories(data || []);
     } catch (error) {
-      console.error('Failed to load subcategories:', error);
+      toast.error('Failed to load subcategories:' + " " + String(error));
     }
   };
 
@@ -63,7 +64,7 @@ export function CategoriesTab() {
       const { data } = await api.get('/admin/subbiercategories');
       setSubbiercategories(data || []);
     } catch (error) {
-      console.error('Failed to load subbiercategories:', error);
+      toast.error('Failed to load subbiercategories:' + " " + String(error));
     }
   };
 

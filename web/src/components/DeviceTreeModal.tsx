@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, ChevronRight, Package } from 'lucide-react';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
+import { toast } from '../lib/toast';
 
 interface Device {
   device_id: string;
@@ -65,7 +66,7 @@ export function DeviceTreeModal({ isOpen, onClose, onConfirm, zoneId }: DeviceTr
       const data = await response.json();
       setTreeData(data.treeData || []);
     } catch (error) {
-      console.error('Failed to load device tree:', error);
+      toast.error('Failed to load device tree:' + " " + String(error));
     } finally {
       setLoading(false);
     }

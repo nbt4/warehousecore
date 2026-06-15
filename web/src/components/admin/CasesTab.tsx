@@ -23,6 +23,7 @@ import {
 } from '../../lib/api';
 import { formatStatus } from '../../lib/utils';
 import { useBlockBodyScroll } from '../../hooks/useBlockBodyScroll';
+import { toast } from '../../lib/toast';
 
 interface CaseFormData {
   name: string;
@@ -91,7 +92,7 @@ export function CasesTab() {
       const { data } = await casesApi.list(params);
       setCases(data.cases || []);
     } catch (error) {
-      console.error('Failed to load cases:', error);
+      toast.error('Failed to load cases:' + " " + String(error));
       setCases([]);
     } finally {
       setLoadingCases(false);
@@ -103,7 +104,7 @@ export function CasesTab() {
       const { data } = await zonesApi.getAll();
       setZones(data || []);
     } catch (error) {
-      console.error('Failed to load zones:', error);
+      toast.error('Failed to load zones:' + " " + String(error));
     }
   }, []);
 
@@ -168,7 +169,7 @@ export function CasesTab() {
       setViewCase(detailRes.data);
       setViewCaseDevices(devicesRes.data);
     } catch (error) {
-      console.error('Failed to load case details:', error);
+      toast.error('Failed to load case details:' + " " + String(error));
       setActionMessage({ type: 'error', text: 'Fehler beim Laden der Case-Details' });
       clearActionMessage();
     }
@@ -283,7 +284,7 @@ export function CasesTab() {
       labelWindow.document.write(html);
       labelWindow.document.close();
     } catch (error: any) {
-      console.error('Failed to generate label:', error);
+      toast.error('Failed to generate label:' + " " + String(error));
       alert('Fehler beim Erstellen des Labels: ' + (error.response?.data?.error || error.message));
     }
   };

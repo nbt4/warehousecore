@@ -8,6 +8,7 @@ import type { ChangeEvent } from 'react';
 import type { ProductPicture, Device } from '../lib/api';
 import { DeviceDetailModal } from './DeviceDetailModal';
 import { formatStatus, getStatusColor } from '../lib/utils';
+import { toast } from '../lib/toast';
 
 export interface ProductDetail {
   product_id: number;
@@ -95,7 +96,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
       const response = await productPicturesApi.list(product.product_id);
       setPictures(response.data.pictures || []);
     } catch (error) {
-      console.error('Failed to load product pictures', error);
+      toast.error('Failed to load product pictures' + " " + String(error));
       const status = (error as { response?: { status?: number } })?.response?.status;
       if (status === 503 || status === 500) {
         setPicturesUnavailable(true);
@@ -139,7 +140,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
       setDevices(data);
       setDevicesLoaded(true);
     } catch (error) {
-      console.error('Failed to load devices:', error);
+      toast.error('Failed to load devices:' + " " + String(error));
     } finally {
       setLoadingDevices(false);
     }
@@ -150,7 +151,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
     try {
       await ledApi.locateBin(device.zone_code);
     } catch (error) {
-      console.error('LED locate failed:', error);
+      toast.error('LED locate failed:' + " " + String(error));
     }
   };
 
@@ -166,7 +167,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
       setSelectedDevice(data);
       setDeviceDetailOpen(true);
     } catch (error) {
-      console.error('Failed to load device:', error);
+      toast.error('Failed to load device:' + " " + String(error));
     }
   };
 
@@ -206,7 +207,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
       await productPicturesApi.upload(product.product_id, files);
       await loadPictures();
     } catch (error) {
-      console.error('Failed to upload product pictures', error);
+      toast.error('Failed to upload product pictures' + " " + String(error));
       setPictureError('Upload fehlgeschlagen. Bitte erneut versuchen.');
       setPictures(prev => prev.filter(pic => !pic.temporary));
     } finally {
@@ -231,7 +232,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
         setPreviewIndex(null);
       }
     } catch (error) {
-      console.error('Failed to delete product picture', error);
+      toast.error('Failed to delete product picture' + " " + String(error));
       setPictureError('Löschen fehlgeschlagen. Bitte erneut versuchen.');
     } finally {
       setDeleting(null);
@@ -268,7 +269,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
       });
       setWebsiteMessage('Website-Einstellungen gespeichert');
     } catch (error) {
-      console.error('Failed to save website settings', error);
+      toast.error('Failed to save website settings' + " " + String(error));
       setPictureError('Website-Einstellungen konnten nicht gespeichert werden.');
     } finally {
       setSavingWebsite(false);

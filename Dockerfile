@@ -73,10 +73,10 @@ COPY --from=frontend-builder /app/web/dist ./web/dist
 # Create .env placeholder
 RUN touch .env
 
-EXPOSE 8081
+EXPOSE 8082
 
 # Health check with longer start period to allow server initialization
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8081/api/v1/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8082/api/v1/health || exit 1
 
 CMD ["./warehousecore"]

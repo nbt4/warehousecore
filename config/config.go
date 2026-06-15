@@ -61,7 +61,7 @@ func Load() (*Config, error) {
 			Port:     getEnv("DB_PORT", "5432"),
 			Name:     getEnv("DB_NAME", "rentalcore"),
 			User:     getEnv("DB_USER", "rentalcore"),
-			Password: getEnv("DB_PASSWORD", "rentalcore123"),
+			Password: getEnv("DB_PASS", ""), // FIXED: aligned env var name with .env, removed hardcoded password
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		App: AppConfig{

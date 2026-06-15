@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { scansApi, zonesApi, jobsApi, ledApi } from '../lib/api';
 import type { ScanResponse } from '../lib/api';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
+import { toast } from '../lib/toast';
 
 type ScanStep = 'device' | 'zone';
 
@@ -145,7 +146,7 @@ export function ScanPage() {
         setScanCode('');
       }
     } catch (error: any) {
-      console.error('Scan failed:', error);
+      toast.error('Scan failed:' + " " + String(error));
       setResult({
         success: false,
         message: error.response?.data?.error || 'Scan fehlgeschlagen',
@@ -195,7 +196,7 @@ export function ScanPage() {
         setShowLEDModal(true);
       }
     } catch (error: any) {
-      console.error('Job scan failed:', error);
+      toast.error('Job scan failed:' + " " + String(error));
       setResult({
         success: false,
         message: error.response?.data?.error || `Job ${jobId} nicht gefunden`,
@@ -216,7 +217,7 @@ export function ScanPage() {
       setShowLEDModal(false);
       navigate(`/jobs/${scannedJobId}`);
     } catch (error) {
-      console.error('LED activation failed:', error);
+      toast.error('LED activation failed:' + " " + String(error));
       setShowLEDModal(false);
       navigate(`/jobs/${scannedJobId}`);
     }

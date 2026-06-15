@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useBranding } from '../hooks/useBranding';
 import { LogIn, User, Lock } from 'lucide-react';
 
 export function Login() {
@@ -11,7 +12,8 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
-  const companyName = (window as any).__APP_CONFIG__?.companyName || '';
+	const branding = useBranding();
+	const companyName = branding.companyName;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -38,12 +40,12 @@ export function Login() {
     >
       <div className="w-full" style={{ maxWidth: '400px' }}>
 
-        {/* Brand */}
         <div className="text-center mb-8 flex flex-col items-center gap-2">
           <img
-            src="/logos/warehousecore_white_side.svg"
-            alt="WarehouseCore"
+            src={branding.loginLogo}
+            alt={companyName}
             className="h-24"
+            style={{ height: `${96 * branding.logoSizeLogin / 100}px` }}
           />
           {companyName && (
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{companyName}</p>

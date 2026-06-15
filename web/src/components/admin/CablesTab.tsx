@@ -16,6 +16,7 @@ import {
 import { cablesAdminApi } from '../../lib/api';
 import type { Cable as CableType, CableConnector, CableType as CableTypeData, CableCreateInput, CableUpdateInput } from '../../lib/api';
 import { useBlockBodyScroll } from '../../hooks/useBlockBodyScroll';
+import { toast } from '../../lib/toast';
 
 interface CableFormData {
   name: string;
@@ -152,7 +153,7 @@ export function CablesTab() {
       const { data } = await cablesAdminApi.getAll(params);
       setCables(data || []);
     } catch (error) {
-      console.error('Failed to load cables:', error);
+      toast.error('Failed to load cables:' + " " + String(error));
       setCables([]);
     } finally {
       setLoadingCables(false);
@@ -169,7 +170,7 @@ export function CablesTab() {
       setConnectors(connectorsRes.data || []);
       setCableTypes(typesRes.data || []);
     } catch (error) {
-      console.error('Failed to load metadata:', error);
+      toast.error('Failed to load metadata:' + " " + String(error));
     }
   }, []);
 
@@ -225,7 +226,7 @@ export function CablesTab() {
       await cablesAdminApi.delete(cableId);
       await fetchCables();
     } catch (error: unknown) {
-      console.error('Failed to delete cable:', error);
+      toast.error('Failed to delete cable:' + " " + String(error));
       alert('Fehler beim Löschen des Kabels');
     }
   };
@@ -277,7 +278,7 @@ export function CablesTab() {
       setFormData(initialFormData);
       await fetchCables();
     } catch (error: unknown) {
-      console.error('Failed to save cable:', error);
+      toast.error('Failed to save cable:' + " " + String(error));
       alert('Fehler beim Speichern des Kabels');
     } finally {
       setSubmitting(false);

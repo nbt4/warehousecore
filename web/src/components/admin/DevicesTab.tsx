@@ -16,6 +16,7 @@ import {
 import { api, devicesAdminApi, labelsApi } from '../../lib/api';
 import type { Device, DeviceCreateInput, DeviceUpdateInput, LabelTemplate } from '../../lib/api';
 import { useBlockBodyScroll } from '../../hooks/useBlockBodyScroll';
+import { toast } from '../../lib/toast';
 
 interface Product {
   product_id: number;
@@ -111,7 +112,7 @@ export function DevicesTab() {
       const { data } = await api.get<Device[]>('/admin/devices-list');
       setDevices(data || []);
     } catch (error) {
-      console.error('Failed to load devices:', error);
+      toast.error('Failed to load devices:' + " " + String(error));
       setDevices([]);
     } finally {
       setLoadingDevices(false);
@@ -130,7 +131,7 @@ export function DevicesTab() {
       setZones(zonesRes.data || []);
       setLabelTemplates(templatesRes.data || []);
     } catch (error) {
-      console.error('Failed to load metadata:', error);
+      toast.error('Failed to load metadata:' + " " + String(error));
     }
   }, []);
 
@@ -212,7 +213,7 @@ export function DevicesTab() {
       await devicesAdminApi.delete(deviceId);
       await fetchDevices();
     } catch (error: unknown) {
-      console.error('Failed to delete device:', error);
+      toast.error('Failed to delete device:' + " " + String(error));
       alert('Fehler beim Löschen des Geräts');
     }
   };
@@ -287,7 +288,7 @@ export function DevicesTab() {
       setFormData({ ...initialFormData, label_template_id: undefined });
       await fetchDevices();
     } catch (error: unknown) {
-      console.error('Failed to save device:', error);
+      toast.error('Failed to save device:' + " " + String(error));
       alert('Fehler beim Speichern des Geräts');
     } finally {
       setSubmitting(false);
@@ -299,7 +300,7 @@ export function DevicesTab() {
       const { data } = await devicesAdminApi.getById(device.device_id);
       setViewDevice(data);
     } catch (error) {
-      console.error('Failed to load device details:', error);
+      toast.error('Failed to load device details:' + " " + String(error));
       setViewDevice(device);
     }
   };

@@ -101,6 +101,7 @@ func GetJobPicklist(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error querying devices for position %d: %v", pos.PositionID, err)
 			continue
 		}
+		defer devRows.Close() // FIXED: added defer rows.Close()
 		devices := []PicklistDevice{}
 		for devRows.Next() {
 			var d PicklistDevice

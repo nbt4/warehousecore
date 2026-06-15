@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { zoneTypesApi, type ZoneTypeDefinition } from './api';
+import { toast } from './toast';
 
 export function useZoneTypes() {
   const [zoneTypes, setZoneTypes] = useState<ZoneTypeDefinition[]>([]);
@@ -14,7 +15,7 @@ export function useZoneTypes() {
       const { data } = await zoneTypesApi.getAll();
       setZoneTypes(data);
     } catch (err) {
-      console.error('Failed to load zone types:', err);
+      toast.error('Failed to load zone types:' + " " + String(err));
       setError('Lagertypen konnten nicht geladen werden.');
     } finally {
       setLoading(false);

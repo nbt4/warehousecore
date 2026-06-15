@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Package } from 'lucide-react';
+import { toast } from '../lib/toast';
 
 interface LowStockAlert {
   product_id: number;
@@ -40,7 +41,7 @@ export function LowStockAlertsWidget() {
       setAlerts(data.alerts || []);
       setError(null);
     } catch (err) {
-      console.error('Failed to load low stock alerts:', err);
+      toast.error('Failed to load low stock alerts:' + " " + String(err));
       setError('Failed to load alerts');
     } finally {
       setLoading(false);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, Plus, Trash2, ToggleLeft, ToggleRight, RefreshCcw, Copy } from 'lucide-react';
 import { apiKeysAdminApi, type APIKeyItem } from '../../lib/api';
+import { toast } from '../../lib/toast';
 
 export function APIKeysTab() {
   const [keys, setKeys] = useState<APIKeyItem[]>([]);
@@ -21,7 +22,7 @@ export function APIKeysTab() {
       const { data } = await apiKeysAdminApi.list();
       setKeys(data.keys || []);
     } catch (err) {
-      console.error('Failed to load API keys', err);
+      toast.error('Failed to load API keys' + " " + String(err));
       setError('Konnte API-Keys nicht laden');
     } finally {
       setLoading(false);
@@ -42,7 +43,7 @@ export function APIKeysTab() {
       setNewName('');
       await loadKeys();
     } catch (err) {
-      console.error('Failed to create API key', err);
+      toast.error('Failed to create API key' + " " + String(err));
       setError('Erstellen fehlgeschlagen');
     } finally {
       setCreating(false);
@@ -54,7 +55,7 @@ export function APIKeysTab() {
       await apiKeysAdminApi.updateStatus(id, !active);
       await loadKeys();
     } catch (err) {
-      console.error('Failed to update API key status', err);
+      toast.error('Failed to update API key status' + " " + String(err));
       setError('Aktualisieren fehlgeschlagen');
     }
   };
@@ -65,7 +66,7 @@ export function APIKeysTab() {
       await apiKeysAdminApi.delete(id);
       await loadKeys();
     } catch (err) {
-      console.error('Failed to delete API key', err);
+      toast.error('Failed to delete API key' + " " + String(err));
       setError('Löschen fehlgeschlagen');
     }
   };

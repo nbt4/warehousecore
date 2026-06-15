@@ -95,7 +95,7 @@ func buildPostgresDSN(cfg *config.Config) string {
 
 	password := cfg.Database.Password
 	if password == "" {
-		password = "rentalcore123"
+		log.Fatal("DB_PASS environment variable is required but not set") // FIXED: removed hardcoded password
 	}
 
 	sslMode := cfg.Database.SSLMode

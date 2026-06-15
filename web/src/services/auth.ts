@@ -1,4 +1,5 @@
 // Auth API Service
+import { toast } from '../lib/toast';
 const API_BASE = '/api/v1';
 
 export interface Role {
@@ -122,7 +123,7 @@ class AuthService {
       const user: User = await response.json();
       return user;
     } catch (error) {
-      console.error('Failed to get current user:', error);
+      toast.error('Failed to get current user:' + " " + String(error));
       return null;
     }
   }

@@ -6,6 +6,7 @@ import { DeviceTreeModal } from '../components/DeviceTreeModal';
 import { DeviceDetailModal } from '../components/DeviceDetailModal';
 import type { Device } from '../lib/api';
 import { useZoneTypes } from '../lib/useZoneTypes';
+import { toast } from '../lib/toast';
 
 interface ZoneDetails {
   zone_id: number;
@@ -117,7 +118,7 @@ export function ZoneDetailPage() {
       const { data } = await zonesApi.getById(Number(id));
       setZone(data as ZoneDetails);
     } catch (error) {
-      console.error('Failed to load zone details:', error);
+      toast.error('Failed to load zone details:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -129,7 +130,7 @@ export function ZoneDetailPage() {
       const data = await response.json();
       setDevices(data);
     } catch (error) {
-      console.error('Failed to load devices:', error);
+      toast.error('Failed to load devices:' + " " + String(error));
     }
   };
 
@@ -138,7 +139,7 @@ export function ZoneDetailPage() {
       const { data } = await zonesApi.getProducts(Number(id));
       setProducts(data);
     } catch (error) {
-      console.error('Failed to load products:', error);
+      toast.error('Failed to load products:' + " " + String(error));
     }
   };
 
@@ -165,7 +166,7 @@ export function ZoneDetailPage() {
       }
       loadZoneDetails(); // Reload to show new shelves
     } catch (error) {
-      console.error('Failed to create shelves:', error);
+      toast.error('Failed to create shelves:' + " " + String(error));
       alert('Fehler beim Erstellen der Fächer');
     }
   };
@@ -191,7 +192,7 @@ export function ZoneDetailPage() {
       await zonesApi.delete(zone.zone_id);
       navigate('/zones');
     } catch (error) {
-      console.error('Failed to delete zone:', error);
+      toast.error('Failed to delete zone:' + " " + String(error));
       alert('Fehler beim Löschen der Zone');
     }
   };
@@ -207,7 +208,7 @@ export function ZoneDetailPage() {
       await zonesApi.delete(subzone.zone_id);
       loadZoneDetails(); // Reload to show updated subzones list
     } catch (error) {
-      console.error('Failed to delete subzone:', error);
+      toast.error('Failed to delete subzone:' + " " + String(error));
       alert('Fehler beim Löschen der Zone. Prüfe ob die Zone Unterzonen oder Geräte enthält.');
     }
   };
@@ -254,7 +255,7 @@ export function ZoneDetailPage() {
         alert(`Fehler beim Zuweisen der Geräte: ${result.error || 'Unbekannter Fehler'}`);
       }
     } catch (error) {
-      console.error('Failed to assign devices:', error);
+      toast.error('Failed to assign devices:' + " " + String(error));
       alert('Fehler beim Zuweisen der Geräte');
     }
   };

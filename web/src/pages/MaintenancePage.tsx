@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { maintenanceApi } from '../lib/api';
 import type { Defect, Inspection, MaintenanceStats } from '../lib/api';
+import { toast } from '../lib/toast';
 
 type TabView = 'overview' | 'defects' | 'inspections';
 type DefectFilter = 'all' | 'open' | 'in_progress' | 'repaired' | 'closed';
@@ -54,7 +55,7 @@ export function MaintenancePage() {
       const { data } = await maintenanceApi.getStats();
       setStats(data);
     } catch (error) {
-      console.error('Failed to load maintenance stats:', error);
+      toast.error('Failed to load maintenance stats:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -66,7 +67,7 @@ export function MaintenancePage() {
       const { data } = await maintenanceApi.getDefects(params);
       setDefects(data);
     } catch (error) {
-      console.error('Failed to load defects:', error);
+      toast.error('Failed to load defects:' + " " + String(error));
     }
   };
 
@@ -76,7 +77,7 @@ export function MaintenancePage() {
       const { data } = await maintenanceApi.getInspections(params);
       setInspections(data);
     } catch (error) {
-      console.error('Failed to load inspections:', error);
+      toast.error('Failed to load inspections:' + " " + String(error));
     }
   };
 
@@ -89,7 +90,7 @@ export function MaintenancePage() {
       loadData();
       loadDefects();
     } catch (error) {
-      console.error('Failed to create defect:', error);
+      toast.error('Failed to create defect:' + " " + String(error));
       alert('Fehler beim Erstellen des Defektberichts');
     }
   };
@@ -100,7 +101,7 @@ export function MaintenancePage() {
       loadData();
       loadDefects();
     } catch (error) {
-      console.error('Failed to update defect:', error);
+      toast.error('Failed to update defect:' + " " + String(error));
       alert('Fehler beim Aktualisieren des Status');
     }
   };

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Download, Package, Building2, Tag, Layers, Cable, Briefcase, FileText, TrendingUp } from 'lucide-react';
+import { toast } from '../../lib/toast';
 
 type ExportType = {
   id: string;
@@ -121,7 +122,7 @@ export function ExportTab() {
       });
       window.dispatchEvent(event);
     } catch (error) {
-      console.error('Export error:', error);
+      toast.error('Export error:' + " " + String(error));
       const event = new CustomEvent('toast', {
         detail: {
           type: 'error',

@@ -21,6 +21,7 @@ import {
 import { formatStatus, getStatusColor } from '../../lib/utils';
 import { ProductDevicesModal } from '../ProductDevicesModal';
 import { DeviceDetailModal } from '../DeviceDetailModal';
+import { toast } from '../../lib/toast';
 
 interface ActionMessage {
   type: 'success' | 'error';
@@ -97,7 +98,7 @@ export function DeviceTreeTab() {
       const { data } = await devicesApi.getAll({ limit: 500 });
       setDevices(data);
     } catch (error) {
-      console.error('Failed to load devices:', error);
+      toast.error('Failed to load devices:' + " " + String(error));
     } finally {
       setDeviceLoading(false);
     }
@@ -112,7 +113,7 @@ export function DeviceTreeTab() {
       const sortedTree = sortDeviceTree(tree);
       setTreeData(sortedTree);
     } catch (error: any) {
-      console.error('Failed to load device tree:', error);
+      toast.error('Failed to load device tree:' + " " + String(error));
       setTreeError(error?.response?.data?.error || 'Gerätebaum konnte nicht geladen werden.');
     } finally {
       setTreeLoading(false);
@@ -173,7 +174,7 @@ export function DeviceTreeTab() {
         const { data } = await devicesApi.getById(deviceId);
         device = data;
       } catch (error) {
-        console.error('Failed to load device:', error);
+        toast.error('Failed to load device:' + " " + String(error));
         setActionMessage({
           type: 'error',
           text: 'Gerätedetails konnten nicht geladen werden.',

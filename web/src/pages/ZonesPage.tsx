@@ -4,6 +4,7 @@ import { MapPin, Plus, Trash2, Factory, LayoutList, Package, BookOpen, Truck, Mu
 import { zonesApi } from '../lib/api';
 import { useZoneTypes } from '../lib/useZoneTypes';
 import type { Zone } from '../lib/api';
+import { toast } from '../lib/toast';
 
 export function ZonesPage() {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export function ZonesPage() {
       const { data } = await zonesApi.getAll();
       setZones(data);
     } catch (error) {
-      console.error('Failed to load zones:', error);
+      toast.error('Failed to load zones:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -102,7 +103,7 @@ export function ZonesPage() {
         navigate('/zones');
       }
     } catch (error) {
-      console.error('Failed to create zone:', error);
+      toast.error('Failed to create zone:' + " " + String(error));
     }
   };
 
@@ -121,7 +122,7 @@ export function ZonesPage() {
       await zonesApi.delete(zone.zone_id);
       loadZones();
     } catch (error) {
-      console.error('Failed to delete zone:', error);
+      toast.error('Failed to delete zone:' + " " + String(error));
       alert('Fehler beim Löschen der Zone. Prüfe ob die Zone Unterzonen oder Geräte enthält.');
     }
   };

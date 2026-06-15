@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Save, Database, AlertCircle } from 'lucide-react';
 import { adminSettingsApi, type APILimits } from '../../lib/api';
+import { toast } from '../../lib/toast';
 
 export function APISettingsTab() {
   const [limits, setLimits] = useState<APILimits>({ device_limit: 50000, case_limit: 50000 });
@@ -17,7 +18,7 @@ export function APISettingsTab() {
       const { data } = await adminSettingsApi.getAPILimits();
       setLimits(data);
     } catch (error) {
-      console.error('Failed to load API limits:', error);
+      toast.error('Failed to load API limits:' + " " + String(error));
       setMessage({ type: 'error', text: 'Fehler beim Laden der Einstellungen' });
     } finally {
       setLoading(false);
@@ -44,7 +45,7 @@ export function APISettingsTab() {
       setLimits({ device_limit: data.device_limit, case_limit: data.case_limit });
       setMessage({ type: 'success', text: 'Einstellungen erfolgreich gespeichert!' });
     } catch (error) {
-      console.error('Failed to update API limits:', error);
+      toast.error('Failed to update API limits:' + " " + String(error));
       setMessage({ type: 'error', text: 'Fehler beim Speichern der Einstellungen' });
     } finally {
       setSaving(false);

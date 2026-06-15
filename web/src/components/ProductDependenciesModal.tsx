@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Package, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
+import { toast } from '../lib/toast';
 
 interface ProductDependency {
   id: number;
@@ -60,7 +61,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
       const { data } = await api.get(`/admin/products/${productId}/dependencies`);
       setDependencies(data);
     } catch (err) {
-      console.error('Failed to load dependencies:', err);
+      toast.error('Failed to load dependencies:' + " " + String(err));
     } finally {
       setLoading(false);
     }
@@ -75,7 +76,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
       );
       setAvailableProducts(filtered);
     } catch (err) {
-      console.error('Failed to load available products:', err);
+      toast.error('Failed to load available products:' + " " + String(err));
     }
   };
 
@@ -98,7 +99,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
       setNotes('');
       setSearchTerm('');
     } catch (err) {
-      console.error('Failed to add dependency:', err);
+      toast.error('Failed to add dependency:' + " " + String(err));
       alert('Failed to add dependency');
     }
   };
@@ -110,7 +111,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
       await api.delete(`/admin/products/${productId}/dependencies/${depId}`);
       setDependencies(dependencies.filter(d => d.id !== depId));
     } catch (err) {
-      console.error('Failed to delete dependency:', err);
+      toast.error('Failed to delete dependency:' + " " + String(err));
       alert('Failed to delete dependency');
     }
   };

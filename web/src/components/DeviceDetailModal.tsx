@@ -4,6 +4,7 @@ import type { Device } from '../lib/api';
 import { useState, useEffect, useMemo } from 'react';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
+import { toast } from '../lib/toast';
 
 interface DeviceDetailModalProps {
   device: Device | null;
@@ -22,7 +23,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
   // Cleanup LEDs when modal closes
   useEffect(() => {
     if (!isOpen && ledActive) {
-      ledApi.clear().catch(err => console.error('Failed to clear LEDs:', err));
+      ledApi.clear().catch(err => toast.error('Failed to clear LEDs:' + " " + String(err)));
       setLedActive(false);
     }
   }, [isOpen, ledActive]);
@@ -63,7 +64,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
       setLocateMessage(`✓ Fach ${device.zone_code} leuchtet jetzt orange`);
       setTimeout(() => setLocateMessage(null), 5000);
     } catch (error: any) {
-      console.error('Failed to locate bin:', error);
+      toast.error('Failed to locate bin:' + " " + String(error));
       setLocateMessage('Fehler beim Beleuchten des Fachs');
       setTimeout(() => setLocateMessage(null), 3000);
     } finally {
@@ -81,7 +82,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
       setLocateMessage('✓ LEDs ausgeschaltet');
       setTimeout(() => setLocateMessage(null), 3000);
     } catch (error: any) {
-      console.error('Failed to clear LEDs:', error);
+      toast.error('Failed to clear LEDs:' + " " + String(error));
       setLocateMessage('Fehler beim Ausschalten');
       setTimeout(() => setLocateMessage(null), 3000);
     } finally {

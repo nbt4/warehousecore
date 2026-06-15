@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Save, Lightbulb, RefreshCcw, SlidersHorizontal, FileText, Square } from 'lucide-react';
 import { api, ledApi, zonesApi, type LEDAppearance, type LEDJobHighlightSettings, type LEDMapping, type Zone } from '../../lib/api';
+import { toast } from '../../lib/toast';
 
 const ZONE_KEYWORDS = ['bin', 'fach', 'slot', 'compartment', 'shelf', 'gitterbox'];
 
@@ -111,7 +112,7 @@ export function LEDSettingsTab() {
         const { data } = await zonesApi.getAll();
         setZones(data);
       } catch (error) {
-        console.error('Failed to load zones for LED mapping:', error);
+        toast.error('Failed to load zones for LED mapping:' + " " + String(error));
       }
     };
 
@@ -123,7 +124,7 @@ export function LEDSettingsTab() {
       const response = await api.get('/admin/led/single-bin-default');
       setDefaults(response.data);
     } catch (error) {
-      console.error('Failed to load LED defaults:', error);
+      toast.error('Failed to load LED defaults:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -134,7 +135,7 @@ export function LEDSettingsTab() {
       const { data } = await ledApi.getJobSettings();
       setJobSettings(data);
     } catch (error) {
-      console.error('Failed to load job highlight settings:', error);
+      toast.error('Failed to load job highlight settings:' + " " + String(error));
     }
   };
 
@@ -143,7 +144,7 @@ export function LEDSettingsTab() {
       const response = await api.get('/admin/zone-types');
       setZoneTypes(response.data);
     } catch (error) {
-      console.error('Failed to load zone type LED defaults:', error);
+      toast.error('Failed to load zone type LED defaults:' + " " + String(error));
     } finally {
       setZoneTypeLoading(false);
     }
@@ -176,7 +177,7 @@ export function LEDSettingsTab() {
       }
       setMappingMessage('');
     } catch (error) {
-      console.error('Failed to load LED mapping:', error);
+      toast.error('Failed to load LED mapping:' + " " + String(error));
       setMapping(null);
       setPixelsInput({});
       setMappingMessage('Fehler beim Laden des LED-Mappings.');

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ModalPortal } from '../ModalPortal';
+import { toast } from '../../lib/toast';
 
 interface FieldDefinition {
   id: number;
@@ -174,7 +175,7 @@ export function RentedProductsTab() {
       const { data } = await api.get<RentalEquipment[]>('/admin/rental-equipment', { params });
       setEquipment(data || []);
     } catch (error) {
-      console.error('Failed to load rental equipment:', error);
+      toast.error('Failed to load rental equipment:' + " " + String(error));
       setEquipment([]);
     } finally {
       setLoading(false);
@@ -186,7 +187,7 @@ export function RentedProductsTab() {
       const { data } = await api.get<string[]>('/admin/rental-equipment/suppliers');
       setSuppliers(data || []);
     } catch (error) {
-      console.error('Failed to load suppliers:', error);
+      toast.error('Failed to load suppliers:' + " " + String(error));
     }
   }, []);
 
@@ -257,7 +258,7 @@ export function RentedProductsTab() {
       await fetchEquipment();
       await fetchSuppliers();
     } catch (error) {
-      console.error('Failed to delete rental equipment:', error);
+      toast.error('Failed to delete rental equipment:' + " " + String(error));
       window.alert('Fehler beim Löschen des Mietprodukts.');
     }
   };
@@ -299,7 +300,7 @@ export function RentedProductsTab() {
       await fetchSuppliers();
       closeModal();
     } catch (error) {
-      console.error('Failed to save rental equipment:', error);
+      toast.error('Failed to save rental equipment:' + " " + String(error));
       window.alert('Fehler beim Speichern des Mietprodukts.');
     } finally {
       setSubmitting(false);

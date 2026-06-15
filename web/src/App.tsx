@@ -17,11 +17,13 @@ import { CablesPage } from './pages/CablesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import LabelDesignerPage from './pages/LabelDesignerPage';
 import { JobPicklistPage } from './pages/JobPicklistPage';
+import ToastContainer from './components/ToastContainer';
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ToastContainer />
         <Routes>
           {/* Public route */}
           <Route path="/login" element={<Login />} />

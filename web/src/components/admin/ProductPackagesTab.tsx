@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ModalPortal } from '../ModalPortal';
+import { toast } from '../../lib/toast';
 
 interface ProductPackage {
   package_id: number;
@@ -152,7 +153,7 @@ export function ProductPackagesTab() {
       }
       setPackages(data);
     } catch (error) {
-      console.error('Failed to fetch product packages:', error);
+      toast.error('Failed to fetch product packages:' + " " + String(error));
     } finally {
       setLoading(false);
     }
@@ -167,7 +168,7 @@ export function ProductPackagesTab() {
       }
       setProducts(data);
     } catch (error) {
-      console.error('Failed to fetch products:', error);
+      toast.error('Failed to fetch products:' + " " + String(error));
     }
   };
 
@@ -180,7 +181,7 @@ export function ProductPackagesTab() {
       }
       setCategories(data);
     } catch (error) {
-      console.error('Failed to fetch categories:', error);
+      toast.error('Failed to fetch categories:' + " " + String(error));
     }
   };
 
@@ -190,7 +191,7 @@ export function ProductPackagesTab() {
       const data = Array.isArray(response.data) ? response.data : [];
       setSubcategories(data);
     } catch (error) {
-      console.error('Failed to fetch subcategories:', error);
+      toast.error('Failed to fetch subcategories:' + " " + String(error));
     }
   };
 
@@ -200,7 +201,7 @@ export function ProductPackagesTab() {
       const data = Array.isArray(response.data) ? response.data : [];
       setSubbiercategories(data);
     } catch (error) {
-      console.error('Failed to fetch subbiercategories:', error);
+      toast.error('Failed to fetch subbiercategories:' + " " + String(error));
     }
   };
 
@@ -270,7 +271,7 @@ export function ProductPackagesTab() {
       setPackageDevices(devices);
       setDevicesToDelete(new Set());
     } catch (error) {
-      console.error('Failed to load package devices:', error);
+      toast.error('Failed to load package devices:' + " " + String(error));
       setPackageDevices([]);
     } finally {
       setLoadingDevices(false);
@@ -296,7 +297,7 @@ export function ProductPackagesTab() {
       // Reset device creation fields
       setFormData({ ...formData, device_quantity: undefined });
     } catch (error) {
-      console.error('Failed to add devices:', error);
+      toast.error('Failed to add devices:' + " " + String(error));
       window.alert('Fehler beim Hinzufügen der Geräte.');
     }
   };
@@ -342,7 +343,7 @@ export function ProductPackagesTab() {
           await loadPackageDevices(data.product_id);
         }
       } catch (err) {
-        console.error('Failed to fetch package details:', err);
+        toast.error('Failed to fetch package details:' + " " + String(err));
       }
     } else {
       setEditingPackage(null);
@@ -436,7 +437,7 @@ export function ProductPackagesTab() {
           try {
             await Promise.all(deletePromises);
           } catch (deviceError) {
-            console.error('Failed to delete some devices:', deviceError);
+            toast.error('Failed to delete some devices:' + " " + String(deviceError));
             window.alert('Paket gespeichert, aber einige Geräte konnten nicht gelöscht werden.');
           }
         }
@@ -452,7 +453,7 @@ export function ProductPackagesTab() {
               quantity: formData.device_quantity,
             });
           } catch (deviceError) {
-            console.error('Failed to create devices:', deviceError);
+            toast.error('Failed to create devices:' + " " + String(deviceError));
             window.alert('Paket erstellt, aber Geräte konnten nicht angelegt werden.');
           }
         }
@@ -475,7 +476,7 @@ export function ProductPackagesTab() {
             },
           });
         } catch (imageError) {
-          console.error('Failed to upload images:', imageError);
+          toast.error('Failed to upload images:' + " " + String(imageError));
           window.alert('Paket gespeichert, aber Bilder konnten nicht hochgeladen werden.');
         }
       }
@@ -483,7 +484,7 @@ export function ProductPackagesTab() {
       handleCloseModal();
       fetchPackages();
     } catch (error) {
-      console.error('Failed to save product package:', error);
+      toast.error('Failed to save product package:' + " " + String(error));
       const message =
         (error as any)?.response?.data?.error || 'Fehler beim Speichern des Produktpakets';
       setFormError(message);
@@ -499,7 +500,7 @@ export function ProductPackagesTab() {
       await api.delete(`/admin/product-packages/${id}`);
       fetchPackages();
     } catch (error) {
-      console.error('Failed to delete product package:', error);
+      toast.error('Failed to delete product package:' + " " + String(error));
       alert('Fehler beim Löschen des Produktpakets');
     }
   };
@@ -514,7 +515,7 @@ export function ProductPackagesTab() {
         items: Array.isArray(packageData?.items) ? packageData.items : [],
       });
     } catch (error) {
-      console.error('Failed to fetch package details:', error);
+      toast.error('Failed to fetch package details:' + " " + String(error));
     }
   };
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { User, Mail, Shield, Save, Lock, Eye, EyeOff, Check } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from '../lib/toast';
 
 interface UserProfile {
   profile: {
@@ -47,7 +48,7 @@ export function ProfilePage() {
       setDisplayName(r.data.profile.display_name || '');
       setAvatarURL(r.data.profile.avatar_url || '');
     } catch (e) {
-      console.error(e);
+      toast.error(String(e));
     } finally {
       setLoading(false);
     }

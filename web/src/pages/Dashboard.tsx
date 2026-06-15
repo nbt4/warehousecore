@@ -3,6 +3,7 @@ import { Package, Warehouse, AlertTriangle, TrendingUp } from 'lucide-react';
 import { dashboardApi } from '../lib/api';
 import type { DashboardStats, Movement } from '../lib/api';
 import { LowStockAlertsWidget } from '../components/LowStockAlertsWidget';
+import { toast } from '../lib/toast';
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats>({
@@ -27,14 +28,14 @@ export function Dashboard() {
       const { data } = await dashboardApi.getStats();
       setStats(data);
     } catch (error) {
-      console.error('Failed to load stats:', error);
+      toast.error('Failed to load stats:' + " " + String(error));
     }
 
     try {
       const { data } = await dashboardApi.getRecentMovements(10);
       setRecentActivity(data);
     } catch (error) {
-      console.error('Failed to load recent activity:', error);
+      toast.error('Failed to load recent activity:' + " " + String(error));
     }
 
     if (loading) {

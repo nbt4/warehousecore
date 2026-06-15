@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { api } from '../../lib/api';
+import { toast } from '../../lib/toast';
 
 interface ZoneType {
   id: number;
@@ -32,7 +33,7 @@ export function ZoneTypesTab() {
       const response = await api.get('/admin/zone-types');
       setZoneTypes(response.data);
     } catch (error) {
-      console.error('Failed to load zone types:', error);
+      toast.error('Failed to load zone types:' + " " + String(error));
     }
   };
 

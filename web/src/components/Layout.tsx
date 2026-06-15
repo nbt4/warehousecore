@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Boxes, Tag, Cable, ChevronDown, LayoutDashboard } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useBranding } from '../hooks/useBranding';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 
@@ -17,7 +18,11 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { t } = useTranslation();
-  const companyName = (window as any).__APP_CONFIG__?.companyName || 'RentalCore';
+	const branding = useBranding();
+	const companyName = branding.companyName;
+	const sidebarLogo = branding.sidebarLogo;
+	const sidebarIcon = '/logos/warehousecore_white_icon.svg';
+	const logoSize = branding.logoSizeSidebar;
 
   useEffect(() => {
     const checkMobile = () => {
@@ -156,11 +161,6 @@ export function Layout({ children }: LayoutProps) {
                   : <ChevronRight className="w-5 h-5" />
               }
             </button>
-            <img
-              src="/logos/warehousecore_white_side.svg"
-              alt="WarehouseCore"
-              className="h-12"
-            />
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
@@ -196,10 +196,11 @@ export function Layout({ children }: LayoutProps) {
         >
           <img
             src={sidebarOpen || isMobile
-              ? '/logos/warehousecore_white_side.svg'
-              : '/logos/warehousecore_white_icon.svg'}
-            alt="WarehouseCore"
+              ? sidebarLogo
+              : sidebarIcon}
+            alt={companyName}
             className={sidebarOpen || isMobile ? 'h-12' : 'h-14 mx-auto'}
+            style={{ height: `${48 * logoSize / 100}px` }}
           />
           {isMobile && (
             <button

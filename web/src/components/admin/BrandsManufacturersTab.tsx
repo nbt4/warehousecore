@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X, Building2, Tag, Globe } from 'lucide-react';
 import { api } from '../../lib/api';
+import { toast } from '../../lib/toast';
 
 interface Manufacturer {
   manufacturer_id: number;
@@ -35,7 +36,7 @@ export function BrandsManufacturersTab() {
       const { data } = await api.get('/admin/manufacturers');
       setManufacturers(data || []);
     } catch (error) {
-      console.error('Failed to load manufacturers:', error);
+      toast.error('Failed to load manufacturers:' + " " + String(error));
     }
   };
 
@@ -44,7 +45,7 @@ export function BrandsManufacturersTab() {
       const { data } = await api.get('/admin/brands');
       setBrands(data || []);
     } catch (error) {
-      console.error('Failed to load brands:', error);
+      toast.error('Failed to load brands:' + " " + String(error));
     }
   };
 

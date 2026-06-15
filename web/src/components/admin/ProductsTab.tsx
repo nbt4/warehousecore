@@ -21,6 +21,7 @@ import { ProductDependenciesModal } from '../ProductDependenciesModal';
 import { ProductDetailModal } from '../ProductDetailModal';
 import { ProductDevicesModal } from '../ProductDevicesModal';
 import { DeviceDetailModal } from '../DeviceDetailModal';
+import { toast } from '../../lib/toast';
 
 interface Product {
   product_id: number;
@@ -251,7 +252,7 @@ export function ProductsTab() {
         const { data } = await api.get<Product[]>('/admin/products', { params });
         setProducts(data || []);
       } catch (error) {
-        console.error('Failed to load products:', error);
+        toast.error('Failed to load products:' + " " + String(error));
         setProducts([]);
       } finally {
         setLoadingProducts(false);
@@ -280,7 +281,7 @@ export function ProductsTab() {
 
       setMetadataLoaded(true);
     } catch (error) {
-      console.error('Failed to load metadata:', error);
+      toast.error('Failed to load metadata:' + " " + String(error));
     }
   }, []);
 
@@ -312,7 +313,7 @@ export function ProductsTab() {
       const { data } = await api.get<Device[]>(`/admin/products/${productId}/devices`);
       setDevicesModalDevices(data);
     } catch (error) {
-      console.error('Failed to load product devices:', error);
+      toast.error('Failed to load product devices:' + " " + String(error));
     } finally {
       setDevicesModalLoading(false);
     }
@@ -324,7 +325,7 @@ export function ProductsTab() {
     try {
       await ledApi.locateBin(device.zone_code);
     } catch (error) {
-      console.error('LED locate failed:', error);
+      toast.error('LED locate failed:' + " " + String(error));
     } finally {
       setDevicesModalLocatingId(null);
     }
@@ -342,7 +343,7 @@ export function ProductsTab() {
       setDevicesModalSelectedDevice(data);
       setDevicesModalDetailOpen(true);
     } catch (error) {
-      console.error('Failed to load device detail:', error);
+      toast.error('Failed to load device detail:' + " " + String(error));
     }
   };
 
@@ -410,7 +411,7 @@ export function ProductsTab() {
       setProductDevices(data || []);
       setDevicesToDelete(new Set());
     } catch (error) {
-      console.error('Failed to load product devices:', error);
+      toast.error('Failed to load product devices:' + " " + String(error));
       setProductDevices([]);
     } finally {
       setLoadingDevices(false);
@@ -445,7 +446,7 @@ export function ProductsTab() {
       setModalOpen(true);
       await loadProductDevices(productId);
     } catch (error) {
-      console.error('Failed to load product details:', error);
+      toast.error('Failed to load product details:' + " " + String(error));
       window.alert('Produkt konnte nicht geladen werden.');
     }
   };
@@ -471,7 +472,7 @@ export function ProductsTab() {
       // Reset device creation fields
       setFormData({ ...formData, device_quantity: undefined });
     } catch (error) {
-      console.error('Failed to add devices:', error);
+      toast.error('Failed to add devices:' + " " + String(error));
       window.alert('Fehler beim Hinzufügen der Geräte.');
     }
   };
@@ -497,7 +498,7 @@ export function ProductsTab() {
       await api.delete(`/admin/products/${productId}`);
       await fetchProducts(searchTerm, categoryFilter);
     } catch (error) {
-      console.error('Failed to delete product:', error);
+      toast.error('Failed to delete product:' + " " + String(error));
       window.alert('Fehler beim Löschen des Produkts.');
     }
   };
@@ -552,7 +553,7 @@ export function ProductsTab() {
           try {
             await Promise.all(deletePromises);
           } catch (deviceError) {
-            console.error('Failed to delete some devices:', deviceError);
+            toast.error('Failed to delete some devices:' + " " + String(deviceError));
             window.alert('Produkt gespeichert, aber einige Geräte konnten nicht gelöscht werden.');
           }
         }
@@ -567,7 +568,7 @@ export function ProductsTab() {
               quantity: formData.device_quantity,
             });
           } catch (deviceError) {
-            console.error('Failed to create devices:', deviceError);
+            toast.error('Failed to create devices:' + " " + String(deviceError));
             window.alert('Produkt erstellt, aber Geräte konnten nicht angelegt werden.');
           }
         }
@@ -576,7 +577,7 @@ export function ProductsTab() {
       await fetchProducts(searchTerm, categoryFilter);
       closeModal();
     } catch (error) {
-      console.error('Failed to save product:', error);
+      toast.error('Failed to save product:' + " " + String(error));
       window.alert('Fehler beim Speichern des Produkts.');
     } finally {
       setSubmitting(false);
@@ -588,7 +589,7 @@ export function ProductsTab() {
       const { data } = await api.get<Product>(`/admin/products/${productId}`);
       setViewProduct(data);
     } catch (error) {
-      console.error('Failed to load product details:', error);
+      toast.error('Failed to load product details:' + " " + String(error));
       window.alert('Produkt konnte nicht geladen werden.');
     }
   };
