@@ -21,7 +21,10 @@ import (
 	"warehousecore/internal/handlers"
 	"warehousecore/internal/led"
 	"warehousecore/internal/middleware"
+	"warehousecore/internal/metrics"
 	"warehousecore/internal/models"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
 )
@@ -130,6 +133,11 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer repository.CloseDatabase()
+
+	// Set initial DB connection gauge
+	if sqlDB := repository.GetSQLDB(); sqlDB != nil {
+		metrics.DBConnectionsOpen.Set(float64(sqlDB.Stats().OpenConnections))
+	}
 
 	brandingSvc = services.NewBrandingService(repository.GetDB(), "warehouse")
 
@@ -399,6 +407,7 @@ func main() {
 	// Apply middleware
 	api.Use(middleware.Logger)
 	api.Use(middleware.RecoveryMiddleware)
+	api.Use(metrics.Middleware)
 
 	// Serve branding logos from shared volume
 	router.PathPrefix("/logos/").Handler(http.StripPrefix("/logos/", http.FileServer(http.Dir("/var/lib/branding/logos"))))
@@ -413,6 +422,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(cfg)
 	}).Methods("GET")
+
+	// Prometheus metrics endpoint
+	router.Handle("/metrics", promhttp.Handler())
 
 	// Serve static frontend files with SPA fallback
 	router.PathPrefix("/").HandlerFunc(spaHandler)
