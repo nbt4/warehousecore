@@ -16,6 +16,9 @@ import (
 
 	"github.com/gorilla/mux"
 
+	commonhealth "github.com/nbt4/cores-common/pkg/health"
+	commonresponse "github.com/nbt4/cores-common/pkg/response"
+
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
@@ -341,21 +344,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 }
 
 // HealthCheck returns server health status
-func HealthCheck(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
-	if err := db.Ping(); err != nil {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
-			"status": "unhealthy",
-			"error":  "database connection failed",
-		})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "healthy",
-		"service": "WarehouseCore",
-	})
-}
+var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "2.1.0")
 
 // HandleScan processes barcode/QR scan requests
 func HandleScan(w http.ResponseWriter, r *http.Request) {
@@ -3200,9 +3189,7 @@ func AssignDevicesToZone(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
+	commonresponse.JSON(w, statusCode, data)
 }
 
 func parseInt(s string, defaultVal int) int {

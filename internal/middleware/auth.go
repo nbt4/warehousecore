@@ -2,14 +2,12 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	commonjwt "github.com/nbt4/cores-common/pkg/jwt"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
@@ -28,28 +26,12 @@ func authDebugLog(format string, args ...interface{}) {
 	log.Printf(format, args...)
 }
 
-type coresClaims struct {
-	UserID   uint   `json:"uid"`
-	Username string `json:"username"`
-	IsAdmin  bool   `json:"is_admin"`
-	jwt.RegisteredClaims
-}
-
+// validateCoresToken uses the shared cores-common JWT validator.
 func validateCoresToken(tokenStr string) (uint, bool) {
-	secret := os.Getenv("CORES_JWT_SECRET")
-	if secret == "" {
+	claims, ok := commonjwt.ValidateToken(tokenStr)
+	if !ok {
 		return 0, false
 	}
-	token, err := jwt.ParseWithClaims(tokenStr, &coresClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
-		}
-		return []byte(secret), nil
-	})
-	if err != nil || !token.Valid {
-		return 0, false
-	}
-	claims := token.Claims.(*coresClaims)
 	return claims.UserID, true
 }
 

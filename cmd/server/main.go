@@ -17,6 +17,7 @@ import (
 	"github.com/rs/cors"
 
 	"warehousecore/config"
+	commonhealth "github.com/nbt4/cores-common/pkg/health"
 	"warehousecore/internal/handlers"
 	"warehousecore/internal/led"
 	"warehousecore/internal/middleware"
@@ -168,7 +169,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", handlers.HealthCheck).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "2.1.0")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")

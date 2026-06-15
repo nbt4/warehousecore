@@ -1,6 +1,6 @@
 module warehousecore
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/boombuler/barcode v1.1.0
@@ -8,16 +8,16 @@ require (
 	github.com/chromedp/chromedp v0.14.2
 	github.com/disintegration/imaging v1.6.2
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/mux v1.8.1
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
+	github.com/nbt4/cores-common v0.0.0-00010101000000-000000000000
 	github.com/pkg/errors v0.9.1
 	github.com/rs/cors v1.11.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.43.0
 	gorm.io/driver/postgres v1.5.11
-	gorm.io/gorm v1.31.0
+	gorm.io/gorm v1.31.1
 )
 
 require (
@@ -27,6 +27,7 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -40,3 +41,5 @@ require (
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 )
+
+replace github.com/nbt4/cores-common => /opt/dev/cores-common
