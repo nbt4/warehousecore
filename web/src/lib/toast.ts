@@ -3,10 +3,6 @@
 
 type ToastType = 'success' | 'error' | 'info';
 
-interface ToastEvent {
-  type: ToastType;
-  message: string;
-}
 
 function emit(type: ToastType, message: string) {
   window.dispatchEvent(new CustomEvent('toast', { detail: { type, message } }));
