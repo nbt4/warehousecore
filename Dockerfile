@@ -16,7 +16,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build Backend
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:1.25-alpine AS backend-builder
 
 # Install build dependencies (CGO still needed for webp image processing)
 RUN apk add --no-cache git gcc musl-dev
