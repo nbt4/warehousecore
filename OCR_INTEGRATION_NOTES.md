@@ -1,7 +1,7 @@
 # Product Packages OCR Integration Notes
 
 ## Overview
-Product Packages have been implemented in WarehouseCore with full CRUD functionality. The OCR integration for job creation mentioned in GitLab issue #19 requires implementation in **RentalCore**.
+Product Packages have been implemented in WarehouseCore with full CRUD functionality. The OCR integration for job creation mentioned in legacy tracker issue #19 requires implementation in **RentalCore**.
 
 ## What's Implemented in WarehouseCore
 
