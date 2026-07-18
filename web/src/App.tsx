@@ -14,7 +14,6 @@ import { MaintenancePage } from './pages/MaintenancePage';
 import { CasesPage } from './pages/CasesPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { CablesPage } from './pages/CablesPage';
-import { ProfilePage } from './pages/ProfilePage';
 import LabelDesignerPage from './pages/LabelDesignerPage';
 import { JobPicklistPage } from './pages/JobPicklistPage';
 import ToastContainer from './components/ToastContainer';
@@ -64,7 +63,6 @@ function App() {
           <Route path="/jobs/:id" element={<ProtectedRoute><Layout><JobsPage /></Layout></ProtectedRoute>} />
           <Route path="/jobs/:id/picklist" element={<ProtectedRoute><Layout><JobPicklistPage /></Layout></ProtectedRoute>} />
           <Route path="/maintenance" element={<ProtectedRoute><Layout><MaintenancePage /></Layout></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Layout><ProfilePage /></Layout></ProtectedRoute>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

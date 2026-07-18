@@ -381,22 +381,18 @@ export function Layout({ children }: LayoutProps) {
           style={{ borderTop: '1px solid var(--border-subtle)' }}
         >
           {user && (sidebarOpen || isMobile) && (
-            <button
-              onClick={() => { closeSidebar(); navigate('/profile'); }}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg w-full text-left cursor-pointer transition-all"
+            <div
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg w-full text-left"
               style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
-              title="Profil öffnen"
             >
               <User className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-red)' }} />
               <span className="text-sm font-medium truncate">{user.username}</span>
-            </button>
+            </div>
           )}
           {user && !sidebarOpen && !isMobile && (
             <div
-              className="p-2.5 rounded-lg flex justify-center cursor-pointer"
+              className="p-2.5 rounded-lg flex justify-center"
               style={{ background: 'var(--bg-subtle)' }}
-              onClick={() => navigate('/profile')}
-              title="Profil"
             >
               <User className="w-4 h-4" style={{ color: 'var(--accent-red)' }} />
             </div>
