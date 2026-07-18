@@ -10,9 +10,9 @@
 - **User**: ntielmann
 - **Password**: uL8ztQd6T3DJHX
 
-### GitLab Tokens
-- **Warehousecore**: glpat-gKzQug1kiBpRUxflfxE2p286MQp1OmQH.01.0w1pqzzx8
-- **Rentalcore**: glpat-WXH35pLDR5AuJ0OeDHPmG286MQp1OmMH.01.0w170uoa7
+### Source Hosting
+- GitHub (`github.com/nbt4`) is the only source-code remote and source of truth.
+- Keep source-hosting credentials out of project instructions.
 
 ## Project: WarehouseCore
 Warehouse mgmt system for Tsunami Events.
