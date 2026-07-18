@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -26,6 +26,7 @@ function App() {
         <Routes>
           {/* Public route */}
           <Route path="/login" element={<Login />} />
+          <Route path="/profile" element={<Navigate to="/" replace />} />
 
           {/* Password change route (requires auth but bypasses force check) */}
           <Route path="/change-password" element={<ProtectedRoute bypassForcePasswordChange><ChangePassword /></ProtectedRoute>} />
