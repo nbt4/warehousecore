@@ -200,4 +200,4 @@ warehousecore:
 
 ---
 
-[📦 Monorepo auf GitHub](https://github.com/nbt4/cores) | `nobentie/warehousecore:latest`
+[Quellcode](https://github.com/nbt4/warehousecore) | [Monorepo](https://github.com/nbt4/cores) | `nobentie/warehousecore:latest`

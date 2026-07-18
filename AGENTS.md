@@ -1,14 +1,9 @@
 # AGENTS.md - AI Agent Instructions
 
-## Credentials
+## Operations Access
 
-### Komodo API
-- **Key**: K-JjzIjQZH4Tb8VHbwsGI9jSPB3iVc7hA5xn4z3fe1
-- **Secret**: S-LwBKLnHGEq1BemfiC3MafA8qecif1CpmgANlbBbn
-
-### Core Login (rent.tsunami-events.de, warehouse.tsunami-events.de)
-- **User**: ntielmann
-- **Password**: uL8ztQd6T3DJHX
+- Use the preconfigured local SSH, GitHub, Docker Hub, and Komodo sessions.
+- Keep credentials in the runtime environment or a secret manager, never in repository files.
 
 ### Source Hosting
 - GitHub (`github.com/nbt4`) is the only source-code remote and source of truth.

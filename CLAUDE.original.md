@@ -1,18 +1,12 @@
 # CLAUDE.md - AI Agent Instructions
 
-## Credentials
+## Operations Access
 
-### Komodo API
-- **Key**: K-JjzIjQZH4Tb8VHbwsGI9jSPB3iVc7hA5xn4z3fe1
-- **Secret**: S-LwBKLnHGEq1BemfiC3MafA8qecif1CpmgANlbBbn
+- Use the preconfigured local SSH, GitHub, Docker Hub, and Komodo sessions.
+- Keep credentials in the runtime environment or a secret manager, never in repository files.
 
-### Core Login (rent.tsunami-events.de, warehouse.tsunami-events.de)
-- **User**: ntielmann
-- **Password**: uL8ztQd6T3DJHX
-
-### GitLab Tokens
-- **Warehousecore**: glpat-gKzQug1kiBpRUxflfxE2p286MQp1OmQH.01.0w1pqzzx8
-- **Rentalcore**: glpat-WXH35pLDR5AuJ0OeDHPmG286MQp1OmMH.01.0w170uoa7
+### Source Hosting
+- GitHub (`github.com/nbt4`) is the only source-code remote and source of truth.
 
 ## Project: WarehouseCore
 Warehouse management system for Tsunami Events.
