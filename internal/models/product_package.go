@@ -4,15 +4,17 @@ import "time"
 
 // ProductPackage represents a package of products with a fixed price
 type ProductPackage struct {
-	PackageID   int         `json:"package_id" db:"package_id"`
-	ProductID   int         `json:"product_id" db:"product_id"` // Links to products table
-	PackageCode string      `json:"package_code" db:"package_code"`
-	Name        string      `json:"name" db:"name"`
-	Description JSONString  `json:"description" db:"description"`
-	Price       JSONFloat64 `json:"price" db:"price"`
-	WebsiteVisible bool     `json:"website_visible" db:"website_visible"`
-	CreatedAt   time.Time   `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at" db:"updated_at"`
+	PackageID        int         `json:"package_id" db:"id"`
+	PackageCode      string      `json:"package_code" db:"package_code"`
+	Name             string      `json:"name" db:"name"`
+	Description      JSONString  `json:"description" db:"description"`
+	Price            JSONFloat64 `json:"price" db:"price"`
+	Category         *string     `json:"category,omitempty" db:"category"`
+	WebsiteVisible   bool        `json:"website_visible" db:"website_visible"`
+	WebsiteThumbnail *string     `json:"website_thumbnail,omitempty" db:"website_image_url"`
+	WebsiteImages    []string    `json:"website_images" db:"-"`
+	CreatedAt        time.Time   `json:"created_at" db:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at" db:"updated_at"`
 }
 
 // ProductPackageItem represents the relationship between a package and a product
@@ -27,12 +29,9 @@ type ProductPackageItem struct {
 // ProductPackageWithItems includes the items in the package
 type ProductPackageWithItems struct {
 	ProductPackage
-	Items         []PackageItemDetail `json:"items,omitempty"`
-	TotalItems    int                 `json:"total_items"`
-	Aliases       []string            `json:"aliases,omitempty"`
-	CategoryID    *int                `json:"category_id,omitempty"`    // Package product category
-	CategoryName  *string             `json:"category_name,omitempty"`  // Category name for display
-	SubcategoryID *string             `json:"subcategory_id,omitempty"` // Package product subcategory
+	Items      []PackageItemDetail `json:"items,omitempty"`
+	TotalItems int                 `json:"total_items"`
+	Aliases    []string            `json:"aliases,omitempty"`
 }
 
 // PackageItemDetail provides detailed information about a product in the package

@@ -14,7 +14,8 @@
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
 - **Case-Management** — Transportkisten-Verwaltung mit Inhaltsverfolgung, QR/Barcode-Labels und Gerätezuweisung
 - **Wartungsmanagement** — Defekt-Tracking, Inspektionshistorie und Wartungsstatistiken
-- **Öffentliche Produktseite** — Ungeschützte API für Produkt- und Paketlisten (Website-Integration)
+- **Öffentliche Produktseite** — Ungeschützte API für getrennte Produkt- und Paketlisten, jeweils mit Website-Freigabe und Bildern
+- **Produktpakete** — Pakete unabhängig von normalen Produkten verwalten, Produkte mit Mengen zuweisen und eigene Paketbilder pflegen
 - **Role-Based Access** — Feingranulares Rollensystem mit Admin-Bereich für Benutzer-, Kategorie- und LED-Konfiguration
 
 ---
@@ -121,6 +122,18 @@ warehousecore:
 | `GET`    | `/api/v1/zones/:id/devices`       | Geräte in Zone (🔒)                       |
 | `POST`   | `/api/v1/zones/:id/devices`       | Geräte zu Zone zuweisen (🔒 Admin)        |
 | `GET`    | `/api/v1/zones/:id/products`      | Produkte in Zone (🔒)                     |
+
+### Produktpakete
+
+| Methode  | Pfad                                                        | Beschreibung                         |
+|----------|-------------------------------------------------------------|--------------------------------------|
+| `GET`    | `/api/v1/admin/product-packages`                            | Produktpakete auflisten (🔒)         |
+| `POST`   | `/api/v1/admin/product-packages`                            | Produktpaket erstellen (🔒 Admin)    |
+| `GET`    | `/api/v1/admin/product-packages/:id`                        | Paketdetails und Positionen (🔒)     |
+| `PUT`    | `/api/v1/admin/product-packages/:id`                        | Paket und Mengen aktualisieren (🔒)  |
+| `POST`   | `/api/v1/admin/product-packages/:id/pictures`               | Paketbilder hochladen (🔒 Admin)     |
+| `PUT`    | `/api/v1/admin/product-packages/:id/website`                | Website-Freigabe/Bilder setzen (🔒)  |
+| `GET`    | `/api/v1/public/packages`                                   | Sichtbare Pakete öffentlich abrufen  |
 
 ### Jobs, Cases & Labels
 

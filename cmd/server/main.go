@@ -10,18 +10,19 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 
-	"warehousecore/config"
 	commonhealth "github.com/nbt4/cores-common/pkg/health"
+	"warehousecore/config"
 	"warehousecore/internal/handlers"
 	"warehousecore/internal/led"
-	"warehousecore/internal/middleware"
 	"warehousecore/internal/metrics"
+	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -52,6 +53,20 @@ func spaHandler(w http.ResponseWriter, r *http.Request) {
 
 	// File exists and is not a directory - serve it
 	http.FileServer(http.Dir("./web/dist")).ServeHTTP(w, r)
+}
+
+// brandingLogoHandler prefers centrally managed branding files and falls back
+// to the application logos bundled into the frontend image.
+func brandingLogoHandler(w http.ResponseWriter, r *http.Request) {
+	name := filepath.Base(r.URL.Path)
+	for _, directory := range []string{"/var/lib/branding/logos", "./web/dist/logos"} {
+		candidate := filepath.Join(directory, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			http.ServeFile(w, r, candidate)
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
 // serveIndexWithConfig injects runtime configuration into index.html
@@ -181,6 +196,7 @@ func main() {
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
+	api.HandleFunc("/public/packages/{id}/pictures/{filename}", handlers.DownloadProductPackagePicture).Methods("GET", "HEAD")
 
 	// Public website feeds (no authentication required)
 	api.HandleFunc("/public/products", handlers.GetWebsiteProducts).Methods("GET")
@@ -302,6 +318,8 @@ func main() {
 	adminRead.HandleFunc("/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
 	adminRead.HandleFunc("/product-packages", handlers.GetProductPackages).Methods("GET")
 	adminRead.HandleFunc("/product-packages/{id}", handlers.GetProductPackage).Methods("GET")
+	adminRead.HandleFunc("/product-packages/{id}/pictures", handlers.GetProductPackagePictures).Methods("GET")
+	adminRead.HandleFunc("/product-packages/{id}/pictures/{filename}", handlers.DownloadProductPackagePicture).Methods("GET", "HEAD")
 	adminRead.HandleFunc("/rental-equipment", handlers.GetRentalEquipment).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment/suppliers", handlers.GetRentalEquipmentSuppliers).Methods("GET")
 	adminRead.HandleFunc("/rental-equipment/supplier-contacts", handlers.SearchSupplierContacts).Methods("GET")
@@ -362,6 +380,9 @@ func main() {
 	admin.HandleFunc("/product-packages/{id}", handlers.DeleteProductPackage).Methods("DELETE")
 	admin.HandleFunc("/product-packages/{id}/items", handlers.AddItemToPackage).Methods("POST")
 	admin.HandleFunc("/product-packages/{package_id}/items/{item_id}", handlers.RemoveItemFromPackage).Methods("DELETE")
+	admin.HandleFunc("/product-packages/{id}/pictures", handlers.UploadProductPackagePictures).Methods("POST")
+	admin.HandleFunc("/product-packages/{id}/pictures/{filename}", handlers.DeleteProductPackagePicture).Methods("DELETE")
+	admin.HandleFunc("/product-packages/{id}/website", handlers.UpdateProductPackageWebsite).Methods("PUT")
 	admin.HandleFunc("/rental-equipment", handlers.CreateRentalEquipment).Methods("POST")
 	admin.HandleFunc("/rental-equipment/{id}", handlers.UpdateRentalEquipment).Methods("PUT")
 	admin.HandleFunc("/rental-equipment/{id}", handlers.DeleteRentalEquipment).Methods("DELETE")
@@ -408,8 +429,8 @@ func main() {
 	api.Use(middleware.RecoveryMiddleware)
 	api.Use(metrics.Middleware)
 
-	// Serve branding logos from shared volume
-	router.PathPrefix("/logos/").Handler(http.StripPrefix("/logos/", http.FileServer(http.Dir("/var/lib/branding/logos"))))
+	// Serve central branding logos with a fallback to bundled app logos.
+	router.PathPrefix("/logos/").HandlerFunc(brandingLogoHandler)
 
 	// Public branding config endpoint (for live polling by SPA)
 	router.HandleFunc("/api/v1/branding", func(w http.ResponseWriter, r *http.Request) {
@@ -442,8 +463,8 @@ func main() {
 	server := &http.Server{
 		Addr:         cfg.Server.Host + ":" + cfg.Server.Port,
 		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  90 * time.Second,
+		WriteTimeout: 90 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

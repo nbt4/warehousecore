@@ -131,7 +131,14 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN brands b ON p.brandid = b.brandid
 		LEFT JOIN manufacturer m ON p.manufacturerid = m.manufacturerid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		WHERE 1=1
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM product_packages pp
+			WHERE LOWER(TRIM(pp.name)) = LOWER(TRIM(p.name))
+			  AND NOT EXISTS (
+				SELECT 1 FROM product_package_items ppi WHERE ppi.product_id = p.productID
+			  )
+		)
 	`
 
 	var args []interface{}
@@ -433,6 +440,7 @@ func DeleteProductPicture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	productPictureService.ClearCachedVariants(productName, filename)
+	websiteRevalidator.Revalidate("/products")
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Picture deleted"})
 }
@@ -530,6 +538,7 @@ func UploadProductPictures(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[PICTURES] Failed to update product images in database: %v", err)
 		}
 	}
+	websiteRevalidator.Revalidate("/products")
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"message":          "Pictures uploaded successfully",
@@ -647,6 +656,7 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.ProductID = int(id)
+	websiteRevalidator.Revalidate("/products")
 
 	respondJSON(w, http.StatusCreated, req)
 }
@@ -661,14 +671,6 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-
-	// Check if this product is linked to a package so we can keep metadata in sync
-	var packageID sql.NullInt64
-	if err := db.QueryRow("SELECT package_id FROM product_package_items WHERE product_id = $1 LIMIT 1", id).Scan(&packageID); err != nil && err != sql.ErrNoRows {
-		log.Printf("Failed to check if product is a package: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
-		return
-	}
 
 	var req Product
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -783,18 +785,6 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if packageID.Valid {
-		if _, err := tx.Exec(`
-			UPDATE product_packages
-			SET name = $1, description = $2, price = $3
-			WHERE id = $4
-		`, req.Name, req.Description, req.ItemCostPerDay, packageID.Int64); err != nil {
-			log.Printf("Failed to update linked product package for product %d: %v", id, err)
-			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update linked product package"})
-			return
-		}
-	}
-
 	// BEFORE commit: Recalculate stock_quantity from product_locations (within transaction)
 	if req.IsConsumable || req.IsAccessory {
 		_, err := tx.Exec(`
@@ -819,14 +809,9 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message := "Product updated successfully"
-	if packageID.Valid {
-		message = "Package product updated successfully"
-	}
-
 	websiteRevalidator.Revalidate("/products")
 
-	respondJSON(w, http.StatusOK, map[string]string{"message": message})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Product updated successfully"})
 }
 
 // DeleteProduct deletes a product and cascades to delete all associated devices
@@ -839,20 +824,6 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-
-	// Check if this product is a package product (managed by product_packages)
-	var packageID int
-	err = db.QueryRow("SELECT package_id FROM product_package_items WHERE product_id = $1 LIMIT 1", id).Scan(&packageID)
-	if err == nil {
-		// Product is managed by a package - cannot be deleted directly
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "Package product cannot be deleted directly",
-			"message": "This product is managed by a package. Please delete it via the Packages tab.",
-		})
-		return
-	} else if err != sql.ErrNoRows {
-		log.Printf("Failed to check if product is a package: %v", err)
-	}
 
 	// Get product name for logging
 	var productName string
@@ -923,6 +894,7 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[PRODUCT DELETE] Successfully deleted product %d (%s)", id, productName)
+	websiteRevalidator.Revalidate("/products")
 
 	// Include device count in response
 	message := "Product deleted successfully"
@@ -1322,22 +1294,14 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 	// Trigger ISR revalidation for product listing
 	websiteRevalidator.Revalidate("/products")
 
-	// If this product is a package-product, keep package visibility in sync
-	var pkgID sql.NullInt64
-	if err := db.QueryRow("SELECT package_id FROM product_package_items WHERE product_id = $1 LIMIT 1", id).Scan(&pkgID); err == nil && pkgID.Valid {
-		if _, err := db.Exec("UPDATE product_packages SET website_visible = $1 WHERE id = $2", websiteVisible, pkgID.Int64); err != nil {
-			log.Printf("[WEBSITE] Failed to sync package visibility for product %d (package %d): %v", id, pkgID.Int64, err)
-		} else {
-			// Also revalidate packages page
-			websiteRevalidator.Revalidate("/products")
-		}
-	}
 }
 
 type WebsiteProduct struct {
 	ProductID    int      `json:"product_id"`
 	Name         string   `json:"name"`
 	Brand        *string  `json:"brand,omitempty"`
+	Category     *string  `json:"category,omitempty"`
+	Subcategory  *string  `json:"subcategory,omitempty"`
 	Description  *string  `json:"description,omitempty"`
 	PricePerUnit *float64 `json:"price_per_unit,omitempty"`
 	Thumbnail    *string  `json:"thumbnail,omitempty"`
@@ -1348,10 +1312,21 @@ type WebsiteProduct struct {
 func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	rows, err := db.Query(`
-		SELECT p.productID, p.name, b.name as brand_name, p.description, p.price_per_unit, p.website_thumbnail, p.website_images_json
+		SELECT p.productID, p.name, b.name as brand_name, p.description, p.price_per_unit, p.website_thumbnail, p.website_images_json,
+			c.name as category_name, sc.name as subcategory_name
 		FROM products p
 		LEFT JOIN brands b ON p.brandID = b.brandID
+		LEFT JOIN categories c ON p.categoryID = c.categoryID
+		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
 		WHERE p.website_visible = TRUE
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM product_packages pp
+			WHERE LOWER(TRIM(pp.name)) = LOWER(TRIM(p.name))
+			  AND NOT EXISTS (
+				SELECT 1 FROM product_package_items ppi WHERE ppi.product_id = p.productID
+			  )
+		  )
 		ORDER BY COALESCE(p.pos_in_category, 0), p.name
 	`)
 	if err != nil {
@@ -1367,7 +1342,7 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 			p       WebsiteProduct
 			rawImgs sql.NullString
 		)
-		if err := rows.Scan(&p.ProductID, &p.Name, &p.Brand, &p.Description, &p.PricePerUnit, &p.Thumbnail, &rawImgs); err != nil {
+		if err := rows.Scan(&p.ProductID, &p.Name, &p.Brand, &p.Description, &p.PricePerUnit, &p.Thumbnail, &rawImgs, &p.Category, &p.Subcategory); err != nil {
 			log.Printf("[WEBSITE] Failed to scan product: %v", err)
 			continue
 		}
@@ -1396,6 +1371,10 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 // GetWebsitePackages exposes product packages for the public website.
 func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
+	if err := ensureProductPackageStorage(db); err != nil {
+		packageStorageError(w, err)
+		return
+	}
 
 	rows, err := db.Query(`
 		SELECT
@@ -1404,7 +1383,8 @@ func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 			pp.name,
 			pp.description,
 			pp.price,
-			pp.website_image_url
+			pp.website_image_url,
+			pp.website_images_json
 		FROM product_packages pp
 		WHERE pp.website_visible = TRUE AND pp.is_active = TRUE
 		ORDER BY pp.website_sort_order, pp.name
@@ -1436,9 +1416,22 @@ func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var pkg WebsitePackage
-		if err := rows.Scan(&pkg.PackageID, &pkg.PackageCode, &pkg.Name, &pkg.Description, &pkg.Price, &pkg.Thumbnail); err != nil {
+		var rawImages sql.NullString
+		if err := rows.Scan(&pkg.PackageID, &pkg.PackageCode, &pkg.Name, &pkg.Description, &pkg.Price, &pkg.Thumbnail, &rawImages); err != nil {
 			log.Printf("[WEBSITE] Failed to scan package: %v", err)
 			continue
+		}
+		pkg.Images = buildPublicPackageImageURLs(pkg.PackageID, parseStringSlice(rawImages))
+		if len(pkg.Images) == 0 && pkg.Thumbnail != nil {
+			pkg.Images = buildPublicPackageImageURLs(pkg.PackageID, []string{*pkg.Thumbnail})
+		}
+		if pkg.Thumbnail != nil {
+			thumbnail := buildPublicPackageImageURLs(pkg.PackageID, []string{*pkg.Thumbnail})
+			if len(thumbnail) > 0 {
+				pkg.Thumbnail = &thumbnail[0]
+			} else {
+				pkg.Thumbnail = nil
+			}
 		}
 
 		items, err := loadPackageItems(db, pkg.PackageID)
@@ -1457,6 +1450,14 @@ func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"packages": result})
+}
+
+func buildPublicPackageImageURLs(packageID int, images []string) []string {
+	result := make([]string, 0, len(images))
+	for _, image := range sanitizeWebsiteImages(images) {
+		result = append(result, fmt.Sprintf("/api/v1/public/packages/%d/pictures/%s?variant=preview&format=webp", packageID, url.PathEscape(image)))
+	}
+	return result
 }
 
 type packageItemRow struct {
