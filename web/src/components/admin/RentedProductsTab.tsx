@@ -485,7 +485,7 @@ export function RentedProductsTab() {
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-blue-400" />
+                          <Building2 className="h-4 w-4 text-accent-red" />
                           <span className="text-gray-300">{item.supplier_name}</span>
                         </div>
                       </td>
@@ -560,7 +560,7 @@ export function RentedProductsTab() {
                       </span>
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-sm text-gray-400">
-                      <Building2 className="h-4 w-4 text-blue-400" />
+                      <Building2 className="h-4 w-4 text-accent-red" />
                       {item.supplier_name}
                     </div>
                     {item.category && (
@@ -922,7 +922,7 @@ export function RentedProductsTab() {
 
               <div className="space-y-4">
                 <div className="flex items-center gap-3 rounded-lg bg-white/5 p-4">
-                  <Building2 className="h-6 w-6 text-blue-400" />
+                  <Building2 className="h-6 w-6 text-accent-red" />
                   <div>
                     <p className="text-xs text-gray-500">Lieferant</p>
                     <p className="text-lg font-medium text-white">{viewEquipment.supplier_name}</p>

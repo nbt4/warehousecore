@@ -605,12 +605,12 @@ function DeviceTreeItem({ device, onOpenDevice, onLocateDevice, onOpenZone }: De
             <span className="font-mono text-sm font-semibold text-white">{device.device_id}</span>
           )}
           {isConsumable && (
-            <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full bg-blue-500/20 text-blue-400">
+            <span className="rounded-full border border-accent-red/30 bg-accent-red/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
               Verbrauchsmaterial
             </span>
           )}
           {isAccessory && (
-            <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full bg-purple-500/20 text-purple-400">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
               Zubehör
             </span>
           )}
