@@ -208,6 +208,7 @@ textarea::placeholder {
 }
 
 select {
+  color-scheme: dark;
   /* Note: The stroke color in the SVG data URL (`%23a0a0a0`) is intentionally kept
      hardcoded -- CSS variables cannot be used inside url() data URIs.
      This value corresponds to --color-text-muted (#A0A0A0). */
