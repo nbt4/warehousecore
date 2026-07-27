@@ -102,6 +102,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+::selection {
+  background-color: rgba(var(--color-accent-red-rgb), 0.75);
+  color: var(--color-light);
+}
+
 html.modal-open,
 body.modal-open {
   overflow: hidden;

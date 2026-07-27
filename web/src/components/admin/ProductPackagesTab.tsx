@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Eye, Image as ImageIcon, Pencil, Plus, RefreshCcw, Search, Star, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, Eye, Image as ImageIcon, Pencil, Plus, RefreshCcw, Search, Star, Trash2, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { ModalPortal } from '../ModalPortal';
@@ -79,7 +79,6 @@ const primaryButtonClass = 'rounded-lg bg-accent-red px-4 py-2 font-semibold tex
 const secondaryButtonClass = 'rounded-lg border border-white/10 bg-white/5 px-4 py-2 font-semibold text-white transition-colors hover:border-accent-red/60 hover:bg-accent-red/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-red focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-50';
 const iconButtonClass = 'rounded-lg p-2 text-gray-400 transition-colors hover:bg-accent-red/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-red';
 const checkboxClass = 'h-4 w-4 cursor-pointer rounded border-gray-600 bg-gray-900 accent-accent-red focus:ring-2 focus:ring-accent-red focus:ring-offset-2 focus:ring-offset-gray-900';
-const optionClass = 'bg-gray-900 text-white';
 
 function errorMessage(error: unknown, fallback: string) {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -109,9 +108,11 @@ export function ProductPackagesTab() {
   const [newThumbnailIndex, setNewThumbnailIndex] = useState<number | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<number | ''>('');
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const [aliasInput, setAliasInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const productDropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchPackages = useCallback(async () => {
     setLoading(true);
@@ -163,6 +164,22 @@ export function ProductPackagesTab() {
     };
   }, [modalOpen, viewPackage]);
 
+  useEffect(() => {
+    if (!productDropdownOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!productDropdownRef.current?.contains(event.target as Node)) setProductDropdownOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProductDropdownOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [productDropdownOpen]);
+
   const loadPictures = async (packageID: number) => {
     try {
       const response = await api.get<{ pictures: Picture[] }>(`/admin/product-packages/${packageID}/pictures`);
@@ -180,6 +197,7 @@ export function ProductPackagesTab() {
     setAliasInput('');
     setSelectedProduct('');
     setSelectedQuantity(1);
+    setProductDropdownOpen(false);
     setPictures([]);
     if (!pkg) {
       setEditingID(null);
@@ -216,6 +234,7 @@ export function ProductPackagesTab() {
     setPictures([]);
     setNewImages([]);
     setNewThumbnailIndex(null);
+    setProductDropdownOpen(false);
     setFormError(null);
   };
 
@@ -369,6 +388,10 @@ export function ProductPackagesTab() {
   const productName = (item: PackageItem) =>
     item.product_name || products.find((product) => product.product_id === item.product_id)?.name || `Produkt ${item.product_id}`;
 
+  const availableProducts = products.filter((product) => !form.items.some((item) => item.product_id === product.product_id));
+  const selectedProductEntry = products.find((product) => product.product_id === selectedProduct);
+  const productLabel = (product: Product) => `${product.name}${product.category_name ? ` (${product.category_name})` : ''}`;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -447,7 +470,39 @@ export function ProductPackagesTab() {
                 <section className="space-y-3 border-t border-gray-700 pt-5">
                   <div><h4 className="text-lg font-semibold text-white">Produkte und Anzahl</h4><p className="text-sm text-gray-400">Jedes Paket enthält mindestens ein Produkt.</p></div>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <select value={selectedProduct} onChange={(event) => setSelectedProduct(event.target.value ? Number(event.target.value) : '')} className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-accent-red focus:ring-2 focus:ring-accent-red/20"><option value="" className={optionClass}>Produkt auswählen …</option>{products.filter((product) => !form.items.some((item) => item.product_id === product.product_id)).map((product) => <option key={product.product_id} value={product.product_id} className={optionClass}>{product.name}{product.category_name ? ` (${product.category_name})` : ''}</option>)}</select>
+                    <div ref={productDropdownRef} className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setProductDropdownOpen((open) => !open)}
+                        aria-haspopup="listbox"
+                        aria-expanded={productDropdownOpen}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-left text-white transition-colors hover:border-accent-red/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-red"
+                      >
+                        <span className={selectedProductEntry ? 'truncate text-white' : 'truncate text-gray-400'}>{selectedProductEntry ? productLabel(selectedProductEntry) : 'Produkt auswählen …'}</span>
+                        <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${productDropdownOpen ? 'rotate-180 text-white' : ''}`} />
+                      </button>
+                      {productDropdownOpen && (
+                        <div role="listbox" className="absolute z-50 mt-2 max-h-72 w-full overflow-y-auto rounded-lg border border-white/10 bg-gray-900 p-1 shadow-2xl shadow-black/60">
+                          {availableProducts.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-gray-400">Keine weiteren Produkte verfügbar.</div>
+                          ) : availableProducts.map((product) => (
+                            <button
+                              key={product.product_id}
+                              type="button"
+                              role="option"
+                              aria-selected={selectedProduct === product.product_id}
+                              onClick={() => {
+                                setSelectedProduct(product.product_id);
+                                setProductDropdownOpen(false);
+                              }}
+                              className={`block w-full rounded-md px-3 py-2 text-left text-sm text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-red ${selectedProduct === product.product_id ? 'bg-accent-red text-white' : 'bg-gray-900 hover:bg-accent-red/20'}`}
+                            >
+                              {productLabel(product)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <input type="number" min="1" value={selectedQuantity} onChange={(event) => setSelectedQuantity(Math.max(1, Number(event.target.value)))} className="w-28 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-white focus:border-accent-red focus:ring-2 focus:ring-accent-red/20" aria-label="Anzahl" />
                     <button type="button" onClick={addItem} className={`${secondaryButtonClass} flex items-center justify-center gap-2`}><Plus className="h-4 w-4" /> Hinzufügen</button>
                   </div>
