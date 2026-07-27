@@ -107,6 +107,11 @@ body {
   color: var(--color-light);
 }
 
+:where(button, a, input, textarea, select, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-accent-red);
+  outline-offset: 2px;
+}
+
 html.modal-open,
 body.modal-open {
   overflow: hidden;

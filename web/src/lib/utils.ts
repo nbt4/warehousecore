@@ -15,7 +15,7 @@ export function getStatusColor(status: string): string {
     case 'defective':
       return 'text-yellow-500';
     case 'repair':
-      return 'text-blue-400';
+      return 'text-accent-red';
     case 'free':
       return 'text-green-500';
     default:

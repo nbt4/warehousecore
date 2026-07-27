@@ -836,7 +836,7 @@ export function ProductsTab() {
                         </button>
                         <button
                           onClick={() => setDependenciesModal({ productId: product.product_id, productName: product.name })}
-                          className="rounded-lg bg-purple-600/80 p-2 text-white transition hover:bg-purple-600"
+                          className="rounded-lg bg-accent-red/80 p-2 text-white transition hover:bg-accent-red"
                           title="Dependencies verwalten"
                         >
                           <GitBranch className="h-4 w-4" />
@@ -907,7 +907,7 @@ export function ProductsTab() {
                   </button>
                   <button
                     onClick={() => setDependenciesModal({ productId: product.product_id, productName: product.name })}
-                    className="rounded-lg bg-purple-600/80 p-2 text-white transition hover:bg-purple-600"
+                    className="rounded-lg bg-accent-red/80 p-2 text-white transition hover:bg-accent-red"
                     title="Dependencies verwalten"
                   >
                     <GitBranch className="h-4 w-4" />
@@ -1238,7 +1238,7 @@ export function ProductsTab() {
                         type="checkbox"
                         checked={formData.is_accessory || false}
                         onChange={e => setFormData({ ...formData, is_accessory: e.target.checked })}
-                        className="w-5 h-5 rounded border-white/20 bg-white/10 text-accent-red focus:ring-accent-red"
+                        className="h-5 w-5 rounded border-white/20 bg-gray-900 accent-accent-red focus:ring-accent-red"
                       />
                       <span>This is an Accessory</span>
                     </label>
@@ -1248,7 +1248,7 @@ export function ProductsTab() {
                         type="checkbox"
                         checked={formData.is_consumable || false}
                         onChange={e => setFormData({ ...formData, is_consumable: e.target.checked })}
-                        className="w-5 h-5 rounded border-white/20 bg-white/10 text-accent-red focus:ring-accent-red"
+                        className="h-5 w-5 rounded border-white/20 bg-gray-900 accent-accent-red focus:ring-accent-red"
                       />
                       <span>This is a Consumable</span>
                     </label>
@@ -1436,7 +1436,7 @@ export function ProductsTab() {
                       type="button"
                       onClick={handleAddDevices}
                       disabled={!formData.device_quantity || formData.device_quantity <= 0}
-                      className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full rounded-lg bg-accent-red px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-red-hover disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Geräte jetzt hinzufügen
                     </button>

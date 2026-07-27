@@ -152,7 +152,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
               {!showAddForm && (
                 <button
                   onClick={() => setShowAddForm(true)}
-                  className="w-full mb-4 py-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-accent-red/30 bg-accent-red/15 py-3 text-white transition-colors hover:bg-accent-red/25 focus-visible:ring-2 focus-visible:ring-accent-red"
                 >
                   <Plus className="w-4 h-4" />
                   Add Dependency
@@ -161,7 +161,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
 
               {/* Add Form */}
               {showAddForm && (
-                <div className="bg-white/5 rounded-lg p-4 mb-4 border border-blue-500/30">
+                <div className="mb-4 rounded-lg border border-accent-red/30 bg-white/5 p-4">
                   <h3 className="text-sm font-semibold text-white mb-3">Add New Dependency</h3>
 
                   {/* Search */}
@@ -207,7 +207,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
                       id="is-optional"
                       checked={isOptional}
                       onChange={(e) => setIsOptional(e.target.checked)}
-                      className="rounded"
+                      className="rounded accent-accent-red focus:ring-accent-red"
                     />
                     <label htmlFor="is-optional" className="text-sm text-gray-300">
                       Optional (show as suggestion)
@@ -231,7 +231,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
                     <button
                       onClick={handleAddDependency}
                       disabled={!selectedProductId}
-                      className="flex-1 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                      className="flex-1 rounded-lg bg-accent-red py-2 text-sm font-medium text-white transition-colors hover:bg-accent-red-hover disabled:cursor-not-allowed disabled:bg-gray-600"
                     >
                       Add
                     </button>
@@ -270,15 +270,15 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
                             <h4 className="text-sm font-semibold text-white truncate">
                               {dep.dependency_name}
                             </h4>
-                            <span className={`px-2 py-0.5 text-xs rounded ${
+                            <span className={`rounded border px-2 py-0.5 text-xs ${
                               dep.is_accessory
-                                ? 'bg-blue-500/20 text-blue-300'
-                                : 'bg-purple-500/20 text-purple-300'
+                                ? 'border-accent-red/30 bg-accent-red/15 text-white'
+                                : 'border-white/10 bg-white/5 text-gray-200'
                             }`}>
                               {dep.is_accessory ? 'Accessory' : 'Consumable'}
                             </span>
                             {dep.is_optional && (
-                              <span className="px-2 py-0.5 text-xs rounded bg-yellow-500/20 text-yellow-300">
+                              <span className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-200">
                                 Optional
                               </span>
                             )}

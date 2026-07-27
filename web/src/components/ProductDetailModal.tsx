@@ -438,7 +438,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                 <label className="flex items-center gap-2 text-sm text-gray-200 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-gray-600 text-accent-red focus:ring-accent-red"
+                    className="h-4 w-4 rounded border-gray-600 bg-gray-900 accent-accent-red focus:ring-accent-red"
                     checked={websiteVisible}
                     onChange={e => {
                       const next = e.target.checked;
@@ -469,6 +469,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                                 type="checkbox"
                                 checked={selectedImages.has(pic.file_name)}
                                 onChange={() => toggleWebsiteImage(pic.file_name)}
+                                className="accent-accent-red focus:ring-accent-red"
                               />
                               Auf Website
                             </label>
@@ -478,6 +479,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                                 name="website-thumb"
                                 disabled={!selectedImages.has(pic.file_name)}
                                 checked={websiteThumbnail === pic.file_name}
+                                className="accent-accent-red focus:ring-accent-red"
                                 onChange={() => {
                                   if (!selectedImages.has(pic.file_name)) toggleWebsiteImage(pic.file_name);
                                   setWebsiteThumbnail(pic.file_name);
@@ -510,17 +512,17 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
             {/* Type Badges */}
             <div className="flex gap-2">
               {product.is_consumable && (
-                <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm font-semibold">
+                <span className="rounded-full border border-accent-red/30 bg-accent-red/15 px-3 py-1 text-sm font-semibold text-white">
                   Verbrauchsmaterial
                 </span>
               )}
               {product.is_accessory && (
-                <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-400 text-sm font-semibold">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-semibold text-white">
                   Zubehör
                 </span>
               )}
               {!product.is_consumable && !product.is_accessory && (
-                <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-semibold">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-semibold text-white">
                   Standard-Produkt
                 </span>
               )}

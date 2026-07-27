@@ -63,7 +63,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
       setLedActive(true);
       setLocateMessage(`✓ Fach ${device.zone_code} leuchtet jetzt orange`);
       setTimeout(() => setLocateMessage(null), 5000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to locate bin:' + " " + String(error));
       setLocateMessage('Fehler beim Beleuchten des Fachs');
       setTimeout(() => setLocateMessage(null), 3000);
@@ -81,7 +81,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
       setLedActive(false);
       setLocateMessage('✓ LEDs ausgeschaltet');
       setTimeout(() => setLocateMessage(null), 3000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to clear LEDs:' + " " + String(error));
       setLocateMessage('Fehler beim Ausschalten');
       setTimeout(() => setLocateMessage(null), 3000);
@@ -92,10 +92,10 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
 
   const statusColors: Record<string, { bg: string; text: string }> = {
     in_storage: { bg: 'bg-green-500/20', text: 'text-green-400' },
-    on_job: { bg: 'bg-blue-500/20', text: 'text-blue-400' },
+    on_job: { bg: 'bg-accent-red/20', text: 'text-accent-red' },
     rented: { bg: 'bg-yellow-500/20', text: 'text-yellow-400' },
     defective: { bg: 'bg-red-500/20', text: 'text-red-400' },
-    in_transit: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
+    in_transit: { bg: 'bg-white/10', text: 'text-gray-200' },
   };
 
   const statusColor = statusColors[device.status] || { bg: 'bg-gray-500/20', text: 'text-gray-400' };
@@ -308,7 +308,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
                 <a
                   href={labelUrl}
                   download={`${device.device_id}_label.png`}
-                  className="px-4 py-2 rounded-xl font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:shadow-lg hover:shadow-blue-500/50 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-xl bg-accent-red px-4 py-2 font-semibold text-white transition-all hover:scale-105 hover:bg-accent-red-hover hover:shadow-lg hover:shadow-accent-red/30 active:scale-95"
                 >
                   <Download className="w-4 h-4" />
                   Herunterladen
