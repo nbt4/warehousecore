@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	commonjwt "github.com/nbt4/cores-common/pkg/jwt"
 	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -102,6 +104,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 		SameSite: http.SameSiteLaxMode,
 	})
+	if err := setCoresToken(w, r, &user, 86400); err != nil {
+		http.Error(w, `{"error":"Failed to create shared login"}`, http.StatusInternalServerError)
+		return
+	}
 
 	// Return success (without password hash)
 	user.PasswordHash = ""
@@ -138,6 +144,7 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
+	clearCoresToken(w, r)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -168,6 +175,52 @@ func generateSessionID() string {
 	bytes := make([]byte, 32)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
+}
+
+func setCoresToken(w http.ResponseWriter, r *http.Request, user *models.User, maxAge int) error {
+	if maxAge <= 0 {
+		maxAge = 86400
+	}
+	now := time.Now()
+	claims := &commonjwt.Claims{
+		UserID:   user.UserID,
+		Username: user.Username,
+		IsAdmin:  user.IsAdmin,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(maxAge) * time.Second)),
+		},
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(commonjwt.JWTSecret())
+	if err != nil {
+		return err
+	}
+	cookieDomain := getCookieDomain(r)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cores_token",
+		Value:    signed,
+		Path:     "/",
+		Domain:   cookieDomain,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   cookieDomain != "" || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+	})
+	return nil
+}
+
+func clearCoresToken(w http.ResponseWriter, r *http.Request) {
+	cookieDomain := getCookieDomain(r)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cores_token",
+		Value:    "",
+		Path:     "/",
+		Domain:   cookieDomain,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   cookieDomain != "" || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // getCookieDomain determines the cookie domain based on environment and request

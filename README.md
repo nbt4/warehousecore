@@ -71,6 +71,7 @@ warehousecore:
     DB_PORT: 5432
     SESSION_SECRET: ${SESSION_SECRET}
     CORES_JWT_SECRET: ${CORES_JWT_SECRET}
+    COOKIE_DOMAIN: ${COOKIE_DOMAIN}
     LED_MQTT_HOST: mosquitto
     LED_MQTT_USER: leduser
     LED_MQTT_PASS: ledpassword123
@@ -82,6 +83,10 @@ warehousecore:
   volumes:
     - warehouse_uploads:/app/uploads
 ```
+
+Mit identischem `CORES_JWT_SECRET` und einer gemeinsamen `COOKIE_DOMAIN`
+(zum Beispiel `.example.com`) gilt ein direkter WarehouseCore-Login auch in
+Dashboard, RentalCore und PlannerCore.
 
 ---
 
