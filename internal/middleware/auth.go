@@ -5,8 +5,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	commonjwt "github.com/nbt4/cores-common/pkg/jwt"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
@@ -33,6 +35,42 @@ func validateCoresToken(tokenStr string) (uint, bool) {
 		return 0, false
 	}
 	return claims.UserID, true
+}
+
+func ensureCoresToken(w http.ResponseWriter, r *http.Request, user *models.User) {
+	if cookie, err := r.Cookie("cores_token"); err == nil {
+		if userID, ok := validateCoresToken(cookie.Value); ok && userID == user.UserID {
+			return
+		}
+	}
+
+	now := time.Now()
+	claims := &commonjwt.Claims{
+		UserID:   user.UserID,
+		Username: user.Username,
+		IsAdmin:  user.IsAdmin,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+		},
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(commonjwt.JWTSecret())
+	if err != nil {
+		authDebugLog("DEBUG [WarehouseCore]: Failed to promote session to cores_token: %v", err)
+		return
+	}
+
+	domain := os.Getenv("COOKIE_DOMAIN")
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cores_token",
+		Value:    signed,
+		Path:     "/",
+		Domain:   domain,
+		MaxAge:   86400,
+		HttpOnly: true,
+		Secure:   domain != "" || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // AuthMiddleware validates session and loads user
@@ -64,6 +102,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 					} else {
 						authDebugLog("DEBUG [WarehouseCore]: Failed to load roles for user %d: %v", session.User.UserID, roleErr)
 					}
+					ensureCoresToken(w, r, &session.User)
 					ctx := context.WithValue(r.Context(), UserContextKey, &session.User)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
