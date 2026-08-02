@@ -173,6 +173,31 @@ body.modal-open {
   border: 1px solid rgba(var(--color-light-rgb), 0.08);
 }
 
+/* Product packages predate the neutral surface tokens and still use
+   Tailwind's blue-tinted gray backgrounds. Keep this tab on the same
+   pure-black surface palette as the rest of WarehouseCore. */
+.product-packages-tab .bg-gray-800 {
+  background-color: var(--surface-2);
+}
+
+.product-packages-tab .bg-gray-800\/70 {
+  background-color: rgba(var(--color-light-rgb), 0.04);
+}
+
+.product-packages-tab .bg-gray-900 {
+  background-color: var(--surface-1);
+}
+
+.product-packages-tab .border-gray-600,
+.product-packages-tab .border-gray-700,
+.product-packages-tab .border-gray-800 {
+  border-color: var(--border-default);
+}
+
+.product-packages-tab .ring-offset-gray-900 {
+  --tw-ring-offset-color: var(--surface-1);
+}
+
 .text-gradient {
   background: linear-gradient(to right, var(--color-accent-red), var(--color-accent-red-dark));
   -webkit-background-clip: text;

@@ -393,7 +393,7 @@ export function ProductPackagesTab() {
   const productLabel = (product: Product) => `${product.name}${product.category_name ? ` (${product.category_name})` : ''}`;
 
   return (
-    <div className="space-y-6">
+    <div className="product-packages-tab space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Produktpakete</h2>
