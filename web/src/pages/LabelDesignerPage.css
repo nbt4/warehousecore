@@ -30,10 +30,17 @@
 .ls-add-grid input { display:none; }
 .ls-full-button { width:100%; display:flex; align-items:center; justify-content:center; gap:.45rem; }
 .ls-canvas-panel { display:flex; flex-direction:column; padding:1rem; overflow:hidden; }
-.ls-canvas-toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+.ls-canvas-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
 .ls-canvas-toolbar div { display:flex; flex-direction:column; }
 .ls-canvas-toolbar span { color:var(--color-text-muted); font-size:.75rem; }
-.ls-canvas-toolbar .input { max-width:300px; }
+.ls-canvas-actions { align-items:flex-end; gap:.55rem; min-width:min(100%,420px); }
+.ls-canvas-actions>.input { max-width:420px; }
+.ls-zoom-controls { flex-direction:row!important; align-items:center; gap:.35rem; padding:.3rem; border:1px solid var(--color-border); border-radius:.6rem; background:var(--color-dark-200); }
+.ls-zoom-controls button { min-width:32px; height:30px; display:inline-flex; flex-direction:row; align-items:center; justify-content:center; gap:.35rem; padding:0 .45rem; border:0; border-radius:.4rem; background:rgba(var(--color-light-rgb),.05); color:var(--color-text-muted); cursor:pointer; }
+.ls-zoom-controls button:hover { color:var(--color-light); background:rgba(var(--color-light-rgb),.1); }
+.ls-zoom-controls input { width:100px; accent-color:var(--color-accent-red); }
+.ls-zoom-controls>span { min-width:38px; color:var(--color-light); text-align:center; }
+.ls-zoom-controls .ls-fit-button { width:auto; color:var(--color-light); }
 .ls-canvas-stage { flex:1; min-height:540px; display:flex; align-items:center; justify-content:center; overflow:auto; border-radius:.75rem; background:var(--color-dark-200); background-image:linear-gradient(var(--color-border) 1px,transparent 1px),linear-gradient(90deg,var(--color-border) 1px,transparent 1px); background-size:18px 18px; }
 .ls-label-canvas { position:relative; flex:none; overflow:hidden; background:var(--color-light); box-shadow:0 1rem 3rem rgba(var(--color-dark-rgb),.55); }
 .ls-design-element { position:absolute; display:flex; overflow:hidden; transform-origin:center; cursor:move; user-select:none; }
@@ -80,4 +87,4 @@
 .ls-printer-form { display:flex; flex-direction:column; gap:.85rem; }
 .ls-address-row { display:grid; grid-template-columns:1fr 120px; gap:.7rem; }
 @media (max-width:1150px) { .ls-designer-grid { grid-template-columns:240px minmax(380px,1fr); } .ls-designer-grid>aside:last-child { grid-column:1/-1; } }
-@media (max-width:800px) { .label-studio { padding:1rem; } .ls-header { align-items:flex-start; flex-direction:column; } .ls-tabs,.ls-target-tabs { width:100%; } .ls-tabs button,.ls-target-tabs button { flex:1; white-space:nowrap; } .ls-designer-grid,.ls-print-grid,.ls-printer-grid { grid-template-columns:1fr; } .ls-print-actions { grid-column:1; grid-row:auto; } .ls-jobs { grid-column:1; } .ls-canvas-stage { min-height:400px; } .ls-target-list>label { grid-template-columns:24px 1fr auto; } .ls-target-name { grid-column:2; } .ls-job-table>div { grid-template-columns:60px 1fr auto; } .ls-job-table>div span:nth-child(3),.ls-job-table>div span:nth-child(4) { display:none; } }
+@media (max-width:800px) { .label-studio { padding:1rem; } .ls-header { align-items:flex-start; flex-direction:column; } .ls-tabs,.ls-target-tabs { width:100%; } .ls-tabs button,.ls-target-tabs button { flex:1; white-space:nowrap; } .ls-designer-grid,.ls-print-grid,.ls-printer-grid { grid-template-columns:1fr; } .ls-print-actions { grid-column:1; grid-row:auto; } .ls-jobs { grid-column:1; } .ls-canvas-toolbar { flex-direction:column; } .ls-canvas-actions { width:100%; align-items:stretch; } .ls-canvas-actions>.input { max-width:none; } .ls-zoom-controls input { flex:1; width:auto; } .ls-canvas-stage { min-height:400px; } .ls-target-list>label { grid-template-columns:24px 1fr auto; } .ls-target-name { grid-column:2; } .ls-job-table>div { grid-template-columns:60px 1fr auto; } .ls-job-table>div span:nth-child(3),.ls-job-table>div span:nth-child(4) { display:none; } }

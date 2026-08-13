@@ -394,7 +394,7 @@ func (s *LabelService) saveTargetLabel(result *LabelRenderResult, base64PNG stri
 }
 
 func (s *LabelService) ListPrinters() ([]models.LabelPrinter, error) {
-	var printers []models.LabelPrinter
+	printers := make([]models.LabelPrinter, 0)
 	if err := repository.GetDB().Order("is_default DESC, name ASC").Find(&printers).Error; err != nil {
 		return nil, fmt.Errorf("list label printers: %w", err)
 	}
@@ -457,7 +457,7 @@ func (s *LabelService) ListPrintJobs(limit int) ([]models.LabelPrintJob, error) 
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	var jobs []models.LabelPrintJob
+	jobs := make([]models.LabelPrintJob, 0)
 	err := repository.GetDB().Table("label_print_jobs j").
 		Select("j.*, COALESCE(p.name, '') AS printer_name").
 		Joins("LEFT JOIN label_printers p ON p.id = j.printer_id").

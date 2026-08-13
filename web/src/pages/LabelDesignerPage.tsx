@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Barcode, Boxes, BriefcaseBusiness, Check, Copy, Download, Image as ImageIcon,
-  MapPin, Plus, Printer, QrCode, RefreshCw, Save, Search, Settings2,
+  MapPin, Maximize2, Minus, Plus, Printer, QrCode, RefreshCw, Save, Search, Settings2,
   Tags, Trash2, Type, Usb, X,
 } from 'lucide-react';
 import {
@@ -130,7 +130,10 @@ export default function LabelDesignerPage() {
   const [copies, setCopies] = useState(1);
   const [busy, setBusy] = useState(false);
   const [codeImages, setCodeImages] = useState<Record<string, string>>({});
+  const [canvasZoom, setCanvasZoom] = useState(100);
+  const [stageSize, setStageSize] = useState({ width: 620, height: 540 });
   const canvasRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   const activeTemplate = useMemo(
     () => templates.find(template => template.id === activeTemplateID) ?? null,
@@ -142,32 +145,36 @@ export default function LabelDesignerPage() {
   );
   const selectedElement = elements.find(element => element.id === selectedElementID) ?? null;
   const previewFields = previewTarget?.fields ?? sampleFields[targetType];
-  const scale = Math.min(620 / labelWidth, 380 / labelHeight, 12);
+  const fitScale = Math.max(1, Math.min((stageSize.width - 48) / labelWidth, (stageSize.height - 48) / labelHeight, 12));
+  const scale = fitScale * canvasZoom / 100;
 
   const loadTemplates = useCallback(async () => {
     const { data } = await labelsApi.getTemplates();
-    setTemplates(data);
-    return data;
+    const nextTemplates = data ?? [];
+    setTemplates(nextTemplates);
+    return nextTemplates;
   }, []);
 
   const loadPrinters = useCallback(async () => {
     const { data } = await labelsApi.getPrinters();
-    setPrinters(data);
-    const defaultPrinter = data.find(printer => printer.is_default && printer.is_active) ?? data.find(printer => printer.is_active);
+    const nextPrinters = data ?? [];
+    setPrinters(nextPrinters);
+    const defaultPrinter = nextPrinters.find(printer => printer.is_default && printer.is_active) ?? nextPrinters.find(printer => printer.is_active);
     if (defaultPrinter?.id) setSelectedPrinterID(current => current || defaultPrinter.id!);
   }, []);
 
   const loadJobs = useCallback(async () => {
     const { data } = await labelsApi.getPrintJobs(100);
-    setJobs(data);
+    setJobs(data ?? []);
   }, []);
 
   const loadTargets = useCallback(async (type: LabelTargetType, term: string) => {
     const { data } = await labelsApi.getTargets(type, term, 500);
-    setTargets(data);
+    const nextTargets = data ?? [];
+    setTargets(nextTargets);
     setSelectedTargets(new Set());
-    if (data[0]) {
-      const detail = await labelsApi.getTarget(type, data[0].id);
+    if (nextTargets[0]) {
+      const detail = await labelsApi.getTarget(type, nextTargets[0].id);
       setPreviewTarget(detail.data);
     } else {
       setPreviewTarget(null);
@@ -211,6 +218,16 @@ export default function LabelDesignerPage() {
     }
     return () => { cancelled = true; };
   }, [codeImages, elements, previewFields]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const updateSize = () => setStageSize({ width: stage.clientWidth, height: stage.clientHeight });
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
 
   function applyTemplate(template: LabelTemplate) {
     let parsed: LabelElement[] = [];
@@ -490,14 +507,23 @@ export default function LabelDesignerPage() {
                 <strong>{labelWidth} × {labelHeight} mm</strong>
                 <span>300-DPI-Vorschau</span>
               </div>
-              <select className="input" value={previewTarget?.id ?? ''} onChange={event => {
-                const target = targets.find(item => item.id === event.target.value);
-                if (target) selectPreviewTarget(target);
-              }}>
-                {targets.map(target => <option key={target.id} value={target.id}>{target.code} · {target.name}</option>)}
-              </select>
+              <div className="ls-canvas-actions">
+                <select className="input" value={previewTarget?.id ?? ''} onChange={event => {
+                  const target = targets.find(item => item.id === event.target.value);
+                  if (target) selectPreviewTarget(target);
+                }}>
+                  {targets.map(target => <option key={target.id} value={target.id}>{target.code} · {target.name}</option>)}
+                </select>
+                <div className="ls-zoom-controls" aria-label="Vorschau-Zoom">
+                  <button type="button" onClick={() => setCanvasZoom(current => Math.max(25, current - 25))} aria-label="Verkleinern"><Minus size={15} /></button>
+                  <input type="range" min="25" max="200" step="25" value={canvasZoom} onChange={event => setCanvasZoom(Number(event.target.value))} aria-label="Zoomstufe" />
+                  <span>{canvasZoom}%</span>
+                  <button type="button" onClick={() => setCanvasZoom(current => Math.min(200, current + 25))} aria-label="Vergrößern"><Plus size={15} /></button>
+                  <button type="button" className="ls-fit-button" onClick={() => setCanvasZoom(100)} title="Label in Arbeitsfläche einpassen"><Maximize2 size={15} /> Einpassen</button>
+                </div>
+              </div>
             </div>
-            <div className="ls-canvas-stage" onPointerDown={() => setSelectedElementID(null)}>
+            <div ref={stageRef} className="ls-canvas-stage" onPointerDown={() => setSelectedElementID(null)}>
               <div ref={canvasRef} className="ls-label-canvas" style={{ width: labelWidth * scale, height: labelHeight * scale }}>
                 {elements.map(element => {
                   const content = previewFields[element.content] ?? element.content;

@@ -11,3 +11,10 @@
 
 ## Project: WarehouseCore
 Warehouse management system for Tsunami Events.
+
+## UI Theme
+
+- Use only tokens from the established application theme for UI colors.
+- Native selects must explicitly style both the `select` and its `option`
+  elements with theme background and text colors; never rely on browser
+  defaults, which can render white text on a white menu.

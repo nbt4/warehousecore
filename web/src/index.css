@@ -234,7 +234,7 @@ textarea:focus,
 select:focus {
   border-color: var(--color-accent-red);
   box-shadow: 0 0 0 3px rgba(var(--color-accent-red-rgb), 0.15);
-  background-color: var(--color-surface-4);
+  background-color: var(--surface-4);
 }
 
 input::placeholder,
@@ -256,7 +256,7 @@ select {
 }
 
 select option {
-  background-color: var(--color-surface-4);
+  background-color: var(--surface-4);
   color: var(--color-light);
 }
 

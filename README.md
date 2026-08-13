@@ -9,7 +9,7 @@
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Zonenmanagement** — Physische Lagerzonen mit Barcode-Kennzeichnung, Gerätezuweisung, Produktbestand und Lagerplatz-Optimierung
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
-- **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Produkt-/Kabel-, Case- und Zonenlabels. Zieltypspezifische Standardtemplates, revisionsbasierte Neugenerierung, Browserdruck und protokollierter Zebra-ZPL-Direktdruck über TCP
+- **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Produkt-/Kabel-, Case- und Zonenlabels mit einpassbarer 25–200-%-Vorschau. Zieltypspezifische Standardtemplates, revisionsbasierte Neugenerierung, Browserdruck und protokollierter Zebra-ZPL-Direktdruck über TCP
 - **Barcode-Scanning** — Scan-Endpunkt für schnelle Geräteidentifikation und Warenbewegungen im Lager
 - **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
