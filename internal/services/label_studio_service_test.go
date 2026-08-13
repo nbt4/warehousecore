@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"testing"
 )
@@ -50,6 +51,21 @@ func TestBuildLabelPDFHTML(t *testing.T) {
 		if !strings.Contains(html, expected) {
 			t.Errorf("expected PDF HTML to contain %q", expected)
 		}
+	}
+}
+
+func TestRenderLabelPDFWithChromium(t *testing.T) {
+	if os.Getenv("WAREHOUSECORE_CHROME_TEST") != "1" {
+		t.Skip("set WAREHOUSECORE_CHROME_TEST=1 to run the Chromium integration test")
+	}
+	const onePixelPNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	html := buildLabelPDFHTML([]string{onePixelPNG}, 51, 25, 1)
+	pdfData, err := (&LabelService{}).renderHTMLToPDF(html, 51, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pdfData) < 5 || string(pdfData[:5]) != "%PDF-" {
+		t.Fatalf("expected PDF data, got %d bytes", len(pdfData))
 	}
 }
 

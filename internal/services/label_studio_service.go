@@ -587,9 +587,20 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 	if err := query.First(&printer).Error; err != nil {
 		return nil, fmt.Errorf("active printer not found")
 	}
+	rendered := make([]*LabelRenderResult, 0, len(request.TargetIDs))
+	for offset := 0; offset < len(request.TargetIDs); offset += 250 {
+		end := min(offset+250, len(request.TargetIDs))
+		batch, err := s.RenderTargetLabels(LabelBatchRequest{
+			TargetType: request.TargetType, TargetIDs: request.TargetIDs[offset:end], TemplateID: request.TemplateID, Save: true, IncludeImage: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("render print batch: %w", err)
+		}
+		rendered = append(rendered, batch...)
+	}
 
 	jobs := make([]models.LabelPrintJob, 0, len(request.TargetIDs))
-	for _, targetID := range request.TargetIDs {
+	for index, targetID := range request.TargetIDs {
 		templateID := request.TemplateID
 		printerID := printer.ID
 		job := models.LabelPrintJob{TargetType: request.TargetType, TargetID: targetID, TemplateID: &templateID, PrinterID: &printerID, Copies: request.Copies, Status: "queued", PrinterName: printer.Name}
@@ -601,19 +612,16 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 		job.StartedAt = &now
 		repository.GetDB().Model(&models.LabelPrintJob{}).Where("id = ?", job.ID).Updates(map[string]any{"status": job.Status, "started_at": now})
 
-		result, renderErr := s.RenderTargetLabel(request.TargetType, targetID, request.TemplateID, true)
+		result := rendered[index]
+		pngData, renderErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(result.ImageData, "data:image/png;base64,"))
 		if renderErr == nil {
-			var pngData []byte
-			pngData, renderErr = base64.StdEncoding.DecodeString(strings.TrimPrefix(result.ImageData, "data:image/png;base64,"))
+			var zpl string
+			zpl, renderErr = encodePNGAsZPL(pngData, result.Template.Width, result.Template.Height, printer.DPI, request.Copies)
 			if renderErr == nil {
-				var zpl string
-				zpl, renderErr = encodePNGAsZPL(pngData, result.Template.Width, result.Template.Height, printer.DPI, request.Copies)
-				if renderErr == nil {
-					renderErr = sendRawPrinterData(printer.Address, printer.Port, []byte(zpl))
-				}
+				renderErr = sendRawPrinterData(printer.Address, printer.Port, []byte(zpl))
 			}
-			job.LabelPath = result.LabelPath
 		}
+		job.LabelPath = result.LabelPath
 		finished := time.Now()
 		job.CompletedAt = &finished
 		if renderErr != nil {
