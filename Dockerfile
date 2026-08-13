@@ -31,7 +31,8 @@ RUN go mod download
 COPY . .
 
 # Build the application with CGO enabled (needed for webp library)
-RUN CGO_ENABLED=1 GOOS=linux go build -a -o warehousecore ./cmd/server
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -o warehousecore ./cmd/server
 
 # Stage 3: Final Image
 FROM alpine:latest

@@ -1,0 +1,76 @@
+package services
+
+import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
+	"net"
+	"strings"
+	"testing"
+)
+
+func TestValidLabelTargetType(t *testing.T) {
+	t.Parallel()
+	for _, targetType := range []string{LabelTargetDevice, LabelTargetProduct, LabelTargetCase, LabelTargetZone} {
+		if !ValidLabelTargetType(targetType) {
+			t.Fatalf("expected %q to be valid", targetType)
+		}
+	}
+	if ValidLabelTargetType("job") {
+		t.Fatal("unexpected unsupported label target")
+	}
+}
+
+func TestSendRawPrinterData(t *testing.T) {
+	t.Parallel()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	received := make(chan string, 1)
+	go func() {
+		connection, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			received <- ""
+			return
+		}
+		defer connection.Close()
+		payload, _ := io.ReadAll(connection)
+		received <- string(payload)
+	}()
+
+	address := listener.Addr().(*net.TCPAddr)
+	if err := sendRawPrinterData("127.0.0.1", address.Port, []byte("^XA^XZ\n")); err != nil {
+		t.Fatal(err)
+	}
+	if actual := <-received; actual != "^XA^XZ\n" {
+		t.Fatalf("unexpected printer payload %q", actual)
+	}
+}
+
+func TestEncodePNGAsZPL(t *testing.T) {
+	t.Parallel()
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.Black)
+	img.Set(1, 0, color.White)
+	img.Set(0, 1, color.White)
+	img.Set(1, 1, color.Black)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+
+	zpl, err := encodePNGAsZPL(encoded.Bytes(), 51, 25, 203, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"^XA", "^PW408", "^LL200", "^GFA,", "^PQ3", "^XZ"} {
+		if !strings.Contains(zpl, expected) {
+			t.Errorf("expected ZPL to contain %q, got %q", expected, zpl)
+		}
+	}
+}

@@ -50,6 +50,13 @@
 
                 const content = elem.content || '';
 
+				ctx.save();
+				if (elem.rotation) {
+					ctx.translate(x + w / 2, y + h / 2);
+					ctx.rotate(elem.rotation * Math.PI / 180);
+					ctx.translate(-(x + w / 2), -(y + h / 2));
+				}
+
                 if (elem.type === 'qrcode' || elem.type === 'barcode' || elem.type === 'image') {
                     // Draw image data (barcode/QR code/logo)
                     if (elem.image_data) {
@@ -70,8 +77,13 @@
                     const fontSize = (style.font_size || 10) * (dpi / 96);
                     ctx.font = `${style.font_weight || 'normal'} ${fontSize}px ${style.font_family || 'Arial'}`;
                     ctx.textAlign = style.alignment || 'left';
-                    ctx.fillText(content, x, y + fontSize);
+					const textX = style.alignment === 'center' ? x + w / 2 : style.alignment === 'right' ? x + w : x;
+					ctx.beginPath();
+					ctx.rect(x, y, w, h);
+					ctx.clip();
+					ctx.fillText(content, textX, y + fontSize);
                 }
+				ctx.restore();
             }
 
             // Signal that rendering is complete

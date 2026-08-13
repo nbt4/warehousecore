@@ -1,1294 +1,636 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Trash2, Download, Printer, QrCode, Barcode, Type, Save,
-  Image as ImageIcon, Lock, Unlock, Grid3x3, Eye, EyeOff, X,
+  Barcode, Boxes, BriefcaseBusiness, Check, Copy, Download, Image as ImageIcon,
+  MapPin, Plus, Printer, QrCode, RefreshCw, Save, Search, Settings2,
+  Tags, Trash2, Type, Usb, X,
 } from 'lucide-react';
-import { labelsApi, devicesApi, casesApi } from '../lib/api';
-import type { LabelTemplate, LabelElement, Device, CaseSummary } from '../lib/api';
-import { ModalPortal } from '../components/ModalPortal';
-import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
-import JSZip from 'jszip';
-import './LabelDesignerPage.css';
+import {
+  labelsApi,
+  type LabelElement,
+  type LabelFieldDefinition,
+  type LabelPrinter,
+  type LabelPrintJob,
+  type LabelTarget,
+  type LabelTargetType,
+  type LabelTemplate,
+} from '../lib/api';
 import { toast } from '../lib/toast';
+import './LabelDesignerPage.css';
 
-/* ── Types ──────────────────────────────────────────────────────────── */
+type StudioTab = 'designer' | 'print' | 'printers';
+type DragMode = 'move' | 'resize';
+type DesignElement = LabelElement & { id: string };
 
-interface DesignElement extends LabelElement {
-  id: string;
-  image_data?: string;
-  aspect_ratio_locked?: boolean;
-}
-
-type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
-
-interface DragState {
-  type: 'move' | 'resize';
-  handle?: ResizeHandle;
-  elementId: string;
-  startX: number;
-  startY: number;
-  origX: number;
-  origY: number;
-  origW: number;
-  origH: number;
-  origRatio: number;
-}
-
-/* ── Constants ──────────────────────────────────────────────────────── */
-
-const ZEBRA_PRESETS = [
-  { label: '62 × 29 mm (Standard)',         w: 62,    h: 29    },
-  { label: '57 × 32 mm  (2.25 × 1.25")',    w: 57.2,  h: 31.8  },
-  { label: '101 × 51 mm (4 × 2")',           w: 101.6, h: 50.8  },
-  { label: '101 × 25 mm (4 × 1")',           w: 101.6, h: 25.4  },
-  { label: '51 × 25 mm  (2 × 1")',           w: 50.8,  h: 25.4  },
-  { label: '38 × 25 mm  (1.5 × 1")',         w: 38.1,  h: 25.4  },
-  { label: '25 × 25 mm  (1 × 1")',           w: 25.4,  h: 25.4  },
-  { label: '101 × 152 mm (4 × 6" Versand)',  w: 101.6, h: 152.4 },
-  { label: 'Custom',                          w: 0,     h: 0     },
+const TARGET_TYPES: Array<{ type: LabelTargetType; label: string; icon: typeof Boxes }> = [
+  { type: 'device', label: 'Geräte', icon: Tags },
+  { type: 'product', label: 'Produkte & Kabel', icon: Boxes },
+  { type: 'case', label: 'Cases', icon: BriefcaseBusiness },
+  { type: 'zone', label: 'Lagerzonen', icon: MapPin },
 ];
 
-const FIELD_OPTIONS = [
-  { value: 'device_id',     label: 'Device ID'    },
-  { value: 'product_name',  label: 'Produktname'  },
-  { value: 'serial_number', label: 'Seriennummer' },
-  { value: 'barcode',       label: 'Barcode'      },
-  { value: 'zone_code',     label: 'Zonen-Code'   },
-  { value: 'zone_name',     label: 'Zonenname'    },
-  { value: 'status',        label: 'Status'       },
+const LABEL_PRESETS = [
+  { label: '51 × 25 mm', width: 51, height: 25 },
+  { label: '62 × 29 mm', width: 62, height: 29 },
+  { label: '57 × 32 mm', width: 57.2, height: 31.8 },
+  { label: '101 × 51 mm', width: 101.6, height: 50.8 },
+  { label: '101 × 25 mm', width: 101.6, height: 25.4 },
+  { label: '38 × 25 mm', width: 38.1, height: 25.4 },
 ];
 
-const EDITOR_MAX = 480;
-const GRID_MM    = 1;
-
-const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
-
-const HANDLE_POS: Record<ResizeHandle, { top: string; left: string; cursor: string }> = {
-  nw: { top: '-4px',             left: '-4px',             cursor: 'nw-resize' },
-  n:  { top: '-4px',             left: 'calc(50% - 4px)',  cursor: 'n-resize'  },
-  ne: { top: '-4px',             left: 'calc(100% - 4px)', cursor: 'ne-resize' },
-  w:  { top: 'calc(50% - 4px)',  left: '-4px',             cursor: 'w-resize'  },
-  e:  { top: 'calc(50% - 4px)',  left: 'calc(100% - 4px)', cursor: 'e-resize'  },
-  sw: { top: 'calc(100% - 4px)', left: '-4px',             cursor: 'sw-resize' },
-  s:  { top: 'calc(100% - 4px)', left: 'calc(50% - 4px)',  cursor: 's-resize'  },
-  se: { top: 'calc(100% - 4px)', left: 'calc(100% - 4px)', cursor: 'se-resize' },
+const EMPTY_PRINTER: LabelPrinter = {
+  name: '', driver: 'zpl_tcp', address: '', port: 9100, dpi: 203,
+  is_default: false, is_active: true,
 };
 
-function snapVal(v: number, grid: number, enabled: boolean): number {
-  if (!enabled || grid <= 0) return v;
-  return Math.round(v / grid) * grid;
+const sampleFields: Record<LabelTargetType, Record<string, string>> = {
+  device: { code: 'DEV-0001', name: 'Demo Gerät', device_id: 'DEV-0001', product_name: 'Demo Gerät', serial_number: 'SN-10001', barcode: 'DEV-0001', status: 'in_storage', zone_code: 'A-01', zone_name: 'Hauptlager', category: 'Audio' },
+  product: { code: 'PROD-000001', name: 'XLR Kabel 10 m', product_id: '1', product_name: 'XLR Kabel 10 m', generic_barcode: 'PROD-000001', barcode: 'PROD-000001', stock_quantity: '12', unit: 'Stk', category: 'Kabel', description: '' },
+  case: { code: 'CASE-1', name: 'Audio Case', case_id: 'CASE-1', barcode: 'CASE-1', status: 'free', zone_code: 'C-01', zone_name: 'Case-Lager', dimensions: '60 × 40 × 40', weight: '18 kg', description: '' },
+  zone: { code: 'ZONE-0001', name: 'Regal A / Fach 1', zone_id: '1', zone_code: 'A-01', barcode: 'ZONE-0001', type: 'shelf', location: 'Hauptlager', capacity: '20', description: '' },
+};
+
+function uid() {
+  return `label-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function printBulkLabels(labelPaths: string[], widthMm: number, heightMm: number) {
-  const win = window.open('', '_blank');
-  if (!win) return;
-  win.document.title = `${labelPaths.length} Labels drucken`;
+function withIDs(elements: LabelElement[]): DesignElement[] {
+  return elements.map(element => ({ ...element, id: uid() }));
+}
+
+function cleanElements(elements: DesignElement[]): LabelElement[] {
+  return elements.map(({ id, ...element }) => {
+    void id;
+    return element;
+  });
+}
+
+function defaultElement(type: LabelElement['type'], field = 'code'): DesignElement {
+  const base = {
+    id: uid(), type, x: 2, y: 2, width: 24, height: type === 'text' ? 6 : 18,
+    rotation: 0, content: field,
+    style: { font_size: 9, font_weight: type === 'text' ? 'bold' : 'normal', font_family: 'Arial', color: '#000000', alignment: 'left', format: type === 'qrcode' ? 'qr' : 'code128' },
+  } satisfies DesignElement;
+  if (type === 'image') return { ...base, content: 'logo', image_data: '' };
+  return base;
+}
+
+function statusBadge(status: LabelPrintJob['status']) {
+  if (status === 'completed') return 'badge-success';
+  if (status === 'failed') return 'badge-danger';
+  if (status === 'printing') return 'badge-info';
+  return 'badge-neutral';
+}
+
+function targetLabel(type: LabelTargetType) {
+  return TARGET_TYPES.find(item => item.type === type)?.label ?? type;
+}
+
+function openBrowserPrint(images: string[], width: number, height: number, copies: number, win: Window) {
+  win.document.title = 'WarehouseCore Labels';
   const style = win.document.createElement('style');
-  style.textContent = [
-    `@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }`,
-    `body { margin: 0; padding: 0; background: white; }`,
-    `img { display: block; width: ${widthMm}mm; height: ${heightMm}mm; page-break-after: always; }`,
-    `img:last-child { page-break-after: avoid; }`,
-  ].join('\n');
+  style.textContent = `@page { size: ${width}mm ${height}mm; margin: 0; } body { margin: 0; background: white; } img { display:block; width:${width}mm; height:${height}mm; break-after:page; } img:last-child { break-after:auto; }`;
   win.document.head.appendChild(style);
-  let loaded = 0;
-  const total = labelPaths.length;
-  const tryPrint = () => {
-    if (++loaded === total) {
-      win.focus();
-      // Delay ensures browser has fully painted all images before print dialog opens.
-      setTimeout(() => win.print(), 300);
+  for (const src of images) {
+    for (let copy = 0; copy < copies; copy += 1) {
+      const image = win.document.createElement('img');
+      image.src = src;
+      win.document.body.appendChild(image);
     }
-  };
-  for (const path of labelPaths) {
-    const img = win.document.createElement('img');
-    // Handler must be set before src to avoid missing cached-image load events.
-    img.onload = tryPrint;
-    img.onerror = tryPrint;
-    img.src = path;
-    win.document.body.appendChild(img);
   }
-}
-
-/* ── Component ──────────────────────────────────────────────────────── */
-
-type PrintMode = 'single' | 'selection' | 'all';
-type PrintTab  = 'devices' | 'cases';
-
-interface PrintDialogProps {
-  open: boolean;
-  onClose: () => void;
-  devices: Device[];
-  cases: CaseSummary[];
-  labelW: number;
-  labelH: number;
-  onPrintSingle: () => void;
-}
-
-function PrintDialog({ open, onClose, devices, cases, labelW, labelH, onPrintSingle }: PrintDialogProps) {
-  const [mode, setMode]         = useState<PrintMode | null>(null);
-  const [tab, setTab]           = useState<PrintTab>('devices');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  useBlockBodyScroll(open);
-
-  if (!open) return null;
-
-  const devicesWithLabel = devices.filter(d => d.label_path);
-  const casesWithLabel   = cases.filter(c => c.label_path);
-  const currentList      = tab === 'devices' ? devicesWithLabel : casesWithLabel;
-  const currentAll       = tab === 'devices' ? devices : cases;
-
-  const toggleItem = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    const ids = currentList.map(i => tab === 'devices' ? (i as Device).device_id : `CASE-${(i as CaseSummary).case_id}`);
-    const allSelected = ids.every(id => selected.has(id));
-    setSelected(prev => {
-      const next = new Set(prev);
-      ids.forEach(id => allSelected ? next.delete(id) : next.add(id));
-      return next;
-    });
-  };
-
-  const handlePrint = () => {
-    let paths: string[] = [];
-    if (mode === 'all') {
-      if (tab === 'devices') paths = devicesWithLabel.map(d => d.label_path!);
-      else                   paths = casesWithLabel.map(c => c.label_path!);
-    } else {
-      if (tab === 'devices') {
-        paths = devicesWithLabel
-          .filter(d => selected.has(d.device_id))
-          .map(d => d.label_path!);
-      } else {
-        paths = casesWithLabel
-          .filter(c => selected.has(`CASE-${c.case_id}`))
-          .map(c => c.label_path!);
-      }
-    }
-    if (paths.length === 0) return;
-    printBulkLabels(paths, labelW, labelH);
-    onClose();
-  };
-
-  const printCount = mode === 'all'
-    ? currentList.length
-    : [...selected].filter(id =>
-        tab === 'devices'
-          ? devicesWithLabel.some(d => d.device_id === id)
-          : casesWithLabel.some(c => `CASE-${c.case_id}` === id)
-      ).length;
-
-  return (
-    <ModalPortal>
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
-        <div
-          className="glass-dark w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[80vh]"
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/10">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Printer className="w-5 h-5 text-accent-red" />
-              Labels drucken
-            </h2>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
-          </div>
-
-          {/* Mode selection */}
-          {!mode && (
-            <div className="grid grid-cols-3 gap-3 p-6">
-              {([
-                { key: 'single' as const, title: 'Aktuelles Label', desc: 'Nur das angezeigte Label drucken', action: () => { onPrintSingle(); onClose(); } },
-                { key: 'selection' as const, title: 'Auswahl', desc: 'Bestimmte Labels auswählen', action: () => setMode('selection') },
-                { key: 'all' as const, title: 'Alle', desc: 'Alle Labels eines Typs drucken', action: () => setMode('all') },
-              ] as const).map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={opt.action}
-                  className="glass flex flex-col items-center gap-2 p-5 rounded-xl border border-white/10 text-gray-300 hover:border-accent-red hover:bg-accent-red/20 hover:text-white hover:scale-[1.03] hover:shadow-[0_0_20px_rgba(208,2,27,0.15)] transition-all cursor-pointer"
-                >
-                  <Printer className="w-6 h-6" />
-                  <span className="font-semibold text-sm">{opt.title}</span>
-                  <span className="text-[0.7rem] text-gray-500 text-center leading-tight">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Tab selection + list */}
-          {mode && (
-            <>
-              <div className="flex border-b border-white/10 px-6">
-                {(['devices', 'cases'] as PrintTab[]).map(t => (
-                  <button
-                    key={t}
-                    className={`px-5 py-3 text-sm font-medium border-b-2 transition-all ${
-                      tab === t
-                        ? 'text-accent-red border-accent-red'
-                        : 'text-gray-500 border-transparent hover:text-white hover:border-white/30 hover:bg-white/[0.04]'
-                    }`}
-                    onClick={() => { setTab(t); setSelected(new Set()); }}
-                  >
-                    {t === 'devices' ? 'Geräte' : 'Cases'} ({t === 'devices' ? devicesWithLabel.length : casesWithLabel.length})
-                  </button>
-                ))}
-              </div>
-
-              {mode === 'selection' && (
-                <div className="flex flex-col flex-1 min-h-0 px-6">
-                  <div className="flex items-center justify-between py-3 border-b border-white/[0.06]">
-                    <label className="flex items-center gap-2.5 text-sm text-gray-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 accent-accent-red cursor-pointer"
-                        checked={currentList.length > 0 && currentList.every(i => {
-                          const id = tab === 'devices' ? (i as Device).device_id : `CASE-${(i as CaseSummary).case_id}`;
-                          return selected.has(id);
-                        })}
-                        onChange={toggleAll}
-                      />
-                      Alle auswählen
-                    </label>
-                    <span className="text-xs text-gray-500">{printCount} von {currentList.length}</span>
-                  </div>
-                  <div className="overflow-y-auto max-h-[320px] py-1">
-                    {(currentAll as (Device | CaseSummary)[]).map(item => {
-                      const isDevice = tab === 'devices';
-                      const id = isDevice ? (item as Device).device_id : `CASE-${(item as CaseSummary).case_id}`;
-                      const name = isDevice ? (item as Device).product_name ?? (item as Device).device_id : (item as CaseSummary).name;
-                      const hasLabel = isDevice ? !!(item as Device).label_path : !!(item as CaseSummary).label_path;
-                      return (
-                        <label
-                          key={id}
-                          className={`flex items-center gap-2.5 py-2 px-1 rounded-md text-sm transition-colors ${
-                            hasLabel ? 'text-gray-300 cursor-pointer hover:bg-white/[0.04]' : 'text-gray-600 cursor-not-allowed opacity-40'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 accent-accent-red cursor-inherit"
-                            checked={selected.has(id)}
-                            onChange={() => toggleItem(id)}
-                            disabled={!hasLabel}
-                          />
-                          <span className="font-mono text-xs text-accent-red min-w-[90px]">{id}</span>
-                          <span className="flex-1 truncate">{name}</span>
-                          {!hasLabel && <span className="text-[0.7rem] text-red-400/60 italic">(kein Label)</span>}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {mode === 'all' && (
-                <div className="py-8 px-6 text-center text-gray-300">
-                  <p>{currentList.length} {tab === 'devices' ? 'Geräte' : 'Cases'} mit Label werden gedruckt.</p>
-                  {currentList.length === 0 && (
-                    <p className="text-sm text-yellow-500/80 mt-2">Keine Labels vorhanden. Bitte erst Labels generieren.</p>
-                  )}
-                </div>
-              )}
-
-              <div className="flex justify-between p-6 border-t border-white/10">
-                <button
-                  className="btn-action"
-                  onClick={() => { setMode(null); setSelected(new Set()); }}
-                >
-                  ← Zurück
-                </button>
-                <button
-                  className="btn-action btn-primary"
-                  onClick={handlePrint}
-                  disabled={printCount === 0}
-                >
-                  <Printer size={15} /> {printCount} Label{printCount !== 1 ? 's' : ''} drucken
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </ModalPortal>
-  );
+  const allImages = Array.from(win.document.images);
+  Promise.all(allImages.map(image => image.complete ? Promise.resolve() : new Promise<void>(resolve => {
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+  }))).then(() => {
+    win.focus();
+    win.print();
+  });
 }
 
 export default function LabelDesignerPage() {
-  const [labelW, setLabelW]         = useState(62);
-  const [labelH, setLabelH]         = useState(29);
-  const [elements, setElements]     = useState<DesignElement[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [snapEnabled, setSnapEnabled]   = useState(true);
-  const [showPreview, setShowPreview]   = useState(true);
+  const [tab, setTab] = useState<StudioTab>('designer');
+  const [targetType, setTargetType] = useState<LabelTargetType>('device');
+  const [templates, setTemplates] = useState<LabelTemplate[]>([]);
+  const [activeTemplateID, setActiveTemplateID] = useState<number | null>(null);
+  const [templateName, setTemplateName] = useState('Neues Template');
+  const [isDefault, setIsDefault] = useState(false);
+  const [labelWidth, setLabelWidth] = useState(51);
+  const [labelHeight, setLabelHeight] = useState(25);
+  const [elements, setElements] = useState<DesignElement[]>([]);
+  const [selectedElementID, setSelectedElementID] = useState<string | null>(null);
+  const [fields, setFields] = useState<LabelFieldDefinition[]>([]);
+  const [targets, setTargets] = useState<LabelTarget[]>([]);
+  const [previewTarget, setPreviewTarget] = useState<LabelTarget | null>(null);
+  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  const [printers, setPrinters] = useState<LabelPrinter[]>([]);
+  const [jobs, setJobs] = useState<LabelPrintJob[]>([]);
+  const [printerForm, setPrinterForm] = useState<LabelPrinter>(EMPTY_PRINTER);
+  const [selectedPrinterID, setSelectedPrinterID] = useState(0);
+  const [copies, setCopies] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [codeImages, setCodeImages] = useState<Record<string, string>>({});
+  const canvasRef = useRef<HTMLDivElement>(null);
 
-  const [templateName, setTemplateName]   = useState('Neues Template');
-  const [templates, setTemplates]         = useState<LabelTemplate[]>([]);
-  const [currentTplId, setCurrentTplId]   = useState<number | null>(null);
-  const [saving, setSaving]               = useState(false);
-  const [exporting, setExporting]         = useState(false);
+  const activeTemplate = useMemo(
+    () => templates.find(template => template.id === activeTemplateID) ?? null,
+    [activeTemplateID, templates],
+  );
+  const typeTemplates = useMemo(
+    () => templates.filter(template => template.target_type === targetType),
+    [targetType, templates],
+  );
+  const selectedElement = elements.find(element => element.id === selectedElementID) ?? null;
+  const previewFields = previewTarget?.fields ?? sampleFields[targetType];
+  const scale = Math.min(620 / labelWidth, 380 / labelHeight, 12);
 
-  const [devices, setDevices]             = useState<Device[]>([]);
-  const [cases, setCases]                 = useState<CaseSummary[]>([]);
-  const [previewDevice, setPreviewDevice] = useState<Device | null>(null);
-
-  const [imgCache, setImgCache] = useState<Record<string, string>>({});
-  const [printDialogOpen, setPrintDialogOpen] = useState(false);
-
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const dragRef      = useRef<DragState | null>(null);
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const imgTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Refs so document-level event handlers always see fresh values
-  const elementsRef   = useRef(elements);
-  const snapRef       = useRef(snapEnabled);
-  const labelWRef     = useRef(labelW);
-  const labelHRef     = useRef(labelH);
-  elementsRef.current = elements;
-  snapRef.current     = snapEnabled;
-  labelWRef.current   = labelW;
-  labelHRef.current   = labelH;
-
-  // Scale: fit label into EDITOR_MAX × EDITOR_MAX px
-  const scale = Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH);
-  const edW   = Math.round(labelW * scale);
-  const edH   = Math.round(labelH * scale);
-
-  useEffect(() => { loadDevices(); loadCases(); loadTemplates(true); }, []);
-
-  // Debounced canvas preview
-  useEffect(() => {
-    if (previewTimer.current) clearTimeout(previewTimer.current);
-    previewTimer.current = setTimeout(() => renderPreview(), 600);
-    return () => { if (previewTimer.current) clearTimeout(previewTimer.current); };
-  }, [elements, labelW, labelH, previewDevice]);
-
-  // Debounced editor QR/barcode image fetch
-  useEffect(() => {
-    if (imgTimer.current) clearTimeout(imgTimer.current);
-    imgTimer.current = setTimeout(async () => {
-      const codes = elements.filter(e => e.type === 'qrcode' || e.type === 'barcode');
-      if (codes.length === 0) return;
-      const updates: Record<string, string> = {};
-      await Promise.all(codes.map(async elem => {
-        const demoContent = elem.content === 'device_id' ? 'DEMO-001' : elem.content;
-        try {
-          if (elem.type === 'qrcode') {
-            const px = Math.max(60, Math.round(elem.width * Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH)));
-            const { data } = await labelsApi.generateQRCode(demoContent, px);
-            updates[elem.id] = data.image_data;
-          } else {
-            const px = Math.max(123, Math.round(elem.width * Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH)));
-            const ph = Math.max(20, Math.round(elem.height * Math.min(EDITOR_MAX / labelW, EDITOR_MAX / labelH)));
-            const { data } = await labelsApi.generateBarcode(demoContent, px, ph);
-            updates[elem.id] = data.image_data;
-          }
-        } catch { /* keep placeholder on error */ }
-      }));
-      if (Object.keys(updates).length > 0)
-        setImgCache(prev => ({ ...prev, ...updates }));
-    }, 800);
-    return () => { if (imgTimer.current) clearTimeout(imgTimer.current); };
-  }, [elements.map(e => `${e.id}:${e.content}:${e.width}:${e.height}`).join(','), labelW, labelH]);
-
-  const showToast = (type: 'success' | 'error', message: string) =>
-    window.dispatchEvent(new CustomEvent('toast', { detail: { type, message } }));
-
-  /* ── Data loading ── */
-
-  const loadDevices = async () => {
-    try {
-      const { data } = await devicesApi.getAll({ limit: 50000 });
-      setDevices(data);
-      if (data.length > 0) setPreviewDevice(data[0]);
-    } catch { toast.error('Failed to load devices'); }
-  };
-
-  const loadCases = async () => {
-    try {
-      const { data } = await casesApi.list({});
-      setCases(data.cases || []);
-    } catch { toast.error('Failed to load cases'); }
-  };
-
-  const loadTemplates = async (applyDefault = false) => {
-    try {
-      const { data } = await labelsApi.getTemplates();
-      setTemplates(data);
-      if (applyDefault) {
-        const def = data.find(t => t.is_default);
-        if (def) applyTemplate(def);
-      }
-    } catch { toast.error('Failed to load templates'); }
-  };
-
-  /* ── Template operations ── */
-
-  const applyTemplate = (tpl: LabelTemplate) => {
-    setCurrentTplId(tpl.id ?? null);
-    setLabelW(tpl.width);
-    setLabelH(tpl.height);
-    setTemplateName(tpl.name);
-    try {
-      const parsed: LabelElement[] = JSON.parse(tpl.template_json || '[]');
-      setElements(parsed.map((e, i) => ({ ...e, id: `elem-${i}` })));
-    } catch {
-      setElements([]);
-    }
-    setSelectedId(null);
-  };
-
-  const newTemplate = () => {
-    setCurrentTplId(null);
-    setTemplateName('Neues Template');
-    setLabelW(62);
-    setLabelH(29);
-    setElements([]);
-    setSelectedId(null);
-  };
-
-  const saveTemplate = async () => {
-    if (!templateName.trim()) return showToast('error', 'Bitte Template-Namen eingeben!');
-    setSaving(true);
-    try {
-      const tpl: LabelTemplate = {
-        name: templateName,
-        description: '',
-        width: labelW,
-        height: labelH,
-        // Strip only runtime-only UI fields; keep image_data so uploaded logos survive save/reload
-        template_json: JSON.stringify(
-          elements.map(({ id: _id, aspect_ratio_locked: _ar, ...rest }) => rest)
-        ),
-        is_default: false,
-      };
-      if (currentTplId) {
-        await labelsApi.updateTemplate(currentTplId, tpl);
-        showToast('success', 'Template aktualisiert');
-      } else {
-        const { data } = await labelsApi.createTemplate(tpl);
-        setCurrentTplId(data.id ?? null);
-        showToast('success', 'Template erstellt');
-      }
-      await loadTemplates(false);
-    } catch { showToast('error', 'Fehler beim Speichern'); }
-    finally { setSaving(false); }
-  };
-
-  const setAsDefault = async () => {
-    if (!currentTplId) return showToast('error', 'Bitte Template zuerst speichern!');
-    try {
-      await labelsApi.updateTemplate(currentTplId, { is_default: true } as Partial<LabelTemplate>);
-      await loadTemplates();
-      showToast('success', 'Als Standard gesetzt ★');
-    } catch { showToast('error', 'Fehler'); }
-  };
-
-  const deleteTemplate = async (id: number) => {
-    if (!confirm('Template wirklich löschen?')) return;
-    try {
-      await labelsApi.deleteTemplate(id);
-      await loadTemplates();
-      if (currentTplId === id) newTemplate();
-      showToast('success', 'Template gelöscht');
-    } catch { showToast('error', 'Fehler beim Löschen'); }
-  };
-
-  /* ── Element operations ── */
-
-  const addElement = (type: DesignElement['type']) => {
-    const sizes: Record<string, [number, number]> = {
-      qrcode:  [Math.min(25, labelH - 2), Math.min(25, labelH - 2)],
-      barcode: [Math.min(50, labelW - 4), Math.min(15, labelH - 4)],
-      image:   [Math.min(20, labelW - 4), Math.min(20, labelH - 4)],
-      text:    [Math.min(30, labelW - 4), Math.min(6,  labelH - 4)],
-    };
-    const [w, h] = sizes[type];
-    const el: DesignElement = {
-      id:       `elem-${Date.now()}`,
-      type,
-      x: 2, y: 2,
-      width:    Math.max(2, w),
-      height:   Math.max(2, h),
-      rotation: 0,
-      content:  type === 'image' ? '' : 'device_id',
-      style: {
-        font_size:   8,
-        font_weight: 'normal',
-        font_family: 'Arial',
-        color:       '#000000',
-        alignment:   'left',
-        format: type === 'barcode' ? 'code128' : type === 'qrcode' ? 'qr' : undefined,
-      },
-      aspect_ratio_locked: type === 'qrcode' || type === 'image',
-    };
-    setElements(prev => [...prev, el]);
-    setSelectedId(el.id);
-  };
-
-  const deleteElement = (id: string) => {
-    setElements(prev => prev.filter(e => e.id !== id));
-    if (selectedId === id) setSelectedId(null);
-  };
-
-  const updateEl = (id: string, updates: Partial<DesignElement>) =>
-    setElements(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
-
-  const handleImageUpload = (id: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const b64 = ev.target?.result as string;
-      const img = new Image();
-      img.onload = () => {
-        setElements(prev => prev.map(e => {
-          if (e.id !== id) return e;
-          const up: Partial<DesignElement> = { image_data: b64, content: file.name };
-          if (e.aspect_ratio_locked && img.naturalHeight > 0)
-            up.height = e.width / (img.naturalWidth / img.naturalHeight);
-          return { ...e, ...up };
-        }));
-      };
-      img.src = b64;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  /* ── Drag / resize ── */
-
-  const onElementMouseDown = (e: React.MouseEvent, elem: DesignElement) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedId(elem.id);
-    dragRef.current = {
-      type: 'move',
-      elementId: elem.id,
-      startX: e.clientX, startY: e.clientY,
-      origX: elem.x,     origY: elem.y,
-      origW: elem.width, origH: elem.height,
-      origRatio: elem.height > 0 ? elem.width / elem.height : 1,
-    };
-  };
-
-  const onHandleMouseDown = (e: React.MouseEvent, elem: DesignElement, handle: ResizeHandle) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragRef.current = {
-      type: 'resize',
-      handle,
-      elementId: elem.id,
-      startX: e.clientX, startY: e.clientY,
-      origX: elem.x,     origY: elem.y,
-      origW: elem.width, origH: elem.height,
-      origRatio: elem.height > 0 ? elem.width / elem.height : 1,
-    };
-  };
-
-  // Document-level handlers so drag continues even when mouse leaves the editor div
-  const handleDocMouseMove = useCallback((e: MouseEvent) => {
-    const ds = dragRef.current;
-    if (!ds) return;
-
-    const lw  = labelWRef.current;
-    const lh  = labelHRef.current;
-    const sc  = Math.min(EDITOR_MAX / lw, EDITOR_MAX / lh);
-    const snap = snapRef.current;
-
-    const dx = (e.clientX - ds.startX) / sc;
-    const dy = (e.clientY - ds.startY) / sc;
-
-    if (ds.type === 'move') {
-      const nx = snapVal(Math.max(0, Math.min(lw - ds.origW, ds.origX + dx)), GRID_MM, snap);
-      const ny = snapVal(Math.max(0, Math.min(lh - ds.origH, ds.origY + dy)), GRID_MM, snap);
-      setElements(prev => prev.map(el =>
-        el.id === ds.elementId ? { ...el, x: nx, y: ny } : el
-      ));
-      return;
-    }
-
-    const h      = ds.handle!;
-    const locked = elementsRef.current.find(el => el.id === ds.elementId)?.aspect_ratio_locked ?? false;
-
-    let nx = ds.origX, ny = ds.origY, nw = ds.origW, nh = ds.origH;
-
-    if (h.includes('e')) nw = Math.max(2, ds.origW + dx);
-    if (h.includes('s')) nh = Math.max(2, ds.origH + dy);
-    if (h.includes('w')) { nw = Math.max(2, ds.origW - dx); nx = ds.origX + ds.origW - nw; }
-    if (h.includes('n')) { nh = Math.max(2, ds.origH - dy); ny = ds.origY + ds.origH - nh; }
-
-    if (locked && (h === 'nw' || h === 'ne' || h === 'se' || h === 'sw')) {
-      nh = nw / ds.origRatio;
-      if (h === 'ne') ny = ds.origY + ds.origH - nh;
-      if (h === 'sw') nx = ds.origX + ds.origW - nw;
-      if (h === 'nw') { ny = ds.origY + ds.origH - nh; nx = ds.origX + ds.origW - nw; }
-    }
-
-    nx = snapVal(Math.max(0, nx), GRID_MM, snap);
-    ny = snapVal(Math.max(0, ny), GRID_MM, snap);
-    nw = snapVal(Math.max(2, nw), GRID_MM, snap);
-    nh = snapVal(Math.max(2, nh), GRID_MM, snap);
-
-    setElements(prev => prev.map(el =>
-      el.id === ds.elementId ? { ...el, x: nx, y: ny, width: nw, height: nh } : el
-    ));
+  const loadTemplates = useCallback(async () => {
+    const { data } = await labelsApi.getTemplates();
+    setTemplates(data);
+    return data;
   }, []);
 
-  const handleDocMouseUp = useCallback(() => { dragRef.current = null; }, []);
+  const loadPrinters = useCallback(async () => {
+    const { data } = await labelsApi.getPrinters();
+    setPrinters(data);
+    const defaultPrinter = data.find(printer => printer.is_default && printer.is_active) ?? data.find(printer => printer.is_active);
+    if (defaultPrinter?.id) setSelectedPrinterID(current => current || defaultPrinter.id!);
+  }, []);
+
+  const loadJobs = useCallback(async () => {
+    const { data } = await labelsApi.getPrintJobs(100);
+    setJobs(data);
+  }, []);
+
+  const loadTargets = useCallback(async (type: LabelTargetType, term: string) => {
+    const { data } = await labelsApi.getTargets(type, term, 500);
+    setTargets(data);
+    setSelectedTargets(new Set());
+    if (data[0]) {
+      const detail = await labelsApi.getTarget(type, data[0].id);
+      setPreviewTarget(detail.data);
+    } else {
+      setPreviewTarget(null);
+    }
+  }, []);
 
   useEffect(() => {
-    document.addEventListener('mousemove', handleDocMouseMove);
-    document.addEventListener('mouseup',   handleDocMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleDocMouseMove);
-      document.removeEventListener('mouseup',   handleDocMouseUp);
+    Promise.all([loadTemplates(), loadPrinters(), loadJobs()]).catch(error => toast.error(String(error)));
+  }, [loadJobs, loadPrinters, loadTemplates]);
+
+  useEffect(() => {
+    labelsApi.getFields(targetType).then(response => setFields(response.data)).catch(error => toast.error(String(error)));
+    const timer = window.setTimeout(() => loadTargets(targetType, search).catch(error => toast.error(String(error))), 250);
+    return () => window.clearTimeout(timer);
+  }, [loadTargets, search, targetType]);
+
+  useEffect(() => {
+    const available = templates.filter(template => template.target_type === targetType);
+    const next = available.find(template => template.is_default) ?? available[0];
+    if (next) {
+      applyTemplate(next);
+    } else {
+      startNewTemplate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetType, templates.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const element of elements) {
+      if (element.type !== 'barcode' && element.type !== 'qrcode') continue;
+      const content = previewFields[element.content] ?? element.content;
+      const key = `${element.type}|${content}|${element.width}|${element.height}`;
+      if (codeImages[key]) continue;
+      const request = element.type === 'qrcode'
+        ? labelsApi.generateQRCode(content, Math.max(100, Math.round(element.width * 12)))
+        : labelsApi.generateBarcode(content, Math.max(123, Math.round(element.width * 12)), Math.max(50, Math.round(element.height * 12)));
+      request.then(response => {
+        if (!cancelled) setCodeImages(current => ({ ...current, [key]: response.data.image_data }));
+      }).catch(() => undefined);
+    }
+    return () => { cancelled = true; };
+  }, [codeImages, elements, previewFields]);
+
+  function applyTemplate(template: LabelTemplate) {
+    let parsed: LabelElement[] = [];
+    try { parsed = JSON.parse(template.template_json || '[]') as LabelElement[]; } catch { parsed = []; }
+    setActiveTemplateID(template.id ?? null);
+    setTemplateName(template.name);
+    setIsDefault(template.is_default);
+    setLabelWidth(Number(template.width));
+    setLabelHeight(Number(template.height));
+    setElements(withIDs(parsed));
+    setSelectedElementID(null);
+  }
+
+  function startNewTemplate() {
+    setActiveTemplateID(null);
+    setTemplateName(`Neues ${targetLabel(targetType)}-Template`);
+    setIsDefault(typeTemplates.length === 0);
+    setLabelWidth(51);
+    setLabelHeight(25);
+    setElements([defaultElement('barcode'), { ...defaultElement('text', 'name'), x: 2, y: 16, width: 47 }]);
+    setSelectedElementID(null);
+  }
+
+  function duplicateTemplate() {
+    setActiveTemplateID(null);
+    setTemplateName(`${templateName} Kopie`);
+    setIsDefault(false);
+    setElements(current => withIDs(cleanElements(current)));
+  }
+
+  async function saveTemplate() {
+    if (!templateName.trim() || labelWidth <= 0 || labelHeight <= 0 || elements.length === 0) {
+      toast.error('Name, Größe und mindestens ein Element sind erforderlich.');
+      return;
+    }
+    setBusy(true);
+    const payload: LabelTemplate = {
+      name: templateName.trim(), description: `${targetLabel(targetType)}-Label`, width: labelWidth,
+      height: labelHeight, template_json: JSON.stringify(cleanElements(elements)), is_default: isDefault,
+      target_type: targetType, revision: activeTemplate?.revision ?? 1,
     };
-  }, [handleDocMouseMove, handleDocMouseUp]);
+    try {
+      if (activeTemplateID) await labelsApi.updateTemplate(activeTemplateID, payload);
+      else await labelsApi.createTemplate(payload);
+      const refreshed = await loadTemplates();
+      const saved = refreshed.find(template => template.name === payload.name && template.target_type === targetType);
+      if (saved) applyTemplate(saved);
+      toast.success('Template gespeichert.');
+    } catch (error) { toast.error(`Template konnte nicht gespeichert werden: ${String(error)}`); }
+    finally { setBusy(false); }
+  }
 
-  /* ── Canvas preview (300 DPI) ── */
+  async function deleteTemplate() {
+    if (!activeTemplateID || !confirm(`Template „${templateName}“ löschen?`)) return;
+    try {
+      await labelsApi.deleteTemplate(activeTemplateID);
+      await loadTemplates();
+      toast.success('Template gelöscht.');
+    } catch (error) { toast.error(String(error)); }
+  }
 
-  const resolveContent = (field: string, dev: Device): string => {
-    const map: Record<string, string | undefined> = {
-      device_id:    dev.device_id,
-      product_name: dev.product_name,
-      serial_number:dev.serial_number,
-      barcode:      dev.barcode ?? dev.device_id,
-      zone_code:    dev.zone_code,
-      zone_name:    dev.zone_name,
-      status:       dev.status,
+  function addElement(type: LabelElement['type']) {
+    const element = defaultElement(type, fields[0]?.key ?? 'code');
+    setElements(current => [...current, element]);
+    setSelectedElementID(element.id);
+  }
+
+  function updateElement(id: string, updates: Partial<DesignElement>) {
+    setElements(current => current.map(element => element.id === id ? { ...element, ...updates } : element));
+  }
+
+  function beginDrag(event: React.PointerEvent, element: DesignElement, mode: DragMode) {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedElementID(element.id);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = { x: element.x, y: element.y, width: element.width, height: element.height };
+    const onMove = (move: PointerEvent) => {
+      const dx = (move.clientX - startX) / scale;
+      const dy = (move.clientY - startY) / scale;
+      if (mode === 'move') {
+        updateElement(element.id, {
+          x: Math.max(0, Math.min(labelWidth - origin.width, Math.round((origin.x + dx) * 2) / 2)),
+          y: Math.max(0, Math.min(labelHeight - origin.height, Math.round((origin.y + dy) * 2) / 2)),
+        });
+      } else {
+        updateElement(element.id, {
+          width: Math.max(2, Math.min(labelWidth - origin.x, Math.round((origin.width + dx) * 2) / 2)),
+          height: Math.max(2, Math.min(labelHeight - origin.y, Math.round((origin.height + dy) * 2) / 2)),
+        });
+      }
     };
-    return map[field] ?? field;
-  };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+  }
 
-  const drawImg = (
-    ctx: CanvasRenderingContext2D,
-    src: string, x: number, y: number, w: number, h: number
-  ): Promise<void> =>
-    new Promise(res => {
-      const img = new Image();
-      img.onload  = () => { ctx.drawImage(img, x, y, w, h); res(); };
-      img.onerror = () => res();
-      img.src = src;
+  async function selectPreviewTarget(target: LabelTarget) {
+    try {
+      const { data } = await labelsApi.getTarget(targetType, target.id);
+      setPreviewTarget(data);
+    } catch (error) { toast.error(String(error)); }
+  }
+
+  function toggleTarget(id: string) {
+    setSelectedTargets(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
     });
+  }
 
-  const DEMO_DEVICE: Device = {
-    device_id: 'DEMO-001', product_name: 'Demo Produkt',
-    serial_number: 'SN-000001', barcode: 'DEMO-001',
-    zone_code: 'A1', zone_name: 'Hauptlager', status: 'in_stock',
-  };
-
-  // Renders a device onto the canvas and fully awaits all async operations (QR, barcode API calls).
-  // Reads labelW/labelH/elements from refs so it always reflects the latest state even when called
-  // from inside async loops like generateLabels where the closure may be stale.
-  const renderDeviceToCanvas = async (dev: Device) => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx    = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const lw    = labelWRef.current;
-    const lh    = labelHRef.current;
-    const elems = elementsRef.current;
-    const dpi   = 300;
-    const mm    = dpi / 25.4;
-
-    canvas.width  = Math.round(lw * mm);
-    canvas.height = Math.round(lh * mm);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#cccccc';
-    ctx.lineWidth   = 1;
-    ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
-
-    for (const elem of elems) {
-      const x = elem.x * mm, y = elem.y * mm;
-      const w = elem.width * mm, h = elem.height * mm;
-      const content = resolveContent(elem.content, dev);
-
-      try {
-        if (elem.type === 'qrcode') {
-          const { data } = await labelsApi.generateQRCode(content, Math.floor(w));
-          await drawImg(ctx, data.image_data, x, y, w, h);
-        } else if (elem.type === 'barcode') {
-          const { data } = await labelsApi.generateBarcode(content, Math.floor(w), Math.floor(h));
-          await drawImg(ctx, data.image_data, x, y, w, h);
-        } else if (elem.type === 'image' && (elem as DesignElement).image_data) {
-          await drawImg(ctx, (elem as DesignElement).image_data!, x, y, w, h);
-        } else if (elem.type === 'text') {
-          ctx.fillStyle = elem.style.color || '#000000';
-          const fs      = (elem.style.font_size || 8) * (dpi / 96);
-          ctx.font      = `${elem.style.font_weight || 'normal'} ${fs}px ${elem.style.font_family || 'Arial'}`;
-          ctx.textAlign = (elem.style.alignment as CanvasTextAlign) || 'left';
-          ctx.fillText(content, x, y + fs);
-        }
-      } catch (err) {
-        toast.error('Render error for element ' + elem.id + ': ' + String(err));
-      }
-    }
-  };
-
-  const renderPreview = async () => {
-    await renderDeviceToCanvas(previewDevice ?? DEMO_DEVICE);
-  };
-
-  /* ── Batch label generation ── */
-
-  const generateLabels = async (devs: Device[], cas: CaseSummary[]) => {
-    const defaultTpl = templates.find(t => t.is_default);
-    if (!defaultTpl) return showToast('error', 'Bitte zuerst ein Template als Standard setzen!');
-
-    const origTplId = currentTplId;
-    setExporting(true);
-    let ok = 0, fail = 0;
-
+  async function generateSelected() {
+    if (!activeTemplateID || selectedTargets.size === 0) return;
+    setBusy(true);
+    let completed = 0;
     try {
-      applyTemplate(defaultTpl);
-      // Wait two animation frames so React re-renders and the elementsRef/labelWRef/labelHRef
-      // refs are updated with the new template values before we start rendering.
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-      for (const dev of devs) {
-        setPreviewDevice(dev);  // visual feedback only
-        await renderDeviceToCanvas(dev);
-        if (canvasRef.current) {
-          try { await labelsApi.saveLabel(dev.device_id, canvasRef.current.toDataURL('image/png')); ok++; }
-          catch { fail++; }
-        }
+      for (const targetID of selectedTargets) {
+        await labelsApi.renderTarget({ target_type: targetType, target_id: targetID, template_id: activeTemplateID, save: true });
+        completed += 1;
       }
+      await loadTargets(targetType, search);
+      toast.success(`${completed} Label${completed === 1 ? '' : 's'} erzeugt.`);
+    } catch (error) { toast.error(`Nach ${completed} Labels abgebrochen: ${String(error)}`); }
+    finally { setBusy(false); }
+  }
 
-      for (const c of cas) {
-        const fake: Device = {
-          device_id:    `CASE-${c.case_id}`,
-          product_name: c.name,
-          status:       c.status,
-          zone_code:    c.zone_code,
-          zone_name:    c.zone_name,
-          zone_id:      c.zone_id,
-        };
-        setPreviewDevice(fake);  // visual feedback only
-        await renderDeviceToCanvas(fake);
-        if (canvasRef.current) {
-          try { await labelsApi.saveCaseLabel(c.case_id, canvasRef.current.toDataURL('image/png')); ok++; }
-          catch { fail++; }
-        }
-      }
-
-      showToast('success', `${ok}/${devs.length + cas.length} Labels generiert${fail ? ` · ${fail} Fehler` : ''}`);
-    } catch { showToast('error', 'Fehler beim Generieren'); }
-    finally {
-      setExporting(false);
-      // Reload so label_path is up to date in state — exportZip depends on this
-      await Promise.all([loadDevices(), loadCases()]);
-      if (origTplId) {
-        const orig = templates.find(t => t.id === origTplId);
-        if (orig) applyTemplate(orig);
-      }
+  async function browserPrint() {
+    if (!activeTemplateID || selectedTargets.size === 0) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Der Browser hat das Druckfenster blockiert.');
+      return;
     }
-  };
-
-  const generateAllLabels = () => generateLabels(devices, cases);
-
-  const generateMissingLabels = async () => {
-    const devsNo  = devices.filter(d => !d.label_path);
-    const casesNo = cases.filter(c => !c.label_path);
-    const total   = devsNo.length + casesNo.length;
-    if (total === 0) return showToast('success', 'Alle Items haben bereits Labels!');
-    if (!confirm(`${total} Items ohne Labels (${devsNo.length} Devices + ${casesNo.length} Cases).\nJetzt generieren?`)) return;
-    await generateLabels(devsNo, casesNo);
-    await loadDevices();
-    await loadCases();
-  };
-
-  const exportZip = async () => {
-    setExporting(true);
+    printWindow.document.body.textContent = 'Labels werden vorbereitet …';
+    setBusy(true);
     try {
-      const zip = new JSZip();
-      let n = 0;
-      for (const d of devices.filter(d => d.label_path)) {
-        const r = await fetch(d.label_path!);
-        if (r.ok) { zip.file(`devices/${d.device_id}.png`, await r.blob()); n++; }
+      const images: string[] = [];
+      for (const targetID of selectedTargets) {
+        const { data } = await labelsApi.renderTarget({ target_type: targetType, target_id: targetID, template_id: activeTemplateID, save: true });
+        images.push(data.image_data);
       }
-      for (const c of cases.filter(c => c.label_path)) {
-        const r = await fetch(c.label_path!);
-        if (r.ok) { zip.file(`cases/CASE-${c.case_id}.png`, await r.blob()); n++; }
-      }
-      if (n === 0) return showToast('error', 'Keine generierten Labels vorhanden!');
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `labels_${new Date().toISOString().split('T')[0]}.zip`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      showToast('success', `${n} Labels als ZIP exportiert`);
-    } catch { showToast('error', 'Fehler beim ZIP-Export'); }
-    finally { setExporting(false); }
-  };
+      printWindow.document.body.replaceChildren();
+      openBrowserPrint(images, labelWidth, labelHeight, copies, printWindow);
+      await loadTargets(targetType, search);
+    } catch (error) {
+      printWindow.close();
+      toast.error(String(error));
+    } finally { setBusy(false); }
+  }
 
-  const printPreview = () => {
-    if (!canvasRef.current) return;
-    const dataUrl = canvasRef.current.toDataURL('image/png');
-    const win = window.open('', '_blank');
-    if (!win) return;
-    // @page sets physical paper size = label size so printer outputs exact dimensions
-    const style = win.document.createElement('style');
-    style.textContent = [
-      `@page { size: ${labelW}mm ${labelH}mm; margin: 0; }`,
-      `body { margin: 0; padding: 0; background: white; }`,
-      `img { display: block; width: ${labelW}mm; height: ${labelH}mm; }`,
-    ].join(' ');
-    win.document.head.appendChild(style);
-    const img = win.document.createElement('img');
-    img.src = dataUrl;
-    img.onload = () => { win.focus(); win.print(); win.close(); };
-    win.document.body.style.margin = '0';
-    win.document.body.appendChild(img);
-  };
+  async function directPrint() {
+    if (!activeTemplateID || !selectedPrinterID || selectedTargets.size === 0) return;
+    setBusy(true);
+    try {
+      const { data } = await labelsApi.printDirect({
+        target_type: targetType, target_ids: Array.from(selectedTargets), template_id: activeTemplateID,
+        printer_id: selectedPrinterID, copies,
+      });
+      const failed = data.jobs.filter(job => job.status === 'failed');
+      if (failed.length) toast.error(`${failed.length} Druckauftrag${failed.length === 1 ? '' : 'e'} fehlgeschlagen.`);
+      else toast.success(`${data.jobs.length} Druckauftrag${data.jobs.length === 1 ? '' : 'e'} abgeschlossen.`);
+      await Promise.all([loadJobs(), loadTargets(targetType, search)]);
+    } catch (error) { toast.error(String(error)); }
+    finally { setBusy(false); }
+  }
 
-  /* ── Derived ── */
+  async function savePrinter() {
+    setBusy(true);
+    try {
+      if (printerForm.id) await labelsApi.updatePrinter(printerForm.id, printerForm);
+      else await labelsApi.createPrinter(printerForm);
+      setPrinterForm(EMPTY_PRINTER);
+      await loadPrinters();
+      toast.success('Druckerprofil gespeichert.');
+    } catch (error) { toast.error(String(error)); }
+    finally { setBusy(false); }
+  }
 
-  const selectedElem = elements.find(e => e.id === selectedId);
-  const canGenerate  = !exporting && (devices.length > 0 || cases.length > 0);
-  const currentIsDef = templates.find(t => t.id === currentTplId)?.is_default ?? false;
+  async function deletePrinter(printer: LabelPrinter) {
+    if (!printer.id || !confirm(`Drucker „${printer.name}“ löschen?`)) return;
+    try {
+      await labelsApi.deletePrinter(printer.id);
+      await loadPrinters();
+      toast.success('Druckerprofil gelöscht.');
+    } catch (error) { toast.error(String(error)); }
+  }
 
-  /* ── JSX ── */
+  function uploadImage(file?: File) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const element = { ...defaultElement('image', 'logo'), image_data: String(reader.result) };
+      setElements(current => [...current, element]);
+      setSelectedElementID(element.id);
+    };
+    reader.readAsDataURL(file);
+  }
 
   return (
-    <div className="label-designer">
-
-      {/* Header: title + template selector + save controls */}
-      <div className="ld-header">
+    <div className="label-studio">
+      <header className="ls-header">
         <div>
-          <h1 className="label-designer-header">🏷️ Label Designer</h1>
-          <p className="label-designer-sub">Etikett-Templates für Zebra-Drucker</p>
+          <p className="ls-eyebrow">WarehouseCore</p>
+          <h1>Label Studio</h1>
+          <p>Labels gestalten, erzeugen und direkt an Netzwerkdrucker senden.</p>
         </div>
-        <div className="ld-header-actions">
-          <select
-            className="input-select"
-            value={currentTplId ?? ''}
-            onChange={e => {
-              const v = e.target.value;
-              if (v === 'new') newTemplate();
-              else { const t = templates.find(t => t.id === parseInt(v)); if (t) applyTemplate(t); }
-            }}
-            style={{ minWidth: 180 }}
-          >
-            <option value="new">+ Neues Template</option>
-            {templates.map(t => (
-              <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' ★' : ''}</option>
-            ))}
-          </select>
-
-          <input
-            className="input-field"
-            value={templateName}
-            onChange={e => setTemplateName(e.target.value)}
-            placeholder="Template Name"
-            style={{ width: 180 }}
-          />
-
-          <button onClick={saveTemplate} disabled={saving} className="btn-save">
-            <Save size={15} /> {saving ? 'Speichert…' : currentTplId ? 'Aktualisieren' : 'Speichern'}
-          </button>
-
-          {currentTplId && !currentIsDef && (
-            <button onClick={setAsDefault} className="btn-add">★ Standard</button>
-          )}
-
-          {currentTplId && (
-            <button onClick={() => deleteTemplate(currentTplId)} className="btn-delete-small">
-              <Trash2 size={15} />
-            </button>
-          )}
+        <div className="ls-tabs" role="tablist">
+          <button className={tab === 'designer' ? 'active' : ''} onClick={() => setTab('designer')}><Settings2 size={16} /> Designer</button>
+          <button className={tab === 'print' ? 'active' : ''} onClick={() => setTab('print')}><Printer size={16} /> Druckcenter</button>
+          <button className={tab === 'printers' ? 'active' : ''} onClick={() => setTab('printers')}><Usb size={16} /> Drucker</button>
         </div>
+      </header>
+
+      <div className="ls-target-tabs">
+        {TARGET_TYPES.map(item => {
+          const Icon = item.icon;
+          return <button key={item.type} className={targetType === item.type ? 'active' : ''} onClick={() => setTargetType(item.type)}><Icon size={16} /> {item.label}</button>;
+        })}
       </div>
 
-      {/* Three-column grid */}
-      <div className="designer-grid">
-
-        {/* ── Left panel: tools + properties ── */}
-        <div className="designer-panel glass-dark">
-
-          <div className="panel-section">
-            <h3>Label-Größe</h3>
-            <select className="input-select w-full"
-              onChange={e => {
-                const p = ZEBRA_PRESETS[+e.target.value];
-                if (p.w > 0) { setLabelW(p.w); setLabelH(p.h); }
-              }}
-            >
-              {ZEBRA_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
-            </select>
-            <div className="input-group">
-              <input type="number" step="0.1" value={labelW}
-                onChange={e => setLabelW(+e.target.value)} className="input-field-small" />
-              <span>×</span>
-              <input type="number" step="0.1" value={labelH}
-                onChange={e => setLabelH(+e.target.value)} className="input-field-small" />
-              <span className="ld-unit">mm</span>
-            </div>
-          </div>
-
-          <div className="panel-section">
-            <h3>Elemente hinzufügen</h3>
-            <div className="button-group">
-              <button onClick={() => addElement('qrcode')}  className="btn-add"><QrCode size={15} /> QR-Code</button>
-              <button onClick={() => addElement('barcode')} className="btn-add"><Barcode size={15} /> Barcode</button>
-              <button onClick={() => addElement('text')}    className="btn-add"><Type size={15} /> Text</button>
-              <button onClick={() => addElement('image')}   className="btn-add"><ImageIcon size={15} /> Bild</button>
-            </div>
-          </div>
-
-          <div className="panel-section">
-            <div className="ld-toggle-row">
-              <span>Magnetisches Einrasten ({GRID_MM} mm)</span>
-              <button
-                className={`ld-toggle-btn${snapEnabled ? ' active' : ''}`}
-                onClick={() => setSnapEnabled(v => !v)}
-              >
-                <Grid3x3 size={13} /> {snapEnabled ? 'Ein' : 'Aus'}
-              </button>
-            </div>
-          </div>
-
-          {/* Selected-element properties */}
-          {selectedElem && (
-            <div className="panel-section">
-              <div className="section-header">
-                <h3>Eigenschaften</h3>
-                <button onClick={() => deleteElement(selectedElem.id)} className="btn-delete-small">
-                  <Trash2 size={14} />
-                </button>
+      {tab === 'designer' && (
+        <div className="ls-designer-grid">
+          <aside className="card ls-panel">
+            <section>
+              <div className="ls-section-title"><span>Template</span><button className="ls-icon-button" onClick={startNewTemplate} title="Neues Template"><Plus size={16} /></button></div>
+              <select className="input" value={activeTemplateID ?? ''} onChange={event => {
+                const template = templates.find(item => item.id === Number(event.target.value));
+                if (template) applyTemplate(template);
+              }}>
+                {typeTemplates.length === 0 && <option value="">Kein Template vorhanden</option>}
+                {typeTemplates.map(template => <option key={template.id} value={template.id}>{template.name}{template.is_default ? ' · Standard' : ''}</option>)}
+              </select>
+              <input className="input" value={templateName} onChange={event => setTemplateName(event.target.value)} placeholder="Template-Name" />
+              <label className="ls-check"><input type="checkbox" checked={isDefault} onChange={event => setIsDefault(event.target.checked)} /> Standard für {targetLabel(targetType)}</label>
+              <div className="ls-row">
+                <button className="btn-action" onClick={duplicateTemplate} disabled={!activeTemplateID}><Copy size={15} /> Duplizieren</button>
+                <button className="ls-icon-button danger" onClick={deleteTemplate} disabled={!activeTemplateID}><Trash2 size={16} /></button>
               </div>
+            </section>
 
-              <div className="property-grid">
-                <label>X (mm)</label>
-                <input type="number" step="0.5"
-                  value={Math.round(selectedElem.x * 10) / 10}
-                  onChange={e => updateEl(selectedElem.id, { x: +e.target.value })}
-                  className="input-field-small" />
-
-                <label>Y (mm)</label>
-                <input type="number" step="0.5"
-                  value={Math.round(selectedElem.y * 10) / 10}
-                  onChange={e => updateEl(selectedElem.id, { y: +e.target.value })}
-                  className="input-field-small" />
-
-                <label>Breite</label>
-                <div className="ld-ratio-row">
-                  <input type="number" step="0.5"
-                    value={Math.round(selectedElem.width * 10) / 10}
-                    onChange={e => {
-                      const nw = +e.target.value;
-                      if (selectedElem.aspect_ratio_locked && selectedElem.height > 0)
-                        updateEl(selectedElem.id, { width: nw, height: nw / (selectedElem.width / selectedElem.height) });
-                      else
-                        updateEl(selectedElem.id, { width: nw });
-                    }}
-                    className="input-field-small" />
-                  {(selectedElem.type === 'image' || selectedElem.type === 'qrcode') && (
-                    <button
-                      className={`ld-lock-btn${selectedElem.aspect_ratio_locked ? ' locked' : ''}`}
-                      onClick={() => updateEl(selectedElem.id, { aspect_ratio_locked: !selectedElem.aspect_ratio_locked })}
-                      title={selectedElem.aspect_ratio_locked ? 'Seitenverhältnis gesperrt' : 'Seitenverhältnis frei'}
-                    >
-                      {selectedElem.aspect_ratio_locked ? <Lock size={12} /> : <Unlock size={12} />}
-                    </button>
-                  )}
-                </div>
-
-                <label>Höhe</label>
-                <input type="number" step="0.5"
-                  value={Math.round(selectedElem.height * 10) / 10}
-                  onChange={e => {
-                    const nh = +e.target.value;
-                    if (selectedElem.aspect_ratio_locked && selectedElem.width > 0)
-                      updateEl(selectedElem.id, { height: nh, width: nh * (selectedElem.width / selectedElem.height) });
-                    else
-                      updateEl(selectedElem.id, { height: nh });
-                  }}
-                  className="input-field-small" />
-
-                {selectedElem.type !== 'image' && (
-                  <>
-                    <label>Inhalt</label>
-                    <select value={selectedElem.content}
-                      onChange={e => updateEl(selectedElem.id, { content: e.target.value })}
-                      className="input-field-small"
-                    >
-                      {FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </>
-                )}
-
-                {selectedElem.type === 'image' && (
-                  <>
-                    <label>Bild</label>
-                    <input type="file" accept="image/*"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(selectedElem.id, f); }}
-                      className="input-field-small"
-                      style={{ padding: '0.2rem' }}
-                    />
-                    {selectedElem.image_data && (
-                      <div style={{ gridColumn: '1/-1', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                        ✓ {selectedElem.content}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {selectedElem.type === 'text' && (
-                  <>
-                    <label>Schriftgröße</label>
-                    <input type="number" value={selectedElem.style.font_size ?? 8}
-                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, font_size: +e.target.value } })}
-                      className="input-field-small" />
-
-                    <label>Schriftart</label>
-                    <select value={selectedElem.style.font_family ?? 'Arial'}
-                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, font_family: e.target.value } })}
-                      className="input-field-small"
-                    >
-                      {['Arial', 'Ubuntu', 'Times New Roman', 'Courier New', 'Verdana'].map(f => (
-                        <option key={f} value={f}>{f}</option>
-                      ))}
-                    </select>
-
-                    <label>Stil</label>
-                    <select value={selectedElem.style.font_weight ?? 'normal'}
-                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, font_weight: e.target.value } })}
-                      className="input-field-small"
-                    >
-                      <option value="normal">Normal</option>
-                      <option value="bold">Fett</option>
-                    </select>
-
-                    <label>Farbe</label>
-                    <input type="color"
-                      value={selectedElem.style.color ?? '#000000'}
-                      onChange={e => updateEl(selectedElem.id, { style: { ...selectedElem.style, color: e.target.value } })}
-                      style={{ width: '100%', height: 32, cursor: 'pointer', border: 'none', borderRadius: 4 }}
-                    />
-                  </>
-                )}
+            <section>
+              <div className="ls-section-title"><span>Labelgröße</span></div>
+              <select className="input" value={`${labelWidth}x${labelHeight}`} onChange={event => {
+                const preset = LABEL_PRESETS.find(item => `${item.width}x${item.height}` === event.target.value);
+                if (preset) { setLabelWidth(preset.width); setLabelHeight(preset.height); }
+              }}>
+                {!LABEL_PRESETS.some(item => item.width === labelWidth && item.height === labelHeight) && <option value={`${labelWidth}x${labelHeight}`}>Benutzerdefiniert</option>}
+                {LABEL_PRESETS.map(preset => <option key={preset.label} value={`${preset.width}x${preset.height}`}>{preset.label}</option>)}
+              </select>
+              <div className="ls-dimensions">
+                <label>Breite<input className="input" type="number" min="10" step="0.1" value={labelWidth} onChange={event => setLabelWidth(Number(event.target.value))} /></label>
+                <label>Höhe<input className="input" type="number" min="10" step="0.1" value={labelHeight} onChange={event => setLabelHeight(Number(event.target.value))} /></label>
               </div>
+            </section>
+
+            <section>
+              <div className="ls-section-title"><span>Element hinzufügen</span></div>
+              <div className="ls-add-grid">
+                <button onClick={() => addElement('text')}><Type size={17} /> Text</button>
+                <button onClick={() => addElement('barcode')}><Barcode size={17} /> Barcode</button>
+                <button onClick={() => addElement('qrcode')}><QrCode size={17} /> QR-Code</button>
+                <label><ImageIcon size={17} /> Bild<input type="file" accept="image/*" onChange={event => uploadImage(event.target.files?.[0])} /></label>
+              </div>
+            </section>
+
+            <button className="btn-primary ls-full-button" onClick={saveTemplate} disabled={busy}><Save size={16} /> Template speichern</button>
+          </aside>
+
+          <main className="card ls-canvas-panel">
+            <div className="ls-canvas-toolbar">
+              <div>
+                <strong>{labelWidth} × {labelHeight} mm</strong>
+                <span>300-DPI-Vorschau</span>
+              </div>
+              <select className="input" value={previewTarget?.id ?? ''} onChange={event => {
+                const target = targets.find(item => item.id === event.target.value);
+                if (target) selectPreviewTarget(target);
+              }}>
+                {targets.map(target => <option key={target.id} value={target.id}>{target.code} · {target.name}</option>)}
+              </select>
             </div>
-          )}
-        </div>
-
-        {/* ── Center: WYSIWYG editor + canvas preview ── */}
-        <div className="designer-canvas-area glass-dark">
-          <div className="canvas-header">
-            <h3>Editor</h3>
-            <select className="input-select-small"
-              value={previewDevice?.device_id ?? ''}
-              onChange={e => {
-                const v = e.target.value;
-                if (v.startsWith('CASE-')) {
-                  const cid = parseInt(v.replace('CASE-', ''));
-                  const c   = cases.find(c => c.case_id === cid);
-                  if (c) setPreviewDevice({
-                    device_id: `CASE-${c.case_id}`, product_name: c.name,
-                    status: c.status, zone_code: c.zone_code, zone_name: c.zone_name, zone_id: c.zone_id,
-                  });
-                } else {
-                  const d = devices.find(d => d.device_id === v);
-                  if (d) setPreviewDevice(d);
-                }
-              }}
-            >
-              <optgroup label="Devices">
-                {devices.map(d => <option key={d.device_id} value={d.device_id}>{d.device_id} – {d.product_name}</option>)}
-              </optgroup>
-              <optgroup label="Cases">
-                {cases.map(c => <option key={c.case_id} value={`CASE-${c.case_id}`}>CASE-{c.case_id} – {c.name}</option>)}
-              </optgroup>
-            </select>
-            <button
-              className={`btn-toggle-preview${showPreview ? ' active' : ''}`}
-              onClick={() => setShowPreview(p => !p)}
-              title={showPreview ? 'Vorschau ausblenden' : 'Vorschau anzeigen'}
-            >
-              {showPreview ? <EyeOff size={15} /> : <Eye size={15} />}
-              <span>{showPreview ? 'Vorschau' : 'Vorschau'}</span>
-            </button>
-          </div>
-
-          <div className="ld-split">
-
-            {/* Interactive WYSIWYG editor */}
-            <div className="ld-col">
-              <p className="ld-col-label">
-                Design-Editor&nbsp;
-                <span className="ld-dims">{labelW} × {labelH} mm · {elements.length} El.</span>
-              </p>
-              <div className="ld-scroll">
-                <div
-                  className="ld-label-editor"
-                  style={{
-                    width:  edW,
-                    height: edH,
-                    backgroundSize:  snapEnabled ? `${GRID_MM * scale}px ${GRID_MM * scale}px` : undefined,
-                    backgroundImage: snapEnabled ? undefined : 'none',
-                  }}
-                  onClick={e => { if (e.target === e.currentTarget) setSelectedId(null); }}
-                >
-                  {elements.map(elem => (
+            <div className="ls-canvas-stage" onPointerDown={() => setSelectedElementID(null)}>
+              <div ref={canvasRef} className="ls-label-canvas" style={{ width: labelWidth * scale, height: labelHeight * scale }}>
+                {elements.map(element => {
+                  const content = previewFields[element.content] ?? element.content;
+                  const imageKey = `${element.type}|${content}|${element.width}|${element.height}`;
+                  const isSelected = selectedElementID === element.id;
+                  return (
                     <div
-                      key={elem.id}
-                      className={`ld-element${selectedId === elem.id ? ' ld-selected' : ''}`}
+                      key={element.id}
+                      className={`ls-design-element ${isSelected ? 'selected' : ''}`}
                       style={{
-                        left:   elem.x * scale,
-                        top:    elem.y * scale,
-                        width:  elem.width * scale,
-                        height: elem.height * scale,
-                        cursor: dragRef.current ? 'grabbing' : 'grab',
+                        left: element.x * scale, top: element.y * scale, width: element.width * scale,
+                        height: element.height * scale, transform: `rotate(${element.rotation || 0}deg)`,
+                        color: element.style.color || 'var(--color-dark)', textAlign: (element.style.alignment as 'left' | 'center' | 'right') || 'left',
+                        fontFamily: element.style.font_family || 'Arial', fontWeight: element.style.font_weight || 'normal',
+                        fontSize: Math.max(7, (element.style.font_size || 9) * scale / 3),
                       }}
-                      onMouseDown={e => onElementMouseDown(e, elem)}
+                      onPointerDown={event => beginDrag(event, element, 'move')}
                     >
-                      {elem.type === 'image' && elem.image_data && (
-                        <img src={elem.image_data} draggable={false}
-                          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
-                      )}
-                      {elem.type === 'image' && !elem.image_data && (
-                        <div className="ld-placeholder"><ImageIcon size={Math.min(elem.width * scale * 0.5, 24)} /></div>
-                      )}
-                      {elem.type === 'qrcode' && (
-                        imgCache[elem.id]
-                          ? <img src={imgCache[elem.id]} draggable={false}
-                              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
-                          : <div className="ld-placeholder"><QrCode size={Math.min(elem.width * scale * 0.65, 28)} /></div>
-                      )}
-                      {elem.type === 'barcode' && (
-                        imgCache[elem.id]
-                          ? <img src={imgCache[elem.id]} draggable={false}
-                              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
-                          : <div className="ld-barcode-preview">
-                              <div className="ld-barcode-lines" />
-                              <span className="ld-barcode-text"
-                                style={{ fontSize: Math.min(elem.height * scale * 0.28, 9) }}>
-                                {FIELD_OPTIONS.find(o => o.value === elem.content)?.label ?? elem.content}
-                              </span>
-                            </div>
-                      )}
-                      {elem.type === 'text' && (
-                        <div className="ld-text-preview" style={{
-                          fontSize:   Math.min((elem.style.font_size ?? 8) * scale * 0.52, 13),
-                          fontWeight: elem.style.font_weight ?? 'normal',
-                          fontFamily: elem.style.font_family ?? 'Arial',
-                          textAlign:  (elem.style.alignment as React.CSSProperties['textAlign']) ?? 'left',
-                        }}>
-                          {FIELD_OPTIONS.find(o => o.value === elem.content)?.label ?? elem.content}
-                        </div>
-                      )}
-
-                      {/* 8-point resize handles – only on selected element */}
-                      {selectedId === elem.id && HANDLES.map(h => (
-                        <div key={h} className="ld-handle"
-                          style={{ position: 'absolute', ...HANDLE_POS[h] }}
-                          onMouseDown={e => onHandleMouseDown(e, elem, h)} />
-                      ))}
+                      {element.type === 'text' && <span>{content}</span>}
+                      {(element.type === 'barcode' || element.type === 'qrcode') && codeImages[imageKey] && <img src={codeImages[imageKey]} alt={content} draggable={false} />}
+                      {element.type === 'image' && element.image_data && <img src={element.image_data} alt="Labelgrafik" draggable={false} />}
+                      {isSelected && <button className="ls-resize-handle" onPointerDown={event => beginDrag(event, element, 'resize')} aria-label="Größe ändern" />}
                     </div>
-                  ))}
+                  );
+                })}
+              </div>
+            </div>
+          </main>
+
+          <aside className="card ls-panel">
+            <section>
+              <div className="ls-section-title"><span>Eigenschaften</span>{selectedElement && <button className="ls-icon-button danger" onClick={() => { setElements(current => current.filter(item => item.id !== selectedElement.id)); setSelectedElementID(null); }}><Trash2 size={15} /></button>}</div>
+              {!selectedElement && <p className="ls-empty-copy">Element auf dem Label auswählen.</p>}
+              {selectedElement && (
+                <div className="ls-properties">
+                  <label>Inhalt<select className="input" value={fields.some(field => field.key === selectedElement.content) ? selectedElement.content : '__static'} onChange={event => updateElement(selectedElement.id, { content: event.target.value === '__static' ? 'Freier Text' : event.target.value })}>
+                    {fields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}
+                    <option value="__static">Freier Text</option>
+                  </select></label>
+                  {!fields.some(field => field.key === selectedElement.content) && <label>Text<input className="input" value={selectedElement.content} onChange={event => updateElement(selectedElement.id, { content: event.target.value })} /></label>}
+                  <div className="ls-dimensions">
+                    {(['x', 'y', 'width', 'height'] as const).map(key => <label key={key}>{key.toUpperCase()}<input className="input" type="number" min="0" step="0.5" value={selectedElement[key]} onChange={event => updateElement(selectedElement.id, { [key]: Number(event.target.value) })} /></label>)}
+                  </div>
+                  <label>Drehung<input className="input" type="number" step="1" value={selectedElement.rotation || 0} onChange={event => updateElement(selectedElement.id, { rotation: Number(event.target.value) })} /></label>
+                  {selectedElement.type === 'text' && <>
+                    <label>Schriftgröße<input className="input" type="number" min="4" max="72" value={selectedElement.style.font_size ?? 9} onChange={event => updateElement(selectedElement.id, { style: { ...selectedElement.style, font_size: Number(event.target.value) } })} /></label>
+                    <label>Ausrichtung<select className="input" value={selectedElement.style.alignment ?? 'left'} onChange={event => updateElement(selectedElement.id, { style: { ...selectedElement.style, alignment: event.target.value } })}><option value="left">Links</option><option value="center">Zentriert</option><option value="right">Rechts</option></select></label>
+                    <label className="ls-check"><input type="checkbox" checked={selectedElement.style.font_weight === 'bold'} onChange={event => updateElement(selectedElement.id, { style: { ...selectedElement.style, font_weight: event.target.checked ? 'bold' : 'normal' } })} /> Fett</label>
+                  </>}
                 </div>
+              )}
+            </section>
+            <section>
+              <div className="ls-section-title"><span>Elemente</span><span>{elements.length}</span></div>
+              <div className="ls-element-list">
+                {elements.map((element, index) => <button key={element.id} className={selectedElementID === element.id ? 'active' : ''} onClick={() => setSelectedElementID(element.id)}><span>{index + 1}</span>{element.type} · {fields.find(field => field.key === element.content)?.label ?? element.content}</button>)}
               </div>
-              <p className="ld-hint">Ziehen = verschieben · Ecken/Kanten ziehen = skalieren</p>
-            </div>
-
-            {/* Canvas print preview – always mounted so canvasRef stays valid */}
-            <div className="ld-col" style={{ display: showPreview ? undefined : 'none' }}>
-              <p className="ld-col-label">Druckvorschau <span className="ld-dims">300 DPI</span></p>
-              <div className="ld-scroll">
-                <canvas ref={canvasRef} className="ld-preview-canvas" />
-              </div>
-            </div>
-
-          </div>
+            </section>
+          </aside>
         </div>
+      )}
 
-        {/* ── Right panel: element list + actions ── */}
-        <div className="designer-panel glass-dark">
-
-          <div className="panel-section">
-            <h3>Elemente ({elements.length})</h3>
-            <div className="elements-list">
-              {elements.map(elem => (
-                <div
-                  key={elem.id}
-                  className={`element-item${selectedId === elem.id ? ' active' : ''}`}
-                  onClick={() => setSelectedId(elem.id)}
-                >
-                  <div className="element-icon">
-                    {elem.type === 'qrcode'  && <QrCode size={14} />}
-                    {elem.type === 'barcode' && <Barcode size={14} />}
-                    {elem.type === 'text'    && <Type size={14} />}
-                    {elem.type === 'image'   && <ImageIcon size={14} />}
-                  </div>
-                  <div className="element-info">
-                    <div className="element-type">
-                      {elem.type === 'qrcode' ? 'QR-Code'
-                        : elem.type === 'barcode' ? 'Barcode'
-                        : elem.type === 'image'   ? 'Bild'
-                        : 'Text'}
-                    </div>
-                    <div className="element-content">
-                      {Math.round(elem.x * 10) / 10},{Math.round(elem.y * 10) / 10} ·&nbsp;
-                      {Math.round(elem.width * 10) / 10}×{Math.round(elem.height * 10) / 10} mm
-                    </div>
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteElement(elem.id); }}
-                    className="btn-delete-mini"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
+      {tab === 'print' && (
+        <div className="ls-print-grid">
+          <section className="card ls-print-targets">
+            <div className="ls-print-toolbar">
+              <label className="ls-search"><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={`${targetLabel(targetType)} suchen`} /></label>
+              <button className="btn-action" onClick={() => setSelectedTargets(new Set(targets.map(target => target.id)))}><Check size={15} /> Alle</button>
+              <button className="btn-action" onClick={() => setSelectedTargets(new Set())}><X size={15} /> Keine</button>
+            </div>
+            <div className="ls-target-list">
+              {targets.map(target => (
+                <label key={target.id} className={selectedTargets.has(target.id) ? 'selected' : ''}>
+                  <input type="checkbox" checked={selectedTargets.has(target.id)} onChange={() => toggleTarget(target.id)} />
+                  <span className="ls-target-code">{target.code}</span>
+                  <span className="ls-target-name"><strong>{target.name}</strong><small>{target.subtitle || target.id}</small></span>
+                  {!target.label_path && <span className="badge-neutral">Neu</span>}
+                  {target.label_path && target.is_stale && <span className="badge-warning">Veraltet</span>}
+                  {target.label_path && !target.is_stale && <span className="badge-success">Aktuell</span>}
+                </label>
               ))}
-              {elements.length === 0 && <div className="empty-state">Keine Elemente</div>}
+              {targets.length === 0 && <p className="ls-empty-copy">Keine Einträge gefunden.</p>}
             </div>
-          </div>
+          </section>
 
-          <div className="panel-section">
-            <h3>Aktionen</h3>
-            <div className="action-buttons">
-              <button onClick={() => setPrintDialogOpen(true)} className="btn-action">
-                <Printer size={15} /> Drucken
-              </button>
-              <button onClick={generateMissingLabels} disabled={!canGenerate}
-                className="btn-action" style={{ background: 'var(--color-success)' }}>
-                <Save size={15} /> {exporting ? 'Generiere…' : 'Fehlende Labels'}
-              </button>
-              <button onClick={generateAllLabels} disabled={!canGenerate} className="btn-action btn-primary">
-                <Save size={15} /> {exporting
-                  ? `Generiere ${devices.length + cases.length}…`
-                  : `Alle (${devices.length + cases.length})`}
-              </button>
-              <button onClick={exportZip} disabled={!canGenerate} className="btn-action">
-                <Download size={15} /> ZIP Export
-              </button>
+          <aside className="card ls-print-actions">
+            <h2>Druckauftrag</h2>
+            <label>Template<select className="input" value={activeTemplateID ?? ''} onChange={event => {
+              const template = templates.find(item => item.id === Number(event.target.value));
+              if (template) applyTemplate(template);
+            }}>{typeTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+            <label>Kopien je Label<input className="input" type="number" min="1" max="1000" value={copies} onChange={event => setCopies(Math.max(1, Number(event.target.value)))} /></label>
+            <div className="ls-selection-summary"><strong>{selectedTargets.size}</strong><span>ausgewählt</span><strong>{selectedTargets.size * copies}</strong><span>Labels gesamt</span></div>
+            <button className="btn-action ls-full-button" onClick={generateSelected} disabled={busy || selectedTargets.size === 0 || !activeTemplateID}><Download size={16} /> Nur erzeugen</button>
+            <button className="btn-primary ls-full-button" onClick={browserPrint} disabled={busy || selectedTargets.size === 0 || !activeTemplateID}><Printer size={16} /> Browserdruck</button>
+            <div className="ls-divider"><span>Direktdruck</span></div>
+            <select className="input" value={selectedPrinterID} onChange={event => setSelectedPrinterID(Number(event.target.value))}>
+              <option value={0}>Drucker auswählen</option>
+              {printers.filter(printer => printer.is_active).map(printer => <option key={printer.id} value={printer.id}>{printer.name} · {printer.dpi} DPI</option>)}
+            </select>
+            <button className="btn-primary ls-full-button" onClick={directPrint} disabled={busy || selectedTargets.size === 0 || !activeTemplateID || !selectedPrinterID}><Usb size={16} /> Direkt drucken</button>
+          </aside>
+
+          <section className="card ls-jobs">
+            <div className="ls-section-title"><span>Letzte Druckaufträge</span><button className="ls-icon-button" onClick={() => loadJobs()}><RefreshCw size={15} /></button></div>
+            <div className="ls-job-table">
+              {jobs.slice(0, 20).map(job => <div key={job.id}><span>#{job.id}</span><span>{targetLabel(job.target_type)} · {job.target_id}</span><span>{job.printer_name || '—'}</span><span>{job.copies}×</span><span className={statusBadge(job.status)}>{job.status}</span></div>)}
+              {jobs.length === 0 && <p className="ls-empty-copy">Noch keine Direktdruck-Aufträge.</p>}
             </div>
-          </div>
-
+          </section>
         </div>
-      </div>
+      )}
 
-      <PrintDialog
-        open={printDialogOpen}
-        onClose={() => setPrintDialogOpen(false)}
-        devices={devices}
-        cases={cases}
-        labelW={labelW}
-        labelH={labelH}
-        onPrintSingle={printPreview}
-      />
+      {tab === 'printers' && (
+        <div className="ls-printer-grid">
+          <section className="card ls-printer-list">
+            <div className="ls-section-title"><span>Netzwerkdrucker</span><span>{printers.length}</span></div>
+            {printers.map(printer => <button key={printer.id} className={printerForm.id === printer.id ? 'active' : ''} onClick={() => setPrinterForm(printer)}><Usb size={18} /><span><strong>{printer.name}</strong><small>{printer.address}:{printer.port} · {printer.dpi} DPI</small></span>{printer.is_default && <span className="badge-info">Standard</span>}{!printer.is_active && <span className="badge-neutral">Inaktiv</span>}</button>)}
+            {printers.length === 0 && <p className="ls-empty-copy">Noch kein Druckerprofil angelegt.</p>}
+            <button className="btn-action ls-full-button" onClick={() => setPrinterForm(EMPTY_PRINTER)}><Plus size={16} /> Neues Profil</button>
+          </section>
+          <section className="card ls-printer-form">
+            <div className="ls-section-title"><span>{printerForm.id ? 'Drucker bearbeiten' : 'Drucker hinzufügen'}</span>{printerForm.id && <button className="ls-icon-button danger" onClick={() => deletePrinter(printerForm)}><Trash2 size={16} /></button>}</div>
+            <label>Name<input className="input" value={printerForm.name} onChange={event => setPrinterForm(current => ({ ...current, name: event.target.value }))} placeholder="Zebra Lager" /></label>
+            <label>Treiber<select className="input" value={printerForm.driver} onChange={event => setPrinterForm(current => ({ ...current, driver: event.target.value as 'zpl_tcp' }))}><option value="zpl_tcp">Zebra ZPL über TCP</option></select></label>
+            <div className="ls-address-row"><label>IP / Hostname<input className="input" value={printerForm.address} onChange={event => setPrinterForm(current => ({ ...current, address: event.target.value }))} placeholder="192.168.1.50" /></label><label>Port<input className="input" type="number" value={printerForm.port} onChange={event => setPrinterForm(current => ({ ...current, port: Number(event.target.value) }))} /></label></div>
+            <label>Auflösung<select className="input" value={printerForm.dpi} onChange={event => setPrinterForm(current => ({ ...current, dpi: Number(event.target.value) as 203 | 300 | 600 }))}><option value={203}>203 DPI</option><option value={300}>300 DPI</option><option value={600}>600 DPI</option></select></label>
+            <label className="ls-check"><input type="checkbox" checked={printerForm.is_active} onChange={event => setPrinterForm(current => ({ ...current, is_active: event.target.checked }))} /> Aktiv</label>
+            <label className="ls-check"><input type="checkbox" checked={printerForm.is_default} onChange={event => setPrinterForm(current => ({ ...current, is_default: event.target.checked }))} /> Als Standarddrucker verwenden</label>
+            <button className="btn-primary ls-full-button" onClick={savePrinter} disabled={busy || !printerForm.name.trim() || !printerForm.address.trim()}><Save size={16} /> Druckerprofil speichern</button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

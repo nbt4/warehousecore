@@ -553,8 +553,56 @@ export interface LabelTemplate {
   height: number;
   template_json: string;
   is_default: boolean;
+  target_type: LabelTargetType;
+  revision: number;
   created_at?: string;
   updated_at?: string;
+}
+
+export type LabelTargetType = 'device' | 'product' | 'case' | 'zone';
+
+export interface LabelFieldDefinition {
+  key: string;
+  label: string;
+}
+
+export interface LabelTarget {
+  target_type: LabelTargetType;
+  id: string;
+  code: string;
+  name: string;
+  subtitle: string;
+  label_path?: string;
+  is_stale: boolean;
+  fields?: Record<string, string>;
+}
+
+export interface LabelPrinter {
+  id?: number;
+  name: string;
+  driver: 'zpl_tcp';
+  address: string;
+  port: number;
+  dpi: 203 | 300 | 600;
+  is_default: boolean;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LabelPrintJob {
+  id: number;
+  target_type: LabelTargetType;
+  target_id: string;
+  template_id?: number;
+  printer_id?: number;
+  printer_name?: string;
+  copies: number;
+  status: 'queued' | 'printing' | 'completed' | 'failed';
+  label_path?: string;
+  error_message?: string;
+  created_at: string;
+  completed_at?: string;
 }
 
 export interface LabelElement {
@@ -565,6 +613,7 @@ export interface LabelElement {
   height: number;
   rotation: number;
   content: string;
+  image_data?: string;
   style: {
     font_size?: number;
     font_weight?: string;
@@ -593,6 +642,21 @@ export const labelsApi = {
     api.post<{ label_path: string; message: string }>('/labels/save', { device_id: deviceId, image_data: imageData }),
   saveCaseLabel: (caseId: number, imageData: string) =>
     api.post<{ label_path: string; message: string }>('/labels/save-case', { case_id: caseId, image_data: imageData }),
+  getTargets: (type: LabelTargetType, search = '', limit = 250) =>
+    api.get<LabelTarget[]>('/labels/targets', { params: { type, search, limit } }),
+  getTarget: (type: LabelTargetType, id: string) =>
+    api.get<LabelTarget>(`/labels/targets/${type}/${encodeURIComponent(id)}`),
+  getFields: (type: LabelTargetType) =>
+    api.get<LabelFieldDefinition[]>(`/labels/fields/${type}`),
+  renderTarget: (payload: { target_type: LabelTargetType; target_id: string; template_id: number; save: boolean }) =>
+    api.post<{ target: LabelTarget; template: LabelTemplate; elements: LabelElement[]; image_data: string; label_path?: string }>('/labels/render', payload),
+  getPrinters: () => api.get<LabelPrinter[]>('/labels/printers'),
+  createPrinter: (printer: LabelPrinter) => api.post<LabelPrinter>('/labels/printers', printer),
+  updatePrinter: (id: number, printer: LabelPrinter) => api.put<LabelPrinter>(`/labels/printers/${id}`, printer),
+  deletePrinter: (id: number) => api.delete(`/labels/printers/${id}`),
+  printDirect: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; printer_id: number; copies: number }) =>
+    api.post<{ jobs: LabelPrintJob[] }>('/labels/print', payload),
+  getPrintJobs: (limit = 100) => api.get<LabelPrintJob[]>('/labels/print-jobs', { params: { limit } }),
 };
 
 // Admin Settings API

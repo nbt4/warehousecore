@@ -151,6 +151,9 @@ func main() {
 	if err := handlers.EnsureCableInventorySchema(); err != nil {
 		log.Fatalf("Failed to initialize cable inventory schema: %v", err)
 	}
+	if err := handlers.EnsureLabelStudioSchema(); err != nil {
+		log.Fatalf("Failed to initialize label studio schema: %v", err)
+	}
 
 	// Set initial DB connection gauge
 	if sqlDB := repository.GetSQLDB(); sqlDB != nil {
@@ -282,17 +285,27 @@ func main() {
 	api.HandleFunc("/led/locate", handlers.LocateBin).Methods("POST")
 
 	// Label generation endpoints
-	api.HandleFunc("/labels/qrcode", handlers.GenerateQRCode).Methods("POST")
-	api.HandleFunc("/labels/barcode", handlers.GenerateBarcode).Methods("POST")
-	api.HandleFunc("/labels/templates", handlers.GetLabelTemplates).Methods("GET")
-	api.HandleFunc("/labels/templates", handlers.CreateLabelTemplate).Methods("POST")
-	api.HandleFunc("/labels/templates/{id}", handlers.GetLabelTemplate).Methods("GET")
-	api.HandleFunc("/labels/templates/{id}", handlers.UpdateLabelTemplate).Methods("PUT")
-	api.HandleFunc("/labels/templates/{id}", handlers.DeleteLabelTemplate).Methods("DELETE")
-	api.HandleFunc("/labels/device/{device_id}", handlers.GenerateDeviceLabel).Methods("POST")
-	api.HandleFunc("/labels/case/{case_id}", handlers.GenerateCaseLabel).Methods("POST")
-	api.HandleFunc("/labels/save", handlers.SaveDeviceLabel).Methods("POST")
-	api.HandleFunc("/labels/save-case", handlers.SaveCaseLabel).Methods("POST")
+	protected.HandleFunc("/labels/qrcode", handlers.GenerateQRCode).Methods("POST")
+	protected.HandleFunc("/labels/barcode", handlers.GenerateBarcode).Methods("POST")
+	protected.HandleFunc("/labels/templates", handlers.GetLabelTemplates).Methods("GET")
+	protected.HandleFunc("/labels/templates", handlers.CreateLabelTemplate).Methods("POST")
+	protected.HandleFunc("/labels/templates/{id}", handlers.GetLabelTemplate).Methods("GET")
+	protected.HandleFunc("/labels/templates/{id}", handlers.UpdateLabelTemplate).Methods("PUT")
+	protected.HandleFunc("/labels/templates/{id}", handlers.DeleteLabelTemplate).Methods("DELETE")
+	protected.HandleFunc("/labels/device/{device_id}", handlers.GenerateDeviceLabel).Methods("POST")
+	protected.HandleFunc("/labels/case/{case_id}", handlers.GenerateCaseLabel).Methods("POST")
+	protected.HandleFunc("/labels/save", handlers.SaveDeviceLabel).Methods("POST")
+	protected.HandleFunc("/labels/save-case", handlers.SaveCaseLabel).Methods("POST")
+	protected.HandleFunc("/labels/targets", handlers.ListLabelTargets).Methods("GET")
+	protected.HandleFunc("/labels/targets/{target_type}/{target_id}", handlers.GetLabelTarget).Methods("GET")
+	protected.HandleFunc("/labels/fields/{target_type}", handlers.GetLabelFields).Methods("GET")
+	protected.HandleFunc("/labels/render", handlers.RenderTargetLabel).Methods("POST")
+	protected.HandleFunc("/labels/printers", handlers.ListLabelPrinters).Methods("GET")
+	protected.HandleFunc("/labels/printers", handlers.CreateLabelPrinter).Methods("POST")
+	protected.HandleFunc("/labels/printers/{id}", handlers.UpdateLabelPrinter).Methods("PUT")
+	protected.HandleFunc("/labels/printers/{id}", handlers.DeleteLabelPrinter).Methods("DELETE")
+	protected.HandleFunc("/labels/print", handlers.PrintLabels).Methods("POST")
+	protected.HandleFunc("/labels/print-jobs", handlers.ListLabelPrintJobs).Methods("GET")
 
 	// Admin routes (RBAC protected)
 	// Read-only admin routes (admin or manager)

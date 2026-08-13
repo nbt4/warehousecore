@@ -9,7 +9,7 @@
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Zonenmanagement** — Physische Lagerzonen mit Barcode-Kennzeichnung, Gerätezuweisung, Produktbestand und Lagerplatz-Optimierung
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
-- **Etikettendruck** — Chromium-Headless-basiertes Rendering von Geräte- und Case-Labels als PNG. QR-Code- und Barcode-Generierung mit anpassbaren Templates
+- **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Produkt-/Kabel-, Case- und Zonenlabels. Zieltypspezifische Standardtemplates, revisionsbasierte Neugenerierung, Browserdruck und protokollierter Zebra-ZPL-Direktdruck über TCP
 - **Barcode-Scanning** — Scan-Endpunkt für schnelle Geräteidentifikation und Warenbewegungen im Lager
 - **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
@@ -194,6 +194,19 @@ Vorhandene Einträge aus der bisherigen `cables`-Tabelle werden beim ersten Star
 | `POST`   | `/api/v1/labels/case/:case_id`          | Kisten-Label generieren (🔒)              |
 | `POST`   | `/api/v1/labels/save`                   | Geräte-Label speichern (🔒)               |
 | `POST`   | `/api/v1/labels/save-case`              | Kisten-Label speichern (🔒)               |
+| `GET`    | `/api/v1/labels/targets`                | Druckbare Ziele nach Typ auflisten (🔒)   |
+| `GET`    | `/api/v1/labels/fields/:target_type`    | Datenfelder eines Labeltyps (🔒)          |
+| `POST`   | `/api/v1/labels/render`                 | Label serverseitig rendern/speichern (🔒) |
+| `GET`    | `/api/v1/labels/printers`               | Druckerprofile auflisten (🔒)             |
+| `POST`   | `/api/v1/labels/printers`               | Zebra-Netzwerkdrucker anlegen (🔒)        |
+| `PUT`    | `/api/v1/labels/printers/:id`           | Druckerprofil aktualisieren (🔒)          |
+| `DELETE` | `/api/v1/labels/printers/:id`           | Druckerprofil löschen (🔒)                |
+| `POST`   | `/api/v1/labels/print`                  | Labels direkt als ZPL drucken (🔒)        |
+| `GET`    | `/api/v1/labels/print-jobs`             | Druckaufträge und Fehler abrufen (🔒)     |
+
+Das Label Studio verwendet für Geräte, Produkte/Kabel, Cases und Lagerzonen jeweils getrennte Templates und ein eigenes Standardtemplate. Vorhandene Geräte- und Case-Labeldateien werden in `label_assets` übernommen. Ein Label gilt als veraltet, sobald sich sein Quelldatensatz oder die Template-Revision ändert. Der Browserdruck funktioniert ohne Druckerkonfiguration. Für Direktdruck wird im Studio ein aktiver Zebra-kompatibler Netzwerkdrucker mit IP/Hostname, TCP-Port (üblicherweise `9100`) und Auflösung (`203`, `300` oder `600` DPI) hinterlegt.
+
+Die Migration `034_label_studio_and_direct_print.sql` ergänzt Templates um Zieltyp und Revision und legt `label_assets`, `label_printers` sowie `label_print_jobs` an. Sie wird beim WarehouseCore-Start idempotent angewendet.
 
 🔒 = Authentifizierung via `session_id` Cookie erforderlich
 
