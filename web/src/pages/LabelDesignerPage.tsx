@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Barcode, Boxes, BriefcaseBusiness, Check, Copy, Download, Image as ImageIcon,
   MapPin, Maximize2, Minus, Plus, Printer, QrCode, RefreshCw, Save, Search, Settings2,
@@ -21,6 +21,12 @@ type StudioTab = 'designer' | 'print' | 'printers';
 type DragMode = 'move' | 'resize';
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 type DesignElement = LabelElement & { id: string };
+type GenerationState = {
+  status: 'running' | 'success' | 'error';
+  completed: number;
+  total: number;
+  message: string;
+};
 
 const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
@@ -88,6 +94,15 @@ function targetLabel(type: LabelTargetType) {
   return TARGET_TYPES.find(item => item.type === type)?.label ?? type;
 }
 
+function requestErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: { error?: string } } }).response;
+    if (response?.data?.error) return response.data.error;
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 function openBrowserPrint(images: string[], width: number, height: number, copies: number, win: Window) {
   win.document.title = 'WarehouseCore Labels';
   const style = win.document.createElement('style');
@@ -132,6 +147,7 @@ export default function LabelDesignerPage() {
   const [selectedPrinterID, setSelectedPrinterID] = useState(0);
   const [copies, setCopies] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [generationState, setGenerationState] = useState<GenerationState | null>(null);
   const [codeImages, setCodeImages] = useState<Record<string, string>>({});
   const [canvasZoom, setCanvasZoom] = useState(100);
   const [stageSize, setStageSize] = useState({ width: 620, height: 540 });
@@ -222,7 +238,8 @@ export default function LabelDesignerPage() {
     return () => { cancelled = true; };
   }, [codeImages, elements, previewFields]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (tab !== 'designer') return;
     const stage = stageRef.current;
     if (!stage) return;
     const updateSize = () => setStageSize({ width: stage.clientWidth, height: stage.clientHeight });
@@ -230,7 +247,7 @@ export default function LabelDesignerPage() {
     const observer = new ResizeObserver(updateSize);
     observer.observe(stage);
     return () => observer.disconnect();
-  }, []);
+  }, [tab]);
 
   function applyTemplate(template: LabelTemplate) {
     let parsed: LabelElement[] = [];
@@ -371,17 +388,45 @@ export default function LabelDesignerPage() {
   }
 
   async function generateSelected() {
-    if (!activeTemplateID || selectedTargets.size === 0) return;
+    if (!activeTemplateID || selectedTargets.size === 0) {
+      const message = !activeTemplateID
+        ? 'Bitte zuerst ein Template auswählen.'
+        : 'Bitte mindestens einen Eintrag auswählen.';
+      setGenerationState({ status: 'error', completed: 0, total: 0, message });
+      toast.error(message);
+      return;
+    }
+    const targetIDs = Array.from(selectedTargets);
+    const total = targetIDs.length;
     setBusy(true);
+    setGenerationState({ status: 'running', completed: 0, total, message: `${total} Labels werden vorbereitet …` });
+    toast.info(`${total} Label${total === 1 ? '' : 's'} werden erzeugt.`);
     let completed = 0;
     try {
-      for (const targetID of selectedTargets) {
+      for (const targetID of targetIDs) {
+        const target = targets.find(item => item.id === targetID);
+        setGenerationState({
+          status: 'running', completed, total,
+          message: `${target?.code ?? targetID} wird erzeugt …`,
+        });
         await labelsApi.renderTarget({ target_type: targetType, target_id: targetID, template_id: activeTemplateID, save: true });
         completed += 1;
+        setGenerationState({
+          status: 'running', completed, total,
+          message: `${completed} von ${total} Labels erzeugt.`,
+        });
       }
-      await loadTargets(targetType, search);
-      toast.success(`${completed} Label${completed === 1 ? '' : 's'} erzeugt.`);
-    } catch (error) { toast.error(`Nach ${completed} Labels abgebrochen: ${String(error)}`); }
+      const message = `${completed} Label${completed === 1 ? '' : 's'} erfolgreich erzeugt.`;
+      setGenerationState({ status: 'success', completed, total, message });
+      toast.success(message);
+      await loadTargets(targetType, search).catch(error => {
+        toast.error(`Liste konnte nicht aktualisiert werden: ${requestErrorMessage(error, 'Unbekannter Fehler')}`);
+      });
+    } catch (error) {
+      const message = `Nach ${completed} von ${total} Labels abgebrochen: ${requestErrorMessage(error, 'Unbekannter Fehler')}`;
+      setGenerationState({ status: 'error', completed, total, message });
+      toast.error(message);
+    }
     finally { setBusy(false); }
   }
 
@@ -475,7 +520,7 @@ export default function LabelDesignerPage() {
       <div className="ls-target-tabs">
         {TARGET_TYPES.map(item => {
           const Icon = item.icon;
-          return <button key={item.type} className={targetType === item.type ? 'active' : ''} onClick={() => setTargetType(item.type)}><Icon size={16} /> {item.label}</button>;
+          return <button key={item.type} className={targetType === item.type ? 'active' : ''} onClick={() => { setTargetType(item.type); setGenerationState(null); }}><Icon size={16} /> {item.label}</button>;
         })}
       </div>
 
@@ -650,7 +695,39 @@ export default function LabelDesignerPage() {
             }}>{typeTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
             <label>Kopien je Label<input className="input" type="number" min="1" max="1000" value={copies} onChange={event => setCopies(Math.max(1, Number(event.target.value)))} /></label>
             <div className="ls-selection-summary"><strong>{selectedTargets.size}</strong><span>ausgewählt</span><strong>{selectedTargets.size * copies}</strong><span>Labels gesamt</span></div>
-            <button className="btn-action ls-full-button" onClick={generateSelected} disabled={busy || selectedTargets.size === 0 || !activeTemplateID}><Download size={16} /> Nur erzeugen</button>
+            {generationState && (
+              <div className={`ls-generation-status ${generationState.status}`} role="status" aria-live="polite">
+                <div className="ls-generation-heading">
+                  {generationState.status === 'running' && <RefreshCw className="ls-spin" size={16} />}
+                  {generationState.status === 'success' && <Check size={16} />}
+                  {generationState.status === 'error' && <X size={16} />}
+                  <strong>{generationState.status === 'running' ? 'Labels werden erzeugt' : generationState.status === 'success' ? 'Erzeugung abgeschlossen' : 'Erzeugung fehlgeschlagen'}</strong>
+                </div>
+                {generationState.total > 0 && (
+                  <div
+                    className="ls-generation-progress"
+                    role="progressbar"
+                    aria-label="Fortschritt der Label-Erzeugung"
+                    aria-valuemin={0}
+                    aria-valuemax={generationState.total}
+                    aria-valuenow={generationState.completed}
+                  >
+                    <span style={{ width: `${generationState.completed / generationState.total * 100}%` }} />
+                  </div>
+                )}
+                <span>{generationState.message}</span>
+              </div>
+            )}
+            <button
+              className="btn-action ls-full-button"
+              onClick={generateSelected}
+              disabled={busy}
+              aria-disabled={!activeTemplateID || selectedTargets.size === 0}
+            >
+              {generationState?.status === 'running'
+                ? <><RefreshCw className="ls-spin" size={16} /> {generationState.completed}/{generationState.total} erzeugt</>
+                : <><Download size={16} /> Nur erzeugen</>}
+            </button>
             <button className="btn-primary ls-full-button" onClick={browserPrint} disabled={busy || selectedTargets.size === 0 || !activeTemplateID}><Printer size={16} /> Browserdruck</button>
             <div className="ls-divider"><span>Direktdruck</span></div>
             <select className="input" value={selectedPrinterID} onChange={event => setSelectedPrinterID(Number(event.target.value))}>

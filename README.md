@@ -196,7 +196,7 @@ Vorhandene Einträge aus der bisherigen `cables`-Tabelle werden beim ersten Star
 | `POST`   | `/api/v1/labels/save-case`              | Kisten-Label speichern (🔒)               |
 | `GET`    | `/api/v1/labels/targets`                | Druckbare Ziele nach Typ auflisten (🔒)   |
 | `GET`    | `/api/v1/labels/fields/:target_type`    | Datenfelder eines Labeltyps (🔒)          |
-| `POST`   | `/api/v1/labels/render`                 | Label serverseitig rendern/speichern (🔒) |
+| `POST`   | `/api/v1/labels/render`                 | Label serverseitig rendern/speichern; das Druckcenter zeigt dabei Fortschritt und Ergebnis direkt an (🔒) |
 | `GET`    | `/api/v1/labels/printers`               | Druckerprofile auflisten (🔒)             |
 | `POST`   | `/api/v1/labels/printers`               | Zebra-Netzwerkdrucker anlegen (🔒)        |
 | `PUT`    | `/api/v1/labels/printers/:id`           | Druckerprofil aktualisieren (🔒)          |
