@@ -60,6 +60,9 @@ func TestRenderLabelPDFWithChromium(t *testing.T) {
 	}
 	const onePixelPNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 	html := buildLabelPDFHTML([]string{onePixelPNG}, 51, 25, 1)
+	// A real multi-label export can easily exceed the size Chromium accepts in
+	// a data URL. Keep this document deliberately large to cover that failure.
+	html += "<!--" + strings.Repeat("x", 8<<20) + "-->"
 	pdfData, err := (&LabelService{}).renderHTMLToPDF(html, 51, 25)
 	if err != nil {
 		t.Fatal(err)

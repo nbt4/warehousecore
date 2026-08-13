@@ -690,7 +690,20 @@ func (s *LabelService) renderHTMLToPDF(htmlContent string, widthMM, heightMM flo
 
 	var pdfData []byte
 	err := chromedp.Run(taskCtx,
-		chromedp.Navigate("data:text/html;base64,"+base64.StdEncoding.EncodeToString([]byte(htmlContent))),
+		chromedp.Navigate("about:blank"),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			frameTree, err := page.GetFrameTree().Do(ctx)
+			if err != nil {
+				return fmt.Errorf("load PDF frame: %w", err)
+			}
+			if frameTree == nil || frameTree.Frame == nil {
+				return fmt.Errorf("load PDF frame: main frame is missing")
+			}
+			if err := page.SetDocumentContent(frameTree.Frame.ID, htmlContent).Do(ctx); err != nil {
+				return fmt.Errorf("set PDF document: %w", err)
+			}
+			return nil
+		}),
 		chromedp.Poll(`window.pdfReady === true`, nil, chromedp.WithPollingInterval(25*time.Millisecond)),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
