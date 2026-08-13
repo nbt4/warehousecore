@@ -6,7 +6,7 @@ import (
 	"warehousecore/internal/repository"
 )
 
-const labelStudioSchemaVersion = "034_label_studio_and_direct_print"
+const labelStudioSchemaVersion = "035_cable_labels_and_pdf_export"
 
 // EnsureLabelStudioSchema installs the target-aware label and direct-print schema.
 // It is idempotent so deployments do not depend on an external migration runner.
@@ -83,8 +83,12 @@ func EnsureLabelStudioSchema() error {
 		 SELECT 'Standard Geräte-Label', 'Geräte-Label 51x25mm', 51, 25, '[{"type":"qrcode","x":2,"y":2,"width":21,"height":21,"rotation":0,"content":"code","style":{"format":"qr"}},{"type":"text","x":25,"y":3,"width":24,"height":7,"rotation":0,"content":"product_name","style":{"font_size":9,"font_weight":"bold","font_family":"Arial","color":"#000000","alignment":"left"}},{"type":"text","x":25,"y":13,"width":24,"height":5,"rotation":0,"content":"device_id","style":{"font_size":8,"font_weight":"normal","font_family":"Arial","color":"#000000","alignment":"left"}}]', TRUE, 'device', 1
 		 WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE target_type = 'device' AND is_default)
 		 ON CONFLICT (name) DO UPDATE SET target_type = 'device', is_default = TRUE`,
+		`UPDATE label_templates
+		 SET name = 'Standard Kabel-Label', description = 'Kabel- und Mengenlabel 51x25mm'
+		 WHERE target_type = 'product' AND name = 'Standard Produkt-Label'
+		 AND NOT EXISTS (SELECT 1 FROM label_templates WHERE name = 'Standard Kabel-Label')`,
 		`INSERT INTO label_templates (name, description, width, height, template_json, is_default, target_type, revision)
-		 SELECT 'Standard Produkt-Label', 'Artikel- und Mengenlabel 51x25mm', 51, 25, '[{"type":"barcode","x":2,"y":2,"width":47,"height":11,"rotation":0,"content":"code","style":{"format":"code128"}},{"type":"text","x":2,"y":14,"width":47,"height":5,"rotation":0,"content":"name","style":{"font_size":9,"font_weight":"bold","font_family":"Arial","color":"#000000","alignment":"left"}},{"type":"text","x":2,"y":20,"width":47,"height":4,"rotation":0,"content":"code","style":{"font_size":7,"font_weight":"normal","font_family":"Arial","color":"#000000","alignment":"left"}}]', TRUE, 'product', 1
+		 SELECT 'Standard Kabel-Label', 'Kabel- und Mengenlabel 51x25mm', 51, 25, '[{"type":"barcode","x":2,"y":2,"width":47,"height":11,"rotation":0,"content":"code","style":{"format":"code128"}},{"type":"text","x":2,"y":14,"width":47,"height":5,"rotation":0,"content":"name","style":{"font_size":9,"font_weight":"bold","font_family":"Arial","color":"#000000","alignment":"left"}},{"type":"text","x":2,"y":20,"width":47,"height":4,"rotation":0,"content":"code","style":{"font_size":7,"font_weight":"normal","font_family":"Arial","color":"#000000","alignment":"left"}}]', TRUE, 'product', 1
 		 WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE target_type = 'product' AND is_default)
 		 ON CONFLICT (name) DO UPDATE SET target_type = 'product', is_default = TRUE`,
 		`INSERT INTO label_templates (name, description, width, height, template_json, is_default, target_type, revision)
@@ -102,6 +106,9 @@ func EnsureLabelStudioSchema() error {
 		if _, err := tx.Exec(statement); err != nil {
 			return fmt.Errorf("apply label studio migration: %w", err)
 		}
+	}
+	if _, err := tx.Exec(`INSERT INTO warehouse_schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING`, labelStudioSchemaVersion); err != nil {
+		return fmt.Errorf("record label studio migration: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

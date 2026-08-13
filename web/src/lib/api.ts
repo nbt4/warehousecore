@@ -650,6 +650,10 @@ export const labelsApi = {
     api.get<LabelFieldDefinition[]>(`/labels/fields/${type}`),
   renderTarget: (payload: { target_type: LabelTargetType; target_id: string; template_id: number; save: boolean }) =>
     api.post<{ target: LabelTarget; template: LabelTemplate; elements: LabelElement[]; image_data: string; label_path?: string }>('/labels/render', payload),
+  renderTargets: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; save: boolean; include_images: boolean }) =>
+    api.post<{ results: Array<{ target: LabelTarget; template: LabelTemplate; elements: LabelElement[]; image_data: string; label_path?: string }> }>('/labels/render-batch', payload),
+  exportPDF: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; copies: number }) =>
+    api.post<Blob>('/labels/pdf', payload, { responseType: 'blob' }),
   getPrinters: () => api.get<LabelPrinter[]>('/labels/printers'),
   createPrinter: (printer: LabelPrinter) => api.post<LabelPrinter>('/labels/printers', printer),
   updatePrinter: (id: number, printer: LabelPrinter) => api.put<LabelPrinter>(`/labels/printers/${id}`, printer),

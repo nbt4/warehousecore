@@ -300,6 +300,8 @@ func main() {
 	protected.HandleFunc("/labels/targets/{target_type}/{target_id}", handlers.GetLabelTarget).Methods("GET")
 	protected.HandleFunc("/labels/fields/{target_type}", handlers.GetLabelFields).Methods("GET")
 	protected.HandleFunc("/labels/render", handlers.RenderTargetLabel).Methods("POST")
+	protected.HandleFunc("/labels/render-batch", handlers.RenderTargetLabels).Methods("POST")
+	protected.HandleFunc("/labels/pdf", handlers.ExportLabelsPDF).Methods("POST")
 	protected.HandleFunc("/labels/printers", handlers.ListLabelPrinters).Methods("GET")
 	protected.HandleFunc("/labels/printers", handlers.CreateLabelPrinter).Methods("POST")
 	protected.HandleFunc("/labels/printers/{id}", handlers.UpdateLabelPrinter).Methods("PUT")

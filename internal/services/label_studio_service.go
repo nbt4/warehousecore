@@ -65,6 +65,21 @@ type LabelPrintRequest struct {
 	Copies     int      `json:"copies"`
 }
 
+type LabelBatchRequest struct {
+	TargetType   string   `json:"target_type"`
+	TargetIDs    []string `json:"target_ids"`
+	TemplateID   int      `json:"template_id"`
+	Save         bool     `json:"save"`
+	IncludeImage bool     `json:"include_images"`
+}
+
+type LabelPDFRequest struct {
+	TargetType string   `json:"target_type"`
+	TargetIDs  []string `json:"target_ids"`
+	TemplateID int      `json:"template_id"`
+	Copies     int      `json:"copies"`
+}
+
 func ValidLabelTargetType(targetType string) bool {
 	switch targetType {
 	case LabelTargetDevice, LabelTargetProduct, LabelTargetCase, LabelTargetZone:
@@ -90,12 +105,18 @@ func LabelFields(targetType string) []LabelFieldDefinition {
 		)
 	case LabelTargetProduct:
 		return append(common,
-			LabelFieldDefinition{Key: "product_id", Label: "Produkt-ID"},
-			LabelFieldDefinition{Key: "product_name", Label: "Produktname"},
-			LabelFieldDefinition{Key: "generic_barcode", Label: "Artikelbarcode"},
+			LabelFieldDefinition{Key: "cable_id", Label: "Kabel-ID"},
+			LabelFieldDefinition{Key: "product_id", Label: "Artikel-ID"},
+			LabelFieldDefinition{Key: "product_name", Label: "Kabelname"},
+			LabelFieldDefinition{Key: "generic_barcode", Label: "Kabelbarcode"},
 			LabelFieldDefinition{Key: "stock_quantity", Label: "Bestand"},
 			LabelFieldDefinition{Key: "unit", Label: "Einheit"},
-			LabelFieldDefinition{Key: "category", Label: "Kategorie"},
+			LabelFieldDefinition{Key: "cable_type", Label: "Kabeltyp"},
+			LabelFieldDefinition{Key: "connector_a", Label: "Stecker A"},
+			LabelFieldDefinition{Key: "connector_b", Label: "Stecker B"},
+			LabelFieldDefinition{Key: "length_m", Label: "Länge (m)"},
+			LabelFieldDefinition{Key: "cross_section_mm2", Label: "Querschnitt (mm²)"},
+			LabelFieldDefinition{Key: "tracking_mode", Label: "Bestandsführung"},
 			LabelFieldDefinition{Key: "description", Label: "Beschreibung"},
 		)
 	case LabelTargetCase:
@@ -147,12 +168,17 @@ func (s *LabelService) ListTargets(targetType, search string, limit int) ([]Labe
 		ORDER BY p.name NULLS LAST, d.deviceid LIMIT $2`
 	case LabelTargetProduct:
 		query = `SELECT p.productid::text, COALESCE(NULLIF(p.generic_barcode, ''), 'PROD-' || LPAD(p.productid::text, 6, '0')), p.name,
-			COALESCE(c.name, ''), COALESCE(a.label_path, ''), COALESCE(p.updated_at, p.created_at), a.generated_at, a.source_updated_at,
+			CONCAT_WS(' · ', ct.name, cp.length_m::text || ' m', COALESCE(NULLIF(ca.abbreviation, ''), ca.name) || ' ↔ ' || COALESCE(NULLIF(cb.abbreviation, ''), cb.name)),
+			COALESCE(a.label_path, ''), GREATEST(COALESCE(p.updated_at, p.created_at), cp.updated_at), a.generated_at, a.source_updated_at,
 			COALESCE(a.template_revision, 0), COALESCE(t.revision, 0)
-		FROM products p LEFT JOIN categories c ON c.categoryid = p.categoryid
+		FROM cable_products cp JOIN products p ON p.productid = cp.product_id
+		JOIN cable_types ct ON ct.cable_typesid = cp.cable_type_id
+		JOIN cable_connectors ca ON ca.cable_connectorsid = cp.connector_a_id
+		JOIN cable_connectors cb ON cb.cable_connectorsid = cp.connector_b_id
 		LEFT JOIN label_assets a ON a.target_type = 'product' AND a.target_id = p.productid::text
 		LEFT JOIN label_templates t ON t.target_type = 'product' AND t.is_default
-		WHERE ($1 = '' OR p.name ILIKE '%' || $1 || '%' OR COALESCE(p.generic_barcode, '') ILIKE '%' || $1 || '%')
+		WHERE ($1 = '' OR p.name ILIKE '%' || $1 || '%' OR COALESCE(p.generic_barcode, '') ILIKE '%' || $1 || '%'
+			OR ct.name ILIKE '%' || $1 || '%' OR ca.name ILIKE '%' || $1 || '%' OR cb.name ILIKE '%' || $1 || '%')
 		ORDER BY p.name LIMIT $2`
 	case LabelTargetCase:
 		query = `SELECT c.caseid::text, COALESCE(NULLIF(c.barcode, ''), 'CASE-' || c.caseid::text), c.name,
@@ -218,14 +244,21 @@ func (s *LabelService) GetTarget(targetType, targetID string) (LabelTarget, erro
 		LEFT JOIN label_assets a ON a.target_type = 'device' AND a.target_id = d.deviceid WHERE d.deviceid = $1`
 	case LabelTargetProduct:
 		query = `SELECT jsonb_build_object(
-			'product_id', p.productid::text, 'code', COALESCE(NULLIF(p.generic_barcode, ''), 'PROD-' || LPAD(p.productid::text, 6, '0')),
+			'cable_id', cp.cable_product_id::text, 'product_id', p.productid::text,
+			'code', COALESCE(NULLIF(p.generic_barcode, ''), 'PROD-' || LPAD(p.productid::text, 6, '0')),
 			'barcode', COALESCE(NULLIF(p.generic_barcode, ''), 'PROD-' || LPAD(p.productid::text, 6, '0')),
 			'generic_barcode', COALESCE(NULLIF(p.generic_barcode, ''), 'PROD-' || LPAD(p.productid::text, 6, '0')),
 			'name', p.name, 'product_name', p.name, 'stock_quantity', COALESCE(p.stock_quantity::text, '0'),
-			'unit', COALESCE(ct.abbreviation, ''), 'category', COALESCE(c.name, ''), 'description', COALESCE(p.description, ''))::text,
-			COALESCE(p.updated_at, p.created_at), COALESCE(a.label_path, '')
-		FROM products p LEFT JOIN count_types ct ON ct.count_type_id = p.count_type_id
-		LEFT JOIN categories c ON c.categoryid = p.categoryid
+			'unit', COALESCE(cnt.abbreviation, ''), 'cable_type', typ.name,
+			'connector_a', COALESCE(NULLIF(ca.abbreviation, ''), ca.name), 'connector_b', COALESCE(NULLIF(cb.abbreviation, ''), cb.name),
+			'length_m', cp.length_m::text, 'cross_section_mm2', COALESCE(cp.cross_section_mm2::text, ''),
+			'tracking_mode', cp.tracking_mode, 'description', COALESCE(p.description, ''))::text,
+			GREATEST(COALESCE(p.updated_at, p.created_at), cp.updated_at), COALESCE(a.label_path, '')
+		FROM cable_products cp JOIN products p ON p.productid = cp.product_id
+		LEFT JOIN count_types cnt ON cnt.count_type_id = p.count_type_id
+		JOIN cable_types typ ON typ.cable_typesid = cp.cable_type_id
+		JOIN cable_connectors ca ON ca.cable_connectorsid = cp.connector_a_id
+		JOIN cable_connectors cb ON cb.cable_connectorsid = cp.connector_b_id
 		LEFT JOIN label_assets a ON a.target_type = 'product' AND a.target_id = p.productid::text WHERE p.productid::text = $1`
 	case LabelTargetCase:
 		query = `SELECT jsonb_build_object(
@@ -326,31 +359,103 @@ func (s *LabelService) GenerateLabelForTarget(targetType, targetID string, templ
 }
 
 func (s *LabelService) RenderTargetLabel(targetType, targetID string, templateID int, save bool) (*LabelRenderResult, error) {
-	result, err := s.GenerateLabelForTarget(targetType, targetID, templateID)
+	results, err := s.RenderTargetLabels(LabelBatchRequest{
+		TargetType: targetType, TargetIDs: []string{targetID}, TemplateID: templateID, Save: save, IncludeImage: true,
+	})
 	if err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(map[string]any{"template": result.Template, "elements": result.Elements, "target": result.Target})
-	if err != nil {
-		return nil, fmt.Errorf("encode label render data: %w", err)
+	return results[0], nil
+}
+
+// RenderTargetLabels renders a complete selection in one Chromium process.
+func (s *LabelService) RenderTargetLabels(request LabelBatchRequest) ([]*LabelRenderResult, error) {
+	if !ValidLabelTargetType(request.TargetType) || len(request.TargetIDs) == 0 {
+		return nil, fmt.Errorf("target type and at least one target are required")
+	}
+	if len(request.TargetIDs) > 250 {
+		return nil, fmt.Errorf("at most 250 labels can be rendered per batch")
 	}
 	htmlTemplate, err := os.ReadFile("./internal/services/label_template.html")
 	if err != nil {
 		return nil, fmt.Errorf("load label renderer: %w", err)
 	}
-	htmlContent := strings.Replace(string(htmlTemplate), "{{LABEL_DATA_JSON}}", string(payload), 1)
-	base64PNG, err := s.renderLabelWithHeadlessBrowser(htmlContent)
+	results := make([]*LabelRenderResult, 0, len(request.TargetIDs))
+	htmlContents := make([]string, 0, len(request.TargetIDs))
+	for _, targetID := range request.TargetIDs {
+		result, generateErr := s.GenerateLabelForTarget(request.TargetType, targetID, request.TemplateID)
+		if generateErr != nil {
+			return nil, fmt.Errorf("prepare label %s: %w", targetID, generateErr)
+		}
+		payload, marshalErr := json.Marshal(map[string]any{"template": result.Template, "elements": result.Elements, "target": result.Target})
+		if marshalErr != nil {
+			return nil, fmt.Errorf("encode label %s render data: %w", targetID, marshalErr)
+		}
+		results = append(results, result)
+		htmlContents = append(htmlContents, strings.Replace(string(htmlTemplate), "{{LABEL_DATA_JSON}}", string(payload), 1))
+	}
+
+	base64PNGs, err := s.renderLabelsWithHeadlessBrowser(htmlContents)
 	if err != nil {
 		return nil, err
 	}
-	result.ImageData = "data:image/png;base64," + base64PNG
-	if save {
-		result.LabelPath, err = s.saveTargetLabel(result, base64PNG)
-		if err != nil {
-			return nil, err
+	for index, base64PNG := range base64PNGs {
+		result := results[index]
+		result.ImageData = "data:image/png;base64," + base64PNG
+		if request.Save {
+			result.LabelPath, err = s.saveTargetLabel(result, base64PNG)
+			if err != nil {
+				return nil, fmt.Errorf("save label %s: %w", result.Target.ID, err)
+			}
 		}
 	}
-	return result, nil
+	return results, nil
+}
+
+func (s *LabelService) ExportTargetsPDF(request LabelPDFRequest) ([]byte, error) {
+	if request.Copies <= 0 || request.Copies > 1000 {
+		return nil, fmt.Errorf("copies must be between 1 and 1000")
+	}
+	if len(request.TargetIDs) == 0 || len(request.TargetIDs) > 250 || len(request.TargetIDs)*request.Copies > 500 {
+		return nil, fmt.Errorf("PDF export allows at most 250 targets and 500 label pages")
+	}
+	results, err := s.RenderTargetLabels(LabelBatchRequest{
+		TargetType: request.TargetType, TargetIDs: request.TargetIDs, TemplateID: request.TemplateID, Save: true, IncludeImage: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	images := make([]string, 0, len(results))
+	for _, result := range results {
+		images = append(images, result.ImageData)
+	}
+	template := results[0].Template
+	htmlContent := buildLabelPDFHTML(images, template.Width, template.Height, request.Copies)
+	return s.renderHTMLToPDF(htmlContent, template.Width, template.Height)
+}
+
+func buildLabelPDFHTML(images []string, widthMM, heightMM float64, copies int) string {
+	var html strings.Builder
+	fmt.Fprintf(&html, `<!doctype html><html><head><meta charset="utf-8"><style>
+@page { size: %.4fmm %.4fmm; margin: 0; }
+html, body { margin: 0; padding: 0; background: white; }
+.label-page { width: %.4fmm; height: %.4fmm; margin: 0; overflow: hidden; break-after: page; page-break-after: always; }
+.label-page:last-child { break-after: auto; page-break-after: auto; }
+.label-page img { display: block; width: 100%%; height: 100%%; }
+</style></head><body>`, widthMM, heightMM, widthMM, heightMM)
+	for _, imageData := range images {
+		for range copies {
+			fmt.Fprintf(&html, `<div class="label-page"><img src="%s" alt=""></div>`, imageData)
+		}
+	}
+	html.WriteString(`<script>
+window.pdfReady = false;
+Promise.all(Array.from(document.images).map((image) => image.complete ? Promise.resolve() : new Promise((resolve) => {
+  image.addEventListener('load', resolve, { once: true });
+  image.addEventListener('error', resolve, { once: true });
+}))).then(() => { window.pdfReady = true; });
+</script></body></html>`)
+	return html.String()
 }
 
 func (s *LabelService) saveTargetLabel(result *LabelRenderResult, base64PNG string) (string, error) {

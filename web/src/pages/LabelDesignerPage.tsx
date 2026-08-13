@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  Barcode, Boxes, BriefcaseBusiness, Check, Copy, Download, Image as ImageIcon,
+  Barcode, BriefcaseBusiness, Cable, Check, Copy, Download, FileDown, Image as ImageIcon,
   MapPin, Maximize2, Minus, Plus, Printer, QrCode, RefreshCw, Save, Search, Settings2,
   Tags, Trash2, Type, Usb, X,
 } from 'lucide-react';
@@ -22,6 +22,7 @@ type DragMode = 'move' | 'resize';
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 type DesignElement = LabelElement & { id: string };
 type GenerationState = {
+  operation: 'generate' | 'pdf';
   status: 'running' | 'success' | 'error';
   completed: number;
   total: number;
@@ -30,9 +31,9 @@ type GenerationState = {
 
 const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-const TARGET_TYPES: Array<{ type: LabelTargetType; label: string; icon: typeof Boxes }> = [
+const TARGET_TYPES: Array<{ type: LabelTargetType; label: string; icon: typeof Cable }> = [
   { type: 'device', label: 'Geräte', icon: Tags },
-  { type: 'product', label: 'Produkte & Kabel', icon: Boxes },
+  { type: 'product', label: 'Kabel', icon: Cable },
   { type: 'case', label: 'Cases', icon: BriefcaseBusiness },
   { type: 'zone', label: 'Lagerzonen', icon: MapPin },
 ];
@@ -53,7 +54,7 @@ const EMPTY_PRINTER: LabelPrinter = {
 
 const sampleFields: Record<LabelTargetType, Record<string, string>> = {
   device: { code: 'DEV-0001', name: 'Demo Gerät', device_id: 'DEV-0001', product_name: 'Demo Gerät', serial_number: 'SN-10001', barcode: 'DEV-0001', status: 'in_storage', zone_code: 'A-01', zone_name: 'Hauptlager', category: 'Audio' },
-  product: { code: 'PROD-000001', name: 'XLR Kabel 10 m', product_id: '1', product_name: 'XLR Kabel 10 m', generic_barcode: 'PROD-000001', barcode: 'PROD-000001', stock_quantity: '12', unit: 'Stk', category: 'Kabel', description: '' },
+  product: { code: 'PROD-000001', name: 'XLR Kabel 10 m', cable_id: '1', product_id: '1', product_name: 'XLR Kabel 10 m', generic_barcode: 'PROD-000001', barcode: 'PROD-000001', stock_quantity: '12', unit: 'Stk', cable_type: 'XLR', connector_a: 'XLR female', connector_b: 'XLR male', length_m: '10', cross_section_mm2: '', tracking_mode: 'quantity', description: '' },
   case: { code: 'CASE-1', name: 'Audio Case', case_id: 'CASE-1', barcode: 'CASE-1', status: 'free', zone_code: 'C-01', zone_name: 'Case-Lager', dimensions: '60 × 40 × 40', weight: '18 kg', description: '' },
   zone: { code: 'ZONE-0001', name: 'Regal A / Fach 1', zone_id: '1', zone_code: 'A-01', barcode: 'ZONE-0001', type: 'shelf', location: 'Hauptlager', capacity: '20', description: '' },
 };
@@ -101,6 +102,17 @@ function requestErrorMessage(error: unknown, fallback: string) {
   }
   if (error instanceof Error && error.message) return error.message;
   return fallback;
+}
+
+async function downloadErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    if (response?.data instanceof Blob) {
+      const message = (await response.data.text()).trim();
+      if (message) return message;
+    }
+  }
+  return requestErrorMessage(error, fallback);
 }
 
 function openBrowserPrint(images: string[], width: number, height: number, copies: number, win: Window) {
@@ -392,42 +404,92 @@ export default function LabelDesignerPage() {
       const message = !activeTemplateID
         ? 'Bitte zuerst ein Template auswählen.'
         : 'Bitte mindestens einen Eintrag auswählen.';
-      setGenerationState({ status: 'error', completed: 0, total: 0, message });
+      setGenerationState({ operation: 'generate', status: 'error', completed: 0, total: 0, message });
       toast.error(message);
       return;
     }
     const targetIDs = Array.from(selectedTargets);
     const total = targetIDs.length;
     setBusy(true);
-    setGenerationState({ status: 'running', completed: 0, total, message: `${total} Labels werden vorbereitet …` });
+    setGenerationState({ operation: 'generate', status: 'running', completed: 0, total, message: `${total} Labels werden im Schnelllauf vorbereitet …` });
     toast.info(`${total} Label${total === 1 ? '' : 's'} werden erzeugt.`);
     let completed = 0;
     try {
-      for (const targetID of targetIDs) {
-        const target = targets.find(item => item.id === targetID);
+      const batchSize = 50;
+      for (let offset = 0; offset < targetIDs.length; offset += batchSize) {
+        const batch = targetIDs.slice(offset, offset + batchSize);
         setGenerationState({
-          status: 'running', completed, total,
-          message: `${target?.code ?? targetID} wird erzeugt …`,
+          operation: 'generate', status: 'running', completed, total,
+          message: `Batch ${Math.floor(offset / batchSize) + 1} wird erzeugt …`,
         });
-        await labelsApi.renderTarget({ target_type: targetType, target_id: targetID, template_id: activeTemplateID, save: true });
-        completed += 1;
+        const { data } = await labelsApi.renderTargets({
+          target_type: targetType, target_ids: batch, template_id: activeTemplateID, save: true, include_images: false,
+        });
+        completed += data.results.length;
         setGenerationState({
-          status: 'running', completed, total,
+          operation: 'generate', status: 'running', completed, total,
           message: `${completed} von ${total} Labels erzeugt.`,
         });
       }
       const message = `${completed} Label${completed === 1 ? '' : 's'} erfolgreich erzeugt.`;
-      setGenerationState({ status: 'success', completed, total, message });
+      setGenerationState({ operation: 'generate', status: 'success', completed, total, message });
       toast.success(message);
       await loadTargets(targetType, search).catch(error => {
         toast.error(`Liste konnte nicht aktualisiert werden: ${requestErrorMessage(error, 'Unbekannter Fehler')}`);
       });
     } catch (error) {
       const message = `Nach ${completed} von ${total} Labels abgebrochen: ${requestErrorMessage(error, 'Unbekannter Fehler')}`;
-      setGenerationState({ status: 'error', completed, total, message });
+      setGenerationState({ operation: 'generate', status: 'error', completed, total, message });
       toast.error(message);
     }
     finally { setBusy(false); }
+  }
+
+  async function exportSelectedPDF() {
+    if (!activeTemplateID || selectedTargets.size === 0) {
+      const message = !activeTemplateID
+        ? 'Bitte zuerst ein Template auswählen.'
+        : 'Bitte mindestens einen Eintrag auswählen.';
+      setGenerationState({ operation: 'pdf', status: 'error', completed: 0, total: 0, message });
+      toast.error(message);
+      return;
+    }
+    const targetIDs = Array.from(selectedTargets);
+    const total = targetIDs.length * copies;
+    if (targetIDs.length > 250 || total > 500) {
+      const message = 'Ein PDF darf höchstens 250 Einträge und 500 Labelseiten enthalten.';
+      setGenerationState({ operation: 'pdf', status: 'error', completed: 0, total, message });
+      toast.error(message);
+      return;
+    }
+    setBusy(true);
+    setGenerationState({ operation: 'pdf', status: 'running', completed: 0, total, message: `PDF mit ${total} Labelseiten wird erstellt …` });
+    toast.info('PDF-Export wird vorbereitet.');
+    try {
+      const response = await labelsApi.exportPDF({
+        target_type: targetType, target_ids: targetIDs, template_id: activeTemplateID, copies,
+      });
+      const disposition = String(response.headers['content-disposition'] ?? '');
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'warehousecore-labels.pdf';
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const message = `PDF mit ${total} Labelseite${total === 1 ? '' : 'n'} heruntergeladen.`;
+      setGenerationState({ operation: 'pdf', status: 'success', completed: total, total, message });
+      toast.success(message);
+      await loadTargets(targetType, search).catch(error => toast.error(requestErrorMessage(error, 'Liste konnte nicht aktualisiert werden.')));
+    } catch (error) {
+      const message = `PDF konnte nicht erstellt werden: ${await downloadErrorMessage(error, 'Unbekannter Fehler')}`;
+      setGenerationState({ operation: 'pdf', status: 'error', completed: 0, total, message });
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function browserPrint() {
@@ -440,10 +502,14 @@ export default function LabelDesignerPage() {
     printWindow.document.body.textContent = 'Labels werden vorbereitet …';
     setBusy(true);
     try {
+      const targetIDs = Array.from(selectedTargets);
       const images: string[] = [];
-      for (const targetID of selectedTargets) {
-        const { data } = await labelsApi.renderTarget({ target_type: targetType, target_id: targetID, template_id: activeTemplateID, save: true });
-        images.push(data.image_data);
+      for (let offset = 0; offset < targetIDs.length; offset += 100) {
+        const { data } = await labelsApi.renderTargets({
+          target_type: targetType, target_ids: targetIDs.slice(offset, offset + 100),
+          template_id: activeTemplateID, save: true, include_images: true,
+        });
+        images.push(...data.results.map(result => result.image_data));
       }
       printWindow.document.body.replaceChildren();
       openBrowserPrint(images, labelWidth, labelHeight, copies, printWindow);
@@ -701,7 +767,9 @@ export default function LabelDesignerPage() {
                   {generationState.status === 'running' && <RefreshCw className="ls-spin" size={16} />}
                   {generationState.status === 'success' && <Check size={16} />}
                   {generationState.status === 'error' && <X size={16} />}
-                  <strong>{generationState.status === 'running' ? 'Labels werden erzeugt' : generationState.status === 'success' ? 'Erzeugung abgeschlossen' : 'Erzeugung fehlgeschlagen'}</strong>
+                  <strong>{generationState.operation === 'pdf'
+                    ? generationState.status === 'running' ? 'PDF wird erstellt' : generationState.status === 'success' ? 'PDF-Export abgeschlossen' : 'PDF-Export fehlgeschlagen'
+                    : generationState.status === 'running' ? 'Labels werden erzeugt' : generationState.status === 'success' ? 'Erzeugung abgeschlossen' : 'Erzeugung fehlgeschlagen'}</strong>
                 </div>
                 {generationState.total > 0 && (
                   <div
@@ -724,9 +792,19 @@ export default function LabelDesignerPage() {
               disabled={busy}
               aria-disabled={!activeTemplateID || selectedTargets.size === 0}
             >
-              {generationState?.status === 'running'
+              {generationState?.operation === 'generate' && generationState.status === 'running'
                 ? <><RefreshCw className="ls-spin" size={16} /> {generationState.completed}/{generationState.total} erzeugt</>
                 : <><Download size={16} /> Nur erzeugen</>}
+            </button>
+            <button
+              className="btn-action ls-full-button"
+              onClick={exportSelectedPDF}
+              disabled={busy}
+              aria-disabled={!activeTemplateID || selectedTargets.size === 0}
+            >
+              {generationState?.operation === 'pdf' && generationState.status === 'running'
+                ? <><RefreshCw className="ls-spin" size={16} /> PDF wird erstellt …</>
+                : <><FileDown size={16} /> PDF herunterladen</>}
             </button>
             <button className="btn-primary ls-full-button" onClick={browserPrint} disabled={busy || selectedTargets.size === 0 || !activeTemplateID}><Printer size={16} /> Browserdruck</button>
             <div className="ls-divider"><span>Direktdruck</span></div>

@@ -73,6 +73,43 @@ func RenderTargetLabel(w http.ResponseWriter, r *http.Request) {
 	writeLabelJSON(w, http.StatusOK, result)
 }
 
+func RenderTargetLabels(w http.ResponseWriter, r *http.Request) {
+	var request services.LabelBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	results, err := labelService.RenderTargetLabels(request)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	if !request.IncludeImage {
+		for _, result := range results {
+			result.ImageData = ""
+		}
+	}
+	writeLabelJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+func ExportLabelsPDF(w http.ResponseWriter, r *http.Request) {
+	var request services.LabelPDFRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	pdfData, err := labelService.ExportTargetsPDF(request)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `attachment; filename="warehousecore-labels.pdf"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(pdfData)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfData)
+}
+
 func ListLabelPrinters(w http.ResponseWriter, _ *http.Request) {
 	printers, err := labelService.ListPrinters()
 	if err != nil {

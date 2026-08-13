@@ -9,7 +9,7 @@
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Zonenmanagement** — Physische Lagerzonen mit Barcode-Kennzeichnung, Gerätezuweisung, Produktbestand und Lagerplatz-Optimierung
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
-- **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Produkt-/Kabel-, Case- und Zonenlabels mit direktem Verschieben/Skalieren über Ziehpunkte und einpassbarer 25–200-%-Vorschau. Zieltypspezifische Standardtemplates, revisionsbasierte Neugenerierung, Browserdruck und protokollierter Zebra-ZPL-Direktdruck über TCP
+- **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Kabel-, Case- und Zonenlabels mit direktem Verschieben/Skalieren über Ziehpunkte und einpassbarer 25–200-%-Vorschau. Schnelle Batch-Erzeugung, maßhaltiger PDF-Download, Browserdruck und protokollierter Zebra-ZPL-Direktdruck über TCP
 - **Barcode-Scanning** — Scan-Endpunkt für schnelle Geräteidentifikation und Warenbewegungen im Lager
 - **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
@@ -197,6 +197,8 @@ Vorhandene Einträge aus der bisherigen `cables`-Tabelle werden beim ersten Star
 | `GET`    | `/api/v1/labels/targets`                | Druckbare Ziele nach Typ auflisten (🔒)   |
 | `GET`    | `/api/v1/labels/fields/:target_type`    | Datenfelder eines Labeltyps (🔒)          |
 | `POST`   | `/api/v1/labels/render`                 | Label serverseitig rendern/speichern; das Druckcenter zeigt dabei Fortschritt und Ergebnis direkt an (🔒) |
+| `POST`   | `/api/v1/labels/render-batch`           | Bis zu 250 Labels mit einem gemeinsamen Browserprozess rendern (🔒) |
+| `POST`   | `/api/v1/labels/pdf`                    | Auswahl als maßhaltige Mehrseiten-PDF herunterladen (🔒) |
 | `GET`    | `/api/v1/labels/printers`               | Druckerprofile auflisten (🔒)             |
 | `POST`   | `/api/v1/labels/printers`               | Zebra-Netzwerkdrucker anlegen (🔒)        |
 | `PUT`    | `/api/v1/labels/printers/:id`           | Druckerprofil aktualisieren (🔒)          |
@@ -204,9 +206,9 @@ Vorhandene Einträge aus der bisherigen `cables`-Tabelle werden beim ersten Star
 | `POST`   | `/api/v1/labels/print`                  | Labels direkt als ZPL drucken (🔒)        |
 | `GET`    | `/api/v1/labels/print-jobs`             | Druckaufträge und Fehler abrufen (🔒)     |
 
-Das Label Studio verwendet für Geräte, Produkte/Kabel, Cases und Lagerzonen jeweils getrennte Templates und ein eigenes Standardtemplate. Vorhandene Geräte- und Case-Labeldateien werden in `label_assets` übernommen. Ein Label gilt als veraltet, sobald sich sein Quelldatensatz oder die Template-Revision ändert. Der Browserdruck funktioniert ohne Druckerkonfiguration. Für Direktdruck wird im Studio ein aktiver Zebra-kompatibler Netzwerkdrucker mit IP/Hostname, TCP-Port (üblicherweise `9100`) und Auflösung (`203`, `300` oder `600` DPI) hinterlegt.
+Das Label Studio verwendet für Geräte, Kabel, Cases und Lagerzonen jeweils getrennte Templates und ein eigenes Standardtemplate. Im Kabelbereich werden ausschließlich Datensätze aus `cable_products` angeboten; normale Produkte erscheinen dort nicht. Vorhandene Geräte- und Case-Labeldateien werden in `label_assets` übernommen. Ein Label gilt als veraltet, sobald sich sein Quelldatensatz oder die Template-Revision ändert. Batch-Erzeugung und Browserdruck verwenden einen gemeinsamen Chromium-Prozess für die gesamte Auswahl. Der PDF-Export erzeugt pro Labelkopie eine maßhaltige Seite in der gewählten Templategröße. Für Direktdruck wird im Studio ein aktiver Zebra-kompatibler Netzwerkdrucker mit IP/Hostname, TCP-Port (üblicherweise `9100`) und Auflösung (`203`, `300` oder `600` DPI) hinterlegt.
 
-Die Migration `034_label_studio_and_direct_print.sql` ergänzt Templates um Zieltyp und Revision und legt `label_assets`, `label_printers` sowie `label_print_jobs` an. Sie wird beim WarehouseCore-Start idempotent angewendet.
+Die Migration `034_label_studio_and_direct_print.sql` ergänzt Templates um Zieltyp und Revision und legt `label_assets`, `label_printers` sowie `label_print_jobs` an. `035_cable_labels_and_pdf_export.sql` benennt das Standardtemplate konsistent für Kabel. Beide werden beim WarehouseCore-Start idempotent angewendet.
 
 🔒 = Authentifizierung via `session_id` Cookie erforderlich
 

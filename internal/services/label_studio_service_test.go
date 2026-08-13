@@ -23,6 +23,36 @@ func TestValidLabelTargetType(t *testing.T) {
 	}
 }
 
+func TestCableLabelFields(t *testing.T) {
+	t.Parallel()
+	fields := LabelFields(LabelTargetProduct)
+	for _, expected := range []string{"cable_id", "cable_type", "connector_a", "connector_b", "length_m", "tracking_mode"} {
+		found := false
+		for _, field := range fields {
+			if field.Key == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected cable label field %q", expected)
+		}
+	}
+}
+
+func TestBuildLabelPDFHTML(t *testing.T) {
+	t.Parallel()
+	html := buildLabelPDFHTML([]string{"data:image/png;base64,AAA", "data:image/png;base64,BBB"}, 51, 25, 2)
+	if pages := strings.Count(html, `<div class="label-page">`); pages != 4 {
+		t.Fatalf("expected 4 PDF pages, got %d", pages)
+	}
+	for _, expected := range []string{"size: 51.0000mm 25.0000mm", "data:image/png;base64,AAA", "data:image/png;base64,BBB", "window.pdfReady = true"} {
+		if !strings.Contains(html, expected) {
+			t.Errorf("expected PDF HTML to contain %q", expected)
+		}
+	}
+}
+
 func TestSendRawPrinterData(t *testing.T) {
 	t.Parallel()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
