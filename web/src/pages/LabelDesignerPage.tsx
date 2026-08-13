@@ -19,7 +19,10 @@ import './LabelDesignerPage.css';
 
 type StudioTab = 'designer' | 'print' | 'printers';
 type DragMode = 'move' | 'resize';
+type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 type DesignElement = LabelElement & { id: string };
+
+const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 const TARGET_TYPES: Array<{ type: LabelTargetType; label: string; icon: typeof Boxes }> = [
   { type: 'device', label: 'Geräte', icon: Tags },
@@ -299,7 +302,7 @@ export default function LabelDesignerPage() {
     setElements(current => current.map(element => element.id === id ? { ...element, ...updates } : element));
   }
 
-  function beginDrag(event: React.PointerEvent, element: DesignElement, mode: DragMode) {
+  function beginDrag(event: React.PointerEvent, element: DesignElement, mode: DragMode, handle: ResizeHandle = 'se') {
     event.preventDefault();
     event.stopPropagation();
     setSelectedElementID(element.id);
@@ -315,9 +318,32 @@ export default function LabelDesignerPage() {
           y: Math.max(0, Math.min(labelHeight - origin.height, Math.round((origin.y + dy) * 2) / 2)),
         });
       } else {
+        const minSize = 2;
+        let nextX = origin.x;
+        let nextY = origin.y;
+        let nextWidth = origin.width;
+        let nextHeight = origin.height;
+
+        if (handle.includes('e')) {
+          nextWidth = Math.max(minSize, Math.min(labelWidth - origin.x, origin.width + dx));
+        }
+        if (handle.includes('s')) {
+          nextHeight = Math.max(minSize, Math.min(labelHeight - origin.y, origin.height + dy));
+        }
+        if (handle.includes('w')) {
+          nextX = Math.max(0, Math.min(origin.x + origin.width - minSize, origin.x + dx));
+          nextWidth = origin.width + origin.x - nextX;
+        }
+        if (handle.includes('n')) {
+          nextY = Math.max(0, Math.min(origin.y + origin.height - minSize, origin.y + dy));
+          nextHeight = origin.height + origin.y - nextY;
+        }
+
         updateElement(element.id, {
-          width: Math.max(2, Math.min(labelWidth - origin.x, Math.round((origin.width + dx) * 2) / 2)),
-          height: Math.max(2, Math.min(labelHeight - origin.y, Math.round((origin.height + dy) * 2) / 2)),
+          x: Math.round(nextX * 2) / 2,
+          y: Math.round(nextY * 2) / 2,
+          width: Math.round(nextWidth * 2) / 2,
+          height: Math.round(nextHeight * 2) / 2,
         });
       }
     };
@@ -545,7 +571,14 @@ export default function LabelDesignerPage() {
                       {element.type === 'text' && <span>{content}</span>}
                       {(element.type === 'barcode' || element.type === 'qrcode') && codeImages[imageKey] && <img src={codeImages[imageKey]} alt={content} draggable={false} />}
                       {element.type === 'image' && element.image_data && <img src={element.image_data} alt="Labelgrafik" draggable={false} />}
-                      {isSelected && <button className="ls-resize-handle" onPointerDown={event => beginDrag(event, element, 'resize')} aria-label="Größe ändern" />}
+                      {isSelected && RESIZE_HANDLES.map(handle => (
+                        <button
+                          key={handle}
+                          className={`ls-resize-handle handle-${handle}`}
+                          onPointerDown={event => beginDrag(event, element, 'resize', handle)}
+                          aria-label={`Größe über ${handle} ändern`}
+                        />
+                      ))}
                     </div>
                   );
                 })}
