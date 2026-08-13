@@ -223,6 +223,6 @@
     "productsTitle": "Product Catalog",
     "productsSubtitle": "Manage product definitions and rental metadata.",
     "cablesTitle": "Cable Catalog",
-    "cablesSubtitle": "Maintain cable types and assignments."
+    "cablesSubtitle": "Manage cable products, stock levels, and individual codes."
   }
 }

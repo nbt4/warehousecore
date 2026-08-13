@@ -624,18 +624,23 @@ func exportCables() ([]byte, error) {
 
 	query := `
 		SELECT
-			c.cableid,
-			COALESCE(c.name, ''),
+			cp.cable_product_id,
+			cp.product_id,
+			COALESCE(p.name, ''),
 			COALESCE(ct.name, ''),
 			COALESCE(cc1.name, ''),
 			COALESCE(cc2.name, ''),
-			c.length,
-			c.mm2
-		FROM cables c
-		LEFT JOIN cable_types ct ON c.typ = ct.cable_typesid
-		LEFT JOIN cable_connectors cc1 ON c.connector1 = cc1.cable_connectorsid
-		LEFT JOIN cable_connectors cc2 ON c.connector2 = cc2.cable_connectorsid
-		ORDER BY c.cableid
+			cp.length_m,
+			cp.cross_section_mm2,
+			cp.tracking_mode,
+			COALESCE(p.generic_barcode, ''),
+			COALESCE(p.stock_quantity, 0)
+		FROM cable_products cp
+		JOIN products p ON p.productid = cp.product_id
+		LEFT JOIN cable_types ct ON cp.cable_type_id = ct.cable_typesid
+		LEFT JOIN cable_connectors cc1 ON cp.connector_a_id = cc1.cable_connectorsid
+		LEFT JOIN cable_connectors cc2 ON cp.connector_b_id = cc2.cable_connectorsid
+		ORDER BY cp.cable_product_id
 	`
 
 	rows, err := db.Query(query)
@@ -645,31 +650,36 @@ func exportCables() ([]byte, error) {
 	defer rows.Close()
 
 	headers := []string{
-		"ID", "Name", "Kabeltyp", "Stecker A", "Stecker B",
-		"Länge (m)", "Querschnitt (mm²)",
+		"Kabel-ID", "Produkt-ID", "Name", "Kabeltyp", "Stecker A", "Stecker B",
+		"Länge (m)", "Querschnitt (mm²)", "Tracking", "Artikelbarcode", "Bestand",
 	}
 
 	var csvRows [][]string
 
 	for rows.Next() {
-		var id int
-		var name, cableType, connectorA, connectorB string
+		var id, productID int
+		var name, cableType, connectorA, connectorB, trackingMode, barcode string
 		var length *float64
 		var mm2 *float64
+		var stock float64
 
-		err := rows.Scan(&id, &name, &cableType, &connectorA, &connectorB, &length, &mm2)
+		err := rows.Scan(&id, &productID, &name, &cableType, &connectorA, &connectorB, &length, &mm2, &trackingMode, &barcode, &stock)
 		if err != nil {
 			return nil, err
 		}
 
 		csvRows = append(csvRows, []string{
 			strconv.Itoa(id),
+			strconv.Itoa(productID),
 			name,
 			cableType,
 			connectorA,
 			connectorB,
 			formatNullFloat(length),
 			formatNullFloat(mm2),
+			trackingMode,
+			barcode,
+			strconv.FormatFloat(stock, 'f', -1, 64),
 		})
 	}
 

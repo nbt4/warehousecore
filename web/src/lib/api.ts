@@ -629,17 +629,47 @@ export const apiKeysAdminApi = {
 // Cable interfaces
 export interface Cable {
   cable_id: number;
-  name: string | null;
+  product_id: number;
+  name: string;
   connector1: number;
   connector2: number;
   typ: number;
   length: number;
   mm2: number | null;
-  connector1_name?: string | null;
-  connector2_name?: string | null;
-  cable_type_name?: string | null;
+  tracking_mode: CableTrackingMode;
+  generic_barcode: string | null;
+  stock_quantity: number;
+  available_quantity: number;
+  unit_count: number;
+  connector1_name: string;
+  connector2_name: string;
+  cable_type_name: string;
   connector1_gender?: string | null;
   connector2_gender?: string | null;
+  migrated_from_legacy: boolean;
+  zone_stocks?: CableZoneStock[];
+  units?: CableUnit[];
+}
+
+export type CableTrackingMode = 'quantity' | 'individual';
+
+export interface CableZoneStock {
+  zone_id: number | null;
+  zone_name: string;
+  zone_code: string;
+  quantity: number;
+}
+
+export interface CableUnit {
+  device_id: string;
+  barcode: string | null;
+  qr_code: string | null;
+  status: string;
+  zone_id: number | null;
+  zone_name: string;
+  zone_code: string;
+  condition_rating: number;
+  current_job_id: number | null;
 }
 
 export interface CableConnector {
@@ -661,7 +691,11 @@ export interface CableCreateInput {
   connector2: number;
   typ: number;
   length: number;
-  mm2?: number;
+  mm2?: number | null;
+  tracking_mode: CableTrackingMode;
+  generic_barcode?: string;
+  quantity: number;
+  zone_id?: number | null;
 }
 
 export interface CableUpdateInput {
@@ -670,12 +704,14 @@ export interface CableUpdateInput {
   connector2?: number;
   typ?: number;
   length?: number;
-  mm2?: number;
+  mm2?: number | null;
+  tracking_mode?: CableTrackingMode;
+  generic_barcode?: string;
 }
 
 // Cable admin API
 export const cablesAdminApi = {
-  getAll: (params?: { search?: string; connector1?: number; connector2?: number; type?: number; length_min?: number; length_max?: number }) => {
+  getAll: (params?: { search?: string; connector1?: number; connector2?: number; type?: number; length_min?: number; length_max?: number; tracking_mode?: CableTrackingMode }) => {
     const queryParams = new URLSearchParams();
     if (params?.search) queryParams.append('search', params.search);
     if (params?.connector1) queryParams.append('connector1', params.connector1.toString());
@@ -683,6 +719,7 @@ export const cablesAdminApi = {
     if (params?.type) queryParams.append('type', params.type.toString());
     if (params?.length_min) queryParams.append('length_min', params.length_min.toString());
     if (params?.length_max) queryParams.append('length_max', params.length_max.toString());
+    if (params?.tracking_mode) queryParams.append('tracking_mode', params.tracking_mode);
     const query = queryParams.toString();
     return api.get<Cable[]>(`/admin/cables${query ? `?${query}` : ''}`);
   },
@@ -690,6 +727,12 @@ export const cablesAdminApi = {
   create: (data: CableCreateInput) => api.post<{cable_id: number; message: string}>('/admin/cables', data),
   update: (id: number, data: CableUpdateInput) => api.put<{message: string}>(`/admin/cables/${id}`, data),
   delete: (id: number) => api.delete<{message: string}>(`/admin/cables/${id}`),
+  setStock: (id: number, data: { zone_id?: number | null; quantity: number }) =>
+    api.put<{message: string}>(`/admin/cables/${id}/stock`, data),
+  createUnits: (id: number, data: { zone_id?: number | null; quantity: number }) =>
+    api.post<{created_count: number; message: string}>(`/admin/cables/${id}/units`, data),
+  deleteUnit: (id: number, deviceId: string) =>
+    api.delete<{message: string}>(`/admin/cables/${id}/units/${encodeURIComponent(deviceId)}`),
   getConnectors: () => api.get<CableConnector[]>('/admin/cable-connectors'),
   getTypes: () => api.get<CableType[]>('/admin/cable-types'),
 };

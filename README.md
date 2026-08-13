@@ -11,6 +11,7 @@
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
 - **Etikettendruck** — Chromium-Headless-basiertes Rendering von Geräte- und Case-Labels als PNG. QR-Code- und Barcode-Generierung mit anpassbaren Templates
 - **Barcode-Scanning** — Scan-Endpunkt für schnelle Geräteidentifikation und Warenbewegungen im Lager
+- **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
 - **Case-Management** — Transportkisten-Verwaltung mit Inhaltsverfolgung, QR/Barcode-Labels und Gerätezuweisung
 - **Wartungsmanagement** — Defekt-Tracking, Inspektionshistorie und Wartungsstatistiken
@@ -134,6 +135,20 @@ warehousecore:
 | `POST`   | `/api/v1/admin/product-packages/:id/pictures`               | Paketbilder hochladen (🔒 Admin)     |
 | `PUT`    | `/api/v1/admin/product-packages/:id/website`                | Website-Freigabe/Bilder setzen (🔒)  |
 | `GET`    | `/api/v1/public/packages`                                   | Sichtbare Pakete öffentlich abrufen  |
+
+### Kabelinventar
+
+| Methode  | Pfad                                                   | Beschreibung                                      |
+|----------|--------------------------------------------------------|---------------------------------------------------|
+| `GET`    | `/api/v1/admin/cables`                                 | Kabelprodukte und Bestand auflisten (🔒 Admin/Manager) |
+| `POST`   | `/api/v1/admin/cables`                                 | Kabelprodukt mit Trackingart anlegen (🔒 Admin)   |
+| `GET`    | `/api/v1/admin/cables/:id`                             | Zonenbestand oder einzelne Exemplare (🔒 Admin/Manager) |
+| `PUT`    | `/api/v1/admin/cables/:id`                             | Kabelspezifikation aktualisieren (🔒 Admin)        |
+| `PUT`    | `/api/v1/admin/cables/:id/stock`                       | Mengenbestand einer Lagerzone setzen (🔒 Admin)   |
+| `POST`   | `/api/v1/admin/cables/:id/units`                       | Einzelne Kabelexemplare erzeugen (🔒 Admin)        |
+| `DELETE` | `/api/v1/admin/cables/:id/units/:device_id`            | Unbenutztes Kabelexemplar löschen (🔒 Admin)       |
+
+Vorhandene Einträge aus der bisherigen `cables`-Tabelle werden beim ersten Start nach dem Update anhand von Kabeltyp, Anschlüssen, Länge und Querschnitt gruppiert. Die bisherigen Zeilen bleiben als unveränderte Legacy-Daten erhalten. Neue Kabel sind über `products` direkt für Jobs, Pakete, Lagerzonen und Scanabläufe verfügbar.
 
 ### Jobs, Cases & Labels
 

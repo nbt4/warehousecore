@@ -10,12 +10,12 @@ export function CablesPage() {
       <div className="flex items-center gap-3">
         <Cable className="w-8 h-8 text-accent-red" />
         <div>
-          <h1 className="text-3xl font-bold text-white">{t('productManagement.cablesTitle')}</h1>
-          <p className="text-gray-400">{t('productManagement.cablesSubtitle')}</p>
+          <h1 className="text-3xl font-bold text-light">{t('productManagement.cablesTitle')}</h1>
+          <p className="text-text-muted">{t('productManagement.cablesSubtitle')}</p>
         </div>
       </div>
 
-      <div className="glass-dark rounded-2xl p-6">
+      <div className="card rounded-2xl p-6">
         <CablesTab />
       </div>
     </div>

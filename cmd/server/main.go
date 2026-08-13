@@ -148,6 +148,9 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer repository.CloseDatabase()
+	if err := handlers.EnsureCableInventorySchema(); err != nil {
+		log.Fatalf("Failed to initialize cable inventory schema: %v", err)
+	}
 
 	// Set initial DB connection gauge
 	if sqlDB := repository.GetSQLDB(); sqlDB != nil {
@@ -326,6 +329,10 @@ func main() {
 	adminRead.HandleFunc("/rental-equipment/{id}", handlers.GetRentalEquipmentByID).Methods("GET")
 	adminRead.HandleFunc("/rental-field-definitions", handlers.GetRentalFieldDefinitions).Methods("GET")
 	adminRead.HandleFunc("/api-keys", handlers.ListAPIKeys).Methods("GET")
+	adminRead.HandleFunc("/cables", handlers.GetAllCables).Methods("GET")
+	adminRead.HandleFunc("/cables/{id}", handlers.GetCable).Methods("GET")
+	adminRead.HandleFunc("/cable-connectors", handlers.GetCableConnectors).Methods("GET")
+	adminRead.HandleFunc("/cable-types", handlers.GetCableTypes).Methods("GET")
 
 	// Admin-only routes (write operations)
 	admin := api.PathPrefix("/admin").Subrouter()
@@ -394,16 +401,15 @@ func main() {
 	admin.HandleFunc("/api-keys/{id}", handlers.DeleteAPIKey).Methods("DELETE")
 
 	// Cable admin endpoints
-	admin.HandleFunc("/cables", handlers.GetAllCables).Methods("GET")
 	admin.HandleFunc("/cables", handlers.CreateCable).Methods("POST")
-	admin.HandleFunc("/cables/{id}", handlers.GetCable).Methods("GET")
 	admin.HandleFunc("/cables/{id}", handlers.UpdateCable).Methods("PUT")
 	admin.HandleFunc("/cables/{id}", handlers.DeleteCable).Methods("DELETE")
-	admin.HandleFunc("/cable-connectors", handlers.GetCableConnectors).Methods("GET")
+	admin.HandleFunc("/cables/{id}/stock", handlers.SetCableStock).Methods("PUT")
+	admin.HandleFunc("/cables/{id}/units", handlers.CreateCableUnits).Methods("POST")
+	admin.HandleFunc("/cables/{id}/units/{device_id}", handlers.DeleteCableUnit).Methods("DELETE")
 	admin.HandleFunc("/cable-connectors", handlers.CreateCableConnector).Methods("POST")
 	admin.HandleFunc("/cable-connectors/{id}", handlers.UpdateCableConnector).Methods("PUT")
 	admin.HandleFunc("/cable-connectors/{id}", handlers.DeleteCableConnector).Methods("DELETE")
-	admin.HandleFunc("/cable-types", handlers.GetCableTypes).Methods("GET")
 	admin.HandleFunc("/cable-types", handlers.CreateCableType).Methods("POST")
 	admin.HandleFunc("/cable-types/{id}", handlers.UpdateCableType).Methods("PUT")
 	admin.HandleFunc("/cable-types/{id}", handlers.DeleteCableType).Methods("DELETE")

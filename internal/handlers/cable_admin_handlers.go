@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,28 +11,59 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/lib/pq"
+	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 )
 
-// Cable represents a cable inventory item
-type Cable struct {
-	CableID    int      `json:"cable_id"`
-	Name       *string  `json:"name"`
-	Connector1 int      `json:"connector1"`
-	Connector2 int      `json:"connector2"`
-	Typ        int      `json:"typ"`
-	Length     float64  `json:"length"`
-	MM2        *float64 `json:"mm2"`
+const (
+	cableTrackingQuantity   = "quantity"
+	cableTrackingIndividual = "individual"
+)
 
-	// Joined fields for display
-	Connector1Name   *string `json:"connector1_name,omitempty"`
-	Connector2Name   *string `json:"connector2_name,omitempty"`
-	CableTypeName    *string `json:"cable_type_name,omitempty"`
-	Connector1Gender *string `json:"connector1_gender,omitempty"`
-	Connector2Gender *string `json:"connector2_gender,omitempty"`
+type Cable struct {
+	CableID            int          `json:"cable_id"`
+	ProductID          int          `json:"product_id"`
+	Name               string       `json:"name"`
+	Connector1         int          `json:"connector1"`
+	Connector2         int          `json:"connector2"`
+	Typ                int          `json:"typ"`
+	Length             float64      `json:"length"`
+	MM2                *float64     `json:"mm2"`
+	TrackingMode       string       `json:"tracking_mode"`
+	GenericBarcode     *string      `json:"generic_barcode"`
+	StockQuantity      float64      `json:"stock_quantity"`
+	AvailableQuantity  float64      `json:"available_quantity"`
+	UnitCount          int          `json:"unit_count"`
+	Connector1Name     string       `json:"connector1_name"`
+	Connector2Name     string       `json:"connector2_name"`
+	CableTypeName      string       `json:"cable_type_name"`
+	Connector1Gender   *string      `json:"connector1_gender"`
+	Connector2Gender   *string      `json:"connector2_gender"`
+	MigratedFromLegacy bool         `json:"migrated_from_legacy"`
+	ZoneStocks         []CableStock `json:"zone_stocks,omitempty"`
+	Units              []CableUnit  `json:"units,omitempty"`
 }
 
-// CableConnector represents a cable connector type
+type CableStock struct {
+	ZoneID   *int    `json:"zone_id"`
+	ZoneName string  `json:"zone_name"`
+	ZoneCode string  `json:"zone_code"`
+	Quantity float64 `json:"quantity"`
+}
+
+type CableUnit struct {
+	DeviceID        string  `json:"device_id"`
+	Barcode         *string `json:"barcode"`
+	QRCode          *string `json:"qr_code"`
+	Status          string  `json:"status"`
+	ZoneID          *int    `json:"zone_id"`
+	ZoneName        string  `json:"zone_name"`
+	ZoneCode        string  `json:"zone_code"`
+	ConditionRating float64 `json:"condition_rating"`
+	CurrentJobID    *int    `json:"current_job_id"`
+}
+
 type CableConnector struct {
 	ConnectorID  int     `json:"connector_id"`
 	Name         string  `json:"name"`
@@ -39,609 +71,992 @@ type CableConnector struct {
 	Gender       *string `json:"gender"`
 }
 
-// CableType represents a cable type
 type CableType struct {
 	CableTypeID int    `json:"cable_type_id"`
 	Name        string `json:"name"`
 	Count       int    `json:"count"`
 }
 
-// GetAllCables retrieves all cables with optional filtering
-func GetAllCables(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
-
-	search := r.URL.Query().Get("search")
-	connector1Str := r.URL.Query().Get("connector1")
-	connector2Str := r.URL.Query().Get("connector2")
-	typeStr := r.URL.Query().Get("type")
-	lengthMinStr := r.URL.Query().Get("length_min")
-	lengthMaxStr := r.URL.Query().Get("length_max")
-
-	query := `
-		SELECT
-			c.cableID,
-			c.name,
-			c.connector1,
-			c.connector2,
-			c.typ,
-			c.length,
-			c.mm2,
-			cc1.name as connector1_name,
-			cc1.gender as connector1_gender,
-			cc2.name as connector2_name,
-			cc2.gender as connector2_gender,
-			ct.name as cable_type_name
-		FROM cables c
-		LEFT JOIN cable_connectors cc1 ON c.connector1 = cc1.cable_connectorsID
-		LEFT JOIN cable_connectors cc2 ON c.connector2 = cc2.cable_connectorsID
-		LEFT JOIN cable_types ct ON c.typ = ct.cable_typesID
-		WHERE 1=1
-	`
-
-	var args []interface{}
-
-	if search != "" {
-		query += " AND (c.name LIKE ? OR cc1.name LIKE ? OR cc2.name LIKE ? OR ct.name LIKE ?)"
-		searchPattern := "%" + search + "%"
-		args = append(args, searchPattern, searchPattern, searchPattern, searchPattern)
-	}
-
-	if connector1Str != "" {
-		if id, err := strconv.Atoi(connector1Str); err == nil {
-			query += " AND c.connector1 = ?"
-			args = append(args, id)
-		}
-	}
-
-	if connector2Str != "" {
-		if id, err := strconv.Atoi(connector2Str); err == nil {
-			query += " AND c.connector2 = ?"
-			args = append(args, id)
-		}
-	}
-
-	if typeStr != "" {
-		if id, err := strconv.Atoi(typeStr); err == nil {
-			query += " AND c.typ = ?"
-			args = append(args, id)
-		}
-	}
-
-	if lengthMinStr != "" {
-		if val, err := strconv.ParseFloat(lengthMinStr, 64); err == nil {
-			query += " AND c.length >= ?"
-			args = append(args, val)
-		}
-	}
-
-	if lengthMaxStr != "" {
-		if val, err := strconv.ParseFloat(lengthMaxStr, 64); err == nil {
-			query += " AND c.length <= ?"
-			args = append(args, val)
-		}
-	}
-
-	query += " ORDER BY c.name, c.cableID"
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		log.Printf("Error querying cables: %v", err)
-		http.Error(w, "Failed to fetch cables", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	var cables []Cable
-	for rows.Next() {
-		var cable Cable
-		err := rows.Scan(
-			&cable.CableID,
-			&cable.Name,
-			&cable.Connector1,
-			&cable.Connector2,
-			&cable.Typ,
-			&cable.Length,
-			&cable.MM2,
-			&cable.Connector1Name,
-			&cable.Connector1Gender,
-			&cable.Connector2Name,
-			&cable.Connector2Gender,
-			&cable.CableTypeName,
-		)
-		if err != nil {
-			log.Printf("Error scanning cable: %v", err)
-			continue
-		}
-		cables = append(cables, cable)
-	}
-
-	if cables == nil {
-		cables = []Cable{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cables)
+type cableCreateRequest struct {
+	Name           string   `json:"name"`
+	Connector1     int      `json:"connector1"`
+	Connector2     int      `json:"connector2"`
+	Typ            int      `json:"typ"`
+	Length         float64  `json:"length"`
+	MM2            *float64 `json:"mm2"`
+	TrackingMode   string   `json:"tracking_mode"`
+	GenericBarcode string   `json:"generic_barcode"`
+	Quantity       int      `json:"quantity"`
+	ZoneID         *int     `json:"zone_id"`
 }
 
-// GetCable retrieves a single cable by ID
-func GetCable(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	idStr := vars["id"]
+type cableUpdateRequest struct {
+	Name           *string                  `json:"name"`
+	Connector1     *int                     `json:"connector1"`
+	Connector2     *int                     `json:"connector2"`
+	Typ            *int                     `json:"typ"`
+	Length         *float64                 `json:"length"`
+	MM2            models.Optional[float64] `json:"mm2"`
+	TrackingMode   *string                  `json:"tracking_mode"`
+	GenericBarcode *string                  `json:"generic_barcode"`
+}
 
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "Invalid cable ID", http.StatusBadRequest)
-		return
+type cableStockRequest struct {
+	ZoneID   *int    `json:"zone_id"`
+	Quantity float64 `json:"quantity"`
+}
+
+type cableUnitRequest struct {
+	Quantity int  `json:"quantity"`
+	ZoneID   *int `json:"zone_id"`
+}
+
+func normalizeCableTrackingMode(value string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		return cableTrackingQuantity, nil
 	}
+	if mode != cableTrackingQuantity && mode != cableTrackingIndividual {
+		return "", fmt.Errorf("tracking_mode must be quantity or individual")
+	}
+	return mode, nil
+}
 
-	db := repository.GetSQLDB()
+func validateCableCreateRequest(input *cableCreateRequest) error {
+	if input == nil {
+		return errors.New("request is required")
+	}
+	if input.Connector1 <= 0 || input.Connector2 <= 0 || input.Typ <= 0 {
+		return errors.New("connector1, connector2 and typ are required")
+	}
+	if input.Length <= 0 {
+		return errors.New("length must be greater than 0")
+	}
+	if input.MM2 != nil && *input.MM2 <= 0 {
+		return errors.New("mm2 must be greater than 0 when provided")
+	}
+	if input.Quantity < 0 {
+		return errors.New("quantity must not be negative")
+	}
+	mode, err := normalizeCableTrackingMode(input.TrackingMode)
+	if err != nil {
+		return err
+	}
+	input.TrackingMode = mode
+	return nil
+}
 
-	query := `
-		SELECT
-			c.cableID,
-			c.name,
-			c.connector1,
-			c.connector2,
-			c.typ,
-			c.length,
-			c.mm2,
-			cc1.name as connector1_name,
-			cc1.gender as connector1_gender,
-			cc2.name as connector2_name,
-			cc2.gender as connector2_gender,
-			ct.name as cable_type_name
-		FROM cables c
-		LEFT JOIN cable_connectors cc1 ON c.connector1 = cc1.cable_connectorsID
-		LEFT JOIN cable_connectors cc2 ON c.connector2 = cc2.cable_connectorsID
-		LEFT JOIN cable_types ct ON c.typ = ct.cable_typesID
-		WHERE c.cableID = ?
+func parseCableID(r *http.Request) (int, error) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil || id <= 0 {
+		return 0, errors.New("invalid cable ID")
+	}
+	return id, nil
+}
+
+func cableSelectQuery() string {
+	return `
+		SELECT cp.cable_product_id, cp.product_id, p.name,
+		       cp.connector_a_id, cp.connector_b_id, cp.cable_type_id,
+		       cp.length_m, cp.cross_section_mm2, cp.tracking_mode,
+		       p.generic_barcode, COALESCE(p.stock_quantity, 0),
+		       COALESCE(device_totals.total_count, 0),
+		       COALESCE(device_totals.available_count, 0),
+		       cc1.name, cc1.gender, cc2.name, cc2.gender, ct.name,
+		       cp.migrated_from_legacy
+		FROM cable_products cp
+		JOIN products p ON p.productid = cp.product_id
+		JOIN cable_connectors cc1 ON cc1.cable_connectorsid = cp.connector_a_id
+		JOIN cable_connectors cc2 ON cc2.cable_connectorsid = cp.connector_b_id
+		JOIN cable_types ct ON ct.cable_typesid = cp.cable_type_id
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*) AS total_count,
+			       COUNT(*) FILTER (WHERE d.status IN ('free', 'in_storage')) AS available_count
+			FROM devices d
+			WHERE d.productid = cp.product_id
+		) device_totals ON TRUE
 	`
+}
 
+func scanCable(scanner interface{ Scan(...interface{}) error }) (*Cable, error) {
 	var cable Cable
-	err = db.QueryRow(query, id).Scan(
+	var productStock float64
+	var availableUnits int
+	if err := scanner.Scan(
 		&cable.CableID,
+		&cable.ProductID,
 		&cable.Name,
 		&cable.Connector1,
 		&cable.Connector2,
 		&cable.Typ,
 		&cable.Length,
 		&cable.MM2,
+		&cable.TrackingMode,
+		&cable.GenericBarcode,
+		&productStock,
+		&cable.UnitCount,
+		&availableUnits,
 		&cable.Connector1Name,
 		&cable.Connector1Gender,
 		&cable.Connector2Name,
 		&cable.Connector2Gender,
 		&cable.CableTypeName,
-	)
+		&cable.MigratedFromLegacy,
+	); err != nil {
+		return nil, err
+	}
+	if cable.TrackingMode == cableTrackingIndividual {
+		cable.StockQuantity = float64(cable.UnitCount)
+		cable.AvailableQuantity = float64(availableUnits)
+	} else {
+		cable.StockQuantity = productStock
+		cable.AvailableQuantity = productStock
+	}
+	return &cable, nil
+}
 
-	if err == sql.ErrNoRows {
-		http.Error(w, "Cable not found", http.StatusNotFound)
+func GetAllCables(w http.ResponseWriter, r *http.Request) {
+	db := repository.GetSQLDB()
+	query := cableSelectQuery() + ` WHERE 1=1`
+	args := make([]interface{}, 0, 8)
+	addArg := func(value interface{}) string {
+		args = append(args, value)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
+		placeholder := addArg("%" + search + "%")
+		query += fmt.Sprintf(" AND (p.name ILIKE %s OR p.generic_barcode ILIKE %s OR cc1.name ILIKE %s OR cc2.name ILIKE %s OR ct.name ILIKE %s)", placeholder, placeholder, placeholder, placeholder, placeholder)
+	}
+	if value, err := strconv.Atoi(r.URL.Query().Get("connector1")); err == nil && value > 0 {
+		placeholder := addArg(value)
+		query += fmt.Sprintf(" AND (cp.connector_a_id = %s OR cp.connector_b_id = %s)", placeholder, placeholder)
+	}
+	if value, err := strconv.Atoi(r.URL.Query().Get("connector2")); err == nil && value > 0 {
+		placeholder := addArg(value)
+		query += fmt.Sprintf(" AND (cp.connector_a_id = %s OR cp.connector_b_id = %s)", placeholder, placeholder)
+	}
+	if value, err := strconv.Atoi(r.URL.Query().Get("type")); err == nil && value > 0 {
+		query += " AND cp.cable_type_id = " + addArg(value)
+	}
+	if value, err := strconv.ParseFloat(r.URL.Query().Get("length_min"), 64); err == nil && value >= 0 {
+		query += " AND cp.length_m >= " + addArg(value)
+	}
+	if value, err := strconv.ParseFloat(r.URL.Query().Get("length_max"), 64); err == nil && value >= 0 {
+		query += " AND cp.length_m <= " + addArg(value)
+	}
+	if mode := strings.TrimSpace(r.URL.Query().Get("tracking_mode")); mode != "" {
+		query += " AND cp.tracking_mode = " + addArg(mode)
+	}
+	query += " ORDER BY ct.name, p.name, cp.length_m, cp.cable_product_id"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Printf("[CABLE LIST] query failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch cable inventory"})
+		return
+	}
+	defer rows.Close()
+
+	cables := make([]Cable, 0)
+	for rows.Next() {
+		cable, err := scanCable(rows)
+		if err != nil {
+			log.Printf("[CABLE LIST] scan failed: %v", err)
+			continue
+		}
+		cables = append(cables, *cable)
+	}
+	respondJSON(w, http.StatusOK, cables)
+}
+
+func GetCable(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCableID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	cable, err := loadCable(repository.GetSQLDB(), id, true)
+	if errors.Is(err, sql.ErrNoRows) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
 		return
 	}
 	if err != nil {
-		log.Printf("Error fetching cable: %v", err)
-		http.Error(w, "Failed to fetch cable", http.StatusInternalServerError)
+		log.Printf("[CABLE GET] failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch cable product"})
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cable)
+	respondJSON(w, http.StatusOK, cable)
 }
 
-// CreateCable creates a new cable
+func loadCable(db *sql.DB, id int, includeInventory bool) (*Cable, error) {
+	cable, err := scanCable(db.QueryRow(cableSelectQuery()+` WHERE cp.cable_product_id = $1`, id))
+	if err != nil {
+		return nil, err
+	}
+	if !includeInventory {
+		return cable, nil
+	}
+
+	stockRows, err := db.Query(`
+		SELECT pl.zone_id, COALESCE(z.name, 'Ohne Lagerzone'), COALESCE(z.code, ''), pl.quantity
+		FROM product_locations pl
+		LEFT JOIN storage_zones z ON z.zone_id = pl.zone_id
+		WHERE pl.product_id = $1
+		ORDER BY z.name NULLS LAST
+	`, cable.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	cable.ZoneStocks = make([]CableStock, 0)
+	for stockRows.Next() {
+		var stock CableStock
+		var zoneID sql.NullInt64
+		if err := stockRows.Scan(&zoneID, &stock.ZoneName, &stock.ZoneCode, &stock.Quantity); err != nil {
+			stockRows.Close()
+			return nil, err
+		}
+		stock.ZoneID = nullIntToPtr(zoneID)
+		cable.ZoneStocks = append(cable.ZoneStocks, stock)
+	}
+	stockRows.Close()
+
+	unitRows, err := db.Query(`
+		SELECT d.deviceid, d.barcode, d.qr_code, d.status, d.zone_id,
+		       COALESCE(z.name, 'Ohne Lagerzone'), COALESCE(z.code, ''),
+		       COALESCE(d.condition_rating, 5), assigned_job.jobid
+		FROM devices d
+		LEFT JOIN storage_zones z ON z.zone_id = d.zone_id
+		LEFT JOIN LATERAL (
+			SELECT jd.jobid
+			FROM job_devices jd
+			WHERE jd.deviceid = d.deviceid
+			ORDER BY jd.jobid DESC
+			LIMIT 1
+		) assigned_job ON TRUE
+		WHERE d.productid = $1
+		ORDER BY d.deviceid
+	`, cable.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	cable.Units = make([]CableUnit, 0)
+	for unitRows.Next() {
+		var unit CableUnit
+		var zoneID, jobID sql.NullInt64
+		if err := unitRows.Scan(&unit.DeviceID, &unit.Barcode, &unit.QRCode, &unit.Status, &zoneID, &unit.ZoneName, &unit.ZoneCode, &unit.ConditionRating, &jobID); err != nil {
+			unitRows.Close()
+			return nil, err
+		}
+		unit.ZoneID = nullIntToPtr(zoneID)
+		unit.CurrentJobID = nullIntToPtr(jobID)
+		cable.Units = append(cable.Units, unit)
+	}
+	unitRows.Close()
+	return cable, nil
+}
+
 func CreateCable(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Name       *string  `json:"name"`
-		Connector1 int      `json:"connector1"`
-		Connector2 int      `json:"connector2"`
-		Typ        int      `json:"typ"`
-		Length     float64  `json:"length"`
-		MM2        *float64 `json:"mm2"`
-	}
-
+	var input cableCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
-
-	// Validation
-	if input.Length <= 0 {
-		http.Error(w, "Length must be greater than 0", http.StatusBadRequest)
-		return
-	}
-	if input.Connector1 <= 0 || input.Connector2 <= 0 || input.Typ <= 0 {
-		http.Error(w, "Connector1, Connector2, and Type are required", http.StatusBadRequest)
+	if err := validateCableCreateRequest(&input); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
 	db := repository.GetSQLDB()
-
-	var id int64
-	query := `INSERT INTO cables (connector1, connector2, typ, length, mm2, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING cable_id`
-	err := db.QueryRow(query, input.Connector1, input.Connector2, input.Typ, input.Length, input.MM2, input.Name).Scan(&id)
+	tx, err := db.Begin()
 	if err != nil {
-		log.Printf("Error creating cable: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to create cable: %v", err), http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
+
+	name, err := resolveCableName(tx, input.Name, input.Typ, input.Connector1, input.Connector2, input.Length)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	countTypeID, err := ensurePieceCountType(tx)
+	if err != nil {
+		log.Printf("[CABLE CREATE] count type failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to prepare cable product"})
 		return
 	}
 
-	log.Printf("[CABLE CREATE] Created cable ID %d", id)
+	var productID int
+	if err := tx.QueryRow(`
+		INSERT INTO products (name, is_accessory, is_consumable, count_type_id, stock_quantity, created_at, updated_at)
+		VALUES ($1, TRUE, FALSE, $2, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		RETURNING productid
+	`, name, countTypeID).Scan(&productID); err != nil {
+		log.Printf("[CABLE CREATE] product insert failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create cable product"})
+		return
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"cable_id": id,
-		"message":  "Cable created successfully",
-	})
+	barcode := strings.TrimSpace(input.GenericBarcode)
+	if barcode == "" {
+		barcode = cableProductBarcode(productID)
+	}
+	if err := ensureProductBarcodeAvailable(tx, barcode, productID); err != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	if _, err := tx.Exec(`UPDATE products SET generic_barcode = $1 WHERE productid = $2`, barcode, productID); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to assign product barcode"})
+		return
+	}
+
+	var cableID int
+	if err := tx.QueryRow(`
+		INSERT INTO cable_products (
+			product_id, connector_a_id, connector_b_id, cable_type_id,
+			length_m, cross_section_mm2, tracking_mode
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING cable_product_id
+	`, productID, input.Connector1, input.Connector2, input.Typ, input.Length, nullableFloatPtr(input.MM2), input.TrackingMode).Scan(&cableID); err != nil {
+		log.Printf("[CABLE CREATE] specification insert failed: %v", err)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid cable specification"})
+		return
+	}
+
+	if input.Quantity > 0 {
+		if input.TrackingMode == cableTrackingIndividual {
+			if err := createCableUnits(tx, productID, input.Quantity, input.ZoneID); err != nil {
+				log.Printf("[CABLE CREATE] unit creation failed: %v", err)
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create individual cables"})
+				return
+			}
+		} else if err := setCableStock(tx, productID, input.ZoneID, float64(input.Quantity)); err != nil {
+			log.Printf("[CABLE CREATE] stock creation failed: %v", err)
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create cable stock"})
+			return
+		}
+	}
+
+	if err := syncCableProductStock(tx, productID, input.TrackingMode); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to synchronize cable stock"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to commit cable product"})
+		return
+	}
+	respondJSON(w, http.StatusCreated, map[string]interface{}{"cable_id": cableID, "product_id": productID, "message": "Cable product created successfully"})
 }
 
-// UpdateCable updates an existing cable
 func UpdateCable(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	idStr := vars["id"]
-
-	id, err := strconv.Atoi(idStr)
+	id, err := parseCableID(r)
 	if err != nil {
-		http.Error(w, "Invalid cable ID", http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-
-	var input struct {
-		Name       *string  `json:"name"`
-		Connector1 *int     `json:"connector1"`
-		Connector2 *int     `json:"connector2"`
-		Typ        *int     `json:"typ"`
-		Length     *float64 `json:"length"`
-		MM2        *float64 `json:"mm2"`
-	}
-
+	var input cableUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
-
-	// Validation
 	if input.Length != nil && *input.Length <= 0 {
-		http.Error(w, "Length must be greater than 0", http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Length must be greater than 0"})
+		return
+	}
+	if input.MM2.Set && input.MM2.Valid && input.MM2.Value <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "mm2 must be greater than 0"})
 		return
 	}
 
 	db := repository.GetSQLDB()
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
 
-	// Build dynamic update query
-	updates := []string{}
-	args := []interface{}{}
-	argNum := 1
+	var productID int
+	var currentMode string
+	if err := tx.QueryRow(`SELECT product_id, tracking_mode FROM cable_products WHERE cable_product_id = $1 FOR UPDATE`, id).Scan(&productID, &currentMode); errors.Is(err, sql.ErrNoRows) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
+		return
+	} else if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load cable product"})
+		return
+	}
 
-	if input.Name != nil {
-		updates = append(updates, fmt.Sprintf("name = $%d", argNum))
-		args = append(args, input.Name)
-		argNum++
+	if input.TrackingMode != nil {
+		mode, err := normalizeCableTrackingMode(*input.TrackingMode)
+		if err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if mode != currentMode {
+			var quantity float64
+			var unitCount int
+			if err := tx.QueryRow(`SELECT COALESCE(stock_quantity, 0), (SELECT COUNT(*) FROM devices WHERE productid = $1) FROM products WHERE productid = $1`, productID).Scan(&quantity, &unitCount); err != nil {
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to validate tracking mode"})
+				return
+			}
+			if quantity > 0 || unitCount > 0 {
+				respondJSON(w, http.StatusConflict, map[string]string{"error": "Tracking mode can only be changed when the cable has no stock"})
+				return
+			}
+			if _, err := tx.Exec(`UPDATE cable_products SET tracking_mode = $1 WHERE cable_product_id = $2`, mode, id); err != nil {
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update tracking mode"})
+				return
+			}
+			currentMode = mode
+		}
+	}
+
+	updates := make([]string, 0, 5)
+	args := make([]interface{}, 0, 6)
+	add := func(column string, value interface{}) {
+		args = append(args, value)
+		updates = append(updates, fmt.Sprintf("%s = $%d", column, len(args)))
 	}
 	if input.Connector1 != nil {
-		updates = append(updates, fmt.Sprintf("connector1 = $%d", argNum))
-		args = append(args, *input.Connector1)
-		argNum++
+		add("connector_a_id", *input.Connector1)
 	}
 	if input.Connector2 != nil {
-		updates = append(updates, fmt.Sprintf("connector2 = $%d", argNum))
-		args = append(args, *input.Connector2)
-		argNum++
+		add("connector_b_id", *input.Connector2)
 	}
 	if input.Typ != nil {
-		updates = append(updates, fmt.Sprintf("typ = $%d", argNum))
-		args = append(args, *input.Typ)
-		argNum++
+		add("cable_type_id", *input.Typ)
 	}
 	if input.Length != nil {
-		updates = append(updates, fmt.Sprintf("length = $%d", argNum))
-		args = append(args, *input.Length)
-		argNum++
+		add("length_m", *input.Length)
 	}
-	if input.MM2 != nil {
-		updates = append(updates, fmt.Sprintf("mm2 = $%d", argNum))
-		args = append(args, *input.MM2)
-		argNum++
+	if input.MM2.Set {
+		if input.MM2.Valid {
+			add("cross_section_mm2", input.MM2.Value)
+		} else {
+			add("cross_section_mm2", nil)
+		}
+	}
+	if len(updates) > 0 {
+		args = append(args, id)
+		query := fmt.Sprintf("UPDATE cable_products SET %s, updated_at = CURRENT_TIMESTAMP WHERE cable_product_id = $%d", strings.Join(updates, ", "), len(args))
+		if _, err := tx.Exec(query, args...); err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid cable specification"})
+			return
+		}
 	}
 
-	if len(updates) == 0 {
-		http.Error(w, "No fields to update", http.StatusBadRequest)
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		if name == "" {
+			var typeName, connectorA, connectorB string
+			var length float64
+			if err := tx.QueryRow(`
+				SELECT ct.name, COALESCE(NULLIF(ca.abbreviation, ''), ca.name), COALESCE(NULLIF(cb.abbreviation, ''), cb.name), cp.length_m
+				FROM cable_products cp
+				JOIN cable_types ct ON ct.cable_typesid = cp.cable_type_id
+				JOIN cable_connectors ca ON ca.cable_connectorsid = cp.connector_a_id
+				JOIN cable_connectors cb ON cb.cable_connectorsid = cp.connector_b_id
+				WHERE cp.cable_product_id = $1
+			`, id).Scan(&typeName, &connectorA, &connectorB, &length); err != nil {
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to generate cable name"})
+				return
+			}
+			name = buildCableProductName(typeName, connectorA, connectorB, length)
+		}
+		if _, err := tx.Exec(`UPDATE products SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE productid = $2`, name, productID); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update cable name"})
+			return
+		}
+	}
+	if input.GenericBarcode != nil {
+		barcode := strings.TrimSpace(*input.GenericBarcode)
+		if barcode == "" {
+			barcode = cableProductBarcode(productID)
+		}
+		if err := ensureProductBarcodeAvailable(tx, barcode, productID); err != nil {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, err := tx.Exec(`UPDATE products SET generic_barcode = $1, updated_at = CURRENT_TIMESTAMP WHERE productid = $2`, barcode, productID); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product barcode"})
+			return
+		}
+	}
+	if err := syncCableProductStock(tx, productID, currentMode); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to synchronize cable stock"})
 		return
 	}
-
-	query := fmt.Sprintf("UPDATE cables SET %s WHERE cableID = $%d", strings.Join(updates, ", "), argNum)
-	args = append(args, id)
-
-	result, err := db.Exec(query, args...)
-	if err != nil {
-		log.Printf("Error updating cable: %v", err)
-		http.Error(w, "Failed to update cable", http.StatusInternalServerError)
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to commit cable update"})
 		return
 	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		http.Error(w, "Cable not found", http.StatusNotFound)
-		return
-	}
-
-	log.Printf("[CABLE UPDATE] Updated cable ID %d", id)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Cable updated successfully"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable product updated successfully"})
 }
 
-// DeleteCable deletes a cable
 func DeleteCable(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	idStr := vars["id"]
-
-	id, err := strconv.Atoi(idStr)
+	id, err := parseCableID(r)
 	if err != nil {
-		http.Error(w, "Invalid cable ID", http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-
 	db := repository.GetSQLDB()
-
-	query := "DELETE FROM cables WHERE cableID = $1"
-	result, err := db.Exec(query, id)
+	var productID int
+	var stock float64
+	var units int
+	err = db.QueryRow(`
+		SELECT cp.product_id, COALESCE(p.stock_quantity, 0), (SELECT COUNT(*) FROM devices d WHERE d.productid = cp.product_id)
+		FROM cable_products cp JOIN products p ON p.productid = cp.product_id
+		WHERE cp.cable_product_id = $1
+	`, id).Scan(&productID, &stock, &units)
+	if errors.Is(err, sql.ErrNoRows) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
+		return
+	}
 	if err != nil {
-		log.Printf("Error deleting cable: %v", err)
-		http.Error(w, "Failed to delete cable", http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load cable product"})
 		return
 	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		http.Error(w, "Cable not found", http.StatusNotFound)
+	if stock > 0 || units > 0 {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Cable product can only be deleted when its stock is zero"})
 		return
 	}
-
-	log.Printf("[CABLE DELETE] Deleted cable ID %d", id)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Cable deleted successfully"})
+	result, err := db.Exec(`DELETE FROM products WHERE productid = $1`, productID)
+	if err != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Cable product is still used by a job or package"})
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable product deleted successfully"})
 }
 
-// GetCableConnectors retrieves all cable connector types
-func GetCableConnectors(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
-
-	query := `SELECT cable_connectorsID, name, abbreviation, gender FROM cable_connectors ORDER BY name`
-
-	rows, err := db.Query(query)
+func SetCableStock(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCableID(r)
 	if err != nil {
-		log.Printf("Error querying cable connectors: %v", err)
-		http.Error(w, "Failed to fetch cable connectors", http.StatusInternalServerError)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	var input cableStockRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Quantity < 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "quantity must be zero or greater"})
+		return
+	}
+	db := repository.GetSQLDB()
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
+	var productID int
+	var mode string
+	if err := tx.QueryRow(`SELECT product_id, tracking_mode FROM cable_products WHERE cable_product_id = $1 FOR UPDATE`, id).Scan(&productID, &mode); errors.Is(err, sql.ErrNoRows) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
+		return
+	} else if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load cable product"})
+		return
+	}
+	if mode != cableTrackingQuantity {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Stock levels can only be set for quantity-tracked cables"})
+		return
+	}
+	if err := setCableStock(tx, productID, input.ZoneID, input.Quantity); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update cable stock"})
+		return
+	}
+	if err := syncCableProductStock(tx, productID, mode); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to synchronize cable stock"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to commit stock update"})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable stock updated successfully"})
+}
+
+func CreateCableUnits(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCableID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	var input cableUnitRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Quantity <= 0 || input.Quantity > 500 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "quantity must be between 1 and 500"})
+		return
+	}
+	db := repository.GetSQLDB()
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
+	var productID int
+	var mode string
+	if err := tx.QueryRow(`SELECT product_id, tracking_mode FROM cable_products WHERE cable_product_id = $1 FOR UPDATE`, id).Scan(&productID, &mode); errors.Is(err, sql.ErrNoRows) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
+		return
+	} else if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load cable product"})
+		return
+	}
+	if mode != cableTrackingIndividual {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Units can only be created for individually tracked cables"})
+		return
+	}
+	if err := createCableUnits(tx, productID, input.Quantity, input.ZoneID); err != nil {
+		log.Printf("[CABLE UNITS] creation failed: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create cable units"})
+		return
+	}
+	if err := syncCableProductStock(tx, productID, mode); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to synchronize cable units"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to commit cable units"})
+		return
+	}
+	respondJSON(w, http.StatusCreated, map[string]interface{}{"created_count": input.Quantity, "message": "Cable units created successfully"})
+}
+
+func DeleteCableUnit(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCableID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	deviceID := strings.TrimSpace(mux.Vars(r)["device_id"])
+	if deviceID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid device ID"})
+		return
+	}
+	db := repository.GetSQLDB()
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
+	var productID int
+	if err := tx.QueryRow(`SELECT product_id FROM cable_products WHERE cable_product_id = $1`, id).Scan(&productID); errors.Is(err, sql.ErrNoRows) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable product not found"})
+		return
+	} else if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load cable product"})
+		return
+	}
+	var references int
+	if err := tx.QueryRow(`
+		SELECT (SELECT COUNT(*) FROM job_devices WHERE deviceid = $1) +
+		       (SELECT COUNT(*) FROM devicescases WHERE deviceid = $1)
+	`, deviceID).Scan(&references); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to validate cable unit"})
+		return
+	}
+	if references > 0 {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Cable unit is assigned to a job or case"})
+		return
+	}
+	result, err := tx.Exec(`DELETE FROM devices WHERE deviceid = $1 AND productid = $2`, deviceID, productID)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete cable unit"})
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable unit not found"})
+		return
+	}
+	if err := syncCableProductStock(tx, productID, cableTrackingIndividual); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to synchronize cable units"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to commit cable unit deletion"})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable unit deleted successfully"})
+}
+
+func ensurePieceCountType(tx *sql.Tx) (int, error) {
+	var id int
+	err := tx.QueryRow(`
+		INSERT INTO count_types (name, abbreviation, is_decimal)
+		VALUES ('Stück', 'Stk', FALSE)
+		ON CONFLICT (name) DO UPDATE SET abbreviation = COALESCE(count_types.abbreviation, EXCLUDED.abbreviation)
+		RETURNING count_type_id
+	`).Scan(&id)
+	return id, err
+}
+
+func resolveCableName(tx *sql.Tx, requested string, typeID, connectorAID, connectorBID int, length float64) (string, error) {
+	if name := strings.TrimSpace(requested); name != "" {
+		return name, nil
+	}
+	var typeName, connectorA, connectorB string
+	err := tx.QueryRow(`
+		SELECT ct.name,
+		       COALESCE(NULLIF(ca.abbreviation, ''), ca.name),
+		       COALESCE(NULLIF(cb.abbreviation, ''), cb.name)
+		FROM cable_types ct, cable_connectors ca, cable_connectors cb
+		WHERE ct.cable_typesid = $1 AND ca.cable_connectorsid = $2 AND cb.cable_connectorsid = $3
+	`, typeID, connectorAID, connectorBID).Scan(&typeName, &connectorA, &connectorB)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errors.New("unknown cable type or connector")
+	}
+	if err != nil {
+		return "", err
+	}
+	return buildCableProductName(typeName, connectorA, connectorB, length), nil
+}
+
+func ensureProductBarcodeAvailable(tx *sql.Tx, barcode string, productID int) error {
+	var existing int
+	err := tx.QueryRow(`SELECT productid FROM products WHERE generic_barcode = $1 AND productid <> $2 LIMIT 1`, barcode, productID).Scan(&existing)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("barcode %q is already used by another product", barcode)
+}
+
+func setCableStock(tx *sql.Tx, productID int, zoneID *int, quantity float64) error {
+	if quantity == 0 {
+		_, err := tx.Exec(`DELETE FROM product_locations WHERE product_id = $1 AND zone_id IS NOT DISTINCT FROM $2`, productID, nullableIntPtr(zoneID))
+		return err
+	}
+	_, err := tx.Exec(`
+		INSERT INTO product_locations (product_id, zone_id, quantity, updated_at)
+		VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+		ON CONFLICT (product_id, zone_id) DO UPDATE
+		SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+	`, productID, nullableIntPtr(zoneID), quantity)
+	return err
+}
+
+func syncCableProductStock(tx *sql.Tx, productID int, mode string) error {
+	var query string
+	if mode == cableTrackingIndividual {
+		query = `UPDATE products SET stock_quantity = (SELECT COUNT(*) FROM devices WHERE productid = $1), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
+	} else {
+		query = `UPDATE products SET stock_quantity = (SELECT COALESCE(SUM(quantity), 0) FROM product_locations WHERE product_id = $1), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
+	}
+	_, err := tx.Exec(query, productID)
+	return err
+}
+
+func createCableUnits(tx *sql.Tx, productID, quantity int, zoneID *int) error {
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock($1)`, productID); err != nil {
+		return err
+	}
+	var nextNumber int
+	pattern := fmt.Sprintf("^CAB-%d-[0-9]+$", productID)
+	err := tx.QueryRow(`
+		SELECT COALESCE(MAX((regexp_match(deviceid, '([0-9]+)$'))[1]::INT), 0) + 1
+		FROM devices
+		WHERE productid = $1 AND deviceid ~ $2
+	`, productID, pattern).Scan(&nextNumber)
+	if err != nil {
+		return err
+	}
+	status := "free"
+	currentLocation := interface{}(nil)
+	if zoneID != nil {
+		status = "in_storage"
+		currentLocation = "warehouse"
+	}
+	for index := 0; index < quantity; index++ {
+		deviceID := fmt.Sprintf("CAB-%d-%04d", productID, nextNumber+index)
+		_, err := tx.Exec(`
+			INSERT INTO devices (
+				deviceid, productid, status, barcode, qr_code,
+				current_location, zone_id, condition_rating, usage_hours,
+				created_at, updated_at
+			) VALUES ($1, $2, $3, $1, $4, $5, $6, 5, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, deviceID, productID, status, "QR-"+deviceID, currentLocation, nullableIntPtr(zoneID))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func GetCableConnectors(w http.ResponseWriter, _ *http.Request) {
+	rows, err := repository.GetSQLDB().Query(`SELECT cable_connectorsid, name, abbreviation, gender FROM cable_connectors ORDER BY name, gender`)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch cable connectors"})
 		return
 	}
 	defer rows.Close()
-
-	var connectors []CableConnector
+	connectors := make([]CableConnector, 0)
 	for rows.Next() {
 		var connector CableConnector
-		err := rows.Scan(&connector.ConnectorID, &connector.Name, &connector.Abbreviation, &connector.Gender)
-		if err != nil {
-			log.Printf("Error scanning connector: %v", err)
-			continue
+		if err := rows.Scan(&connector.ConnectorID, &connector.Name, &connector.Abbreviation, &connector.Gender); err == nil {
+			connectors = append(connectors, connector)
 		}
-		connectors = append(connectors, connector)
 	}
-
-	if connectors == nil {
-		connectors = []CableConnector{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(connectors)
+	respondJSON(w, http.StatusOK, connectors)
 }
 
-// GetCableTypes retrieves all cable types
-func GetCableTypes(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
-
-	query := `
-		SELECT
-			ct.cable_typesID,
-			ct.name,
-			COALESCE(COUNT(c.cableID), 0) AS cable_count
+func GetCableTypes(w http.ResponseWriter, _ *http.Request) {
+	rows, err := repository.GetSQLDB().Query(`
+		SELECT ct.cable_typesid, ct.name, COUNT(cp.cable_product_id)
 		FROM cable_types ct
-		LEFT JOIN cables c ON c.typ = ct.cable_typesID
-		GROUP BY ct.cable_typesID, ct.name
+		LEFT JOIN cable_products cp ON cp.cable_type_id = ct.cable_typesid
+		GROUP BY ct.cable_typesid, ct.name
 		ORDER BY ct.name
-	`
-
-	rows, err := db.Query(query)
+	`)
 	if err != nil {
-		log.Printf("Error querying cable types: %v", err)
-		http.Error(w, "Failed to fetch cable types", http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch cable types"})
 		return
 	}
 	defer rows.Close()
-
-	var types []CableType
+	types := make([]CableType, 0)
 	for rows.Next() {
 		var cableType CableType
-		err := rows.Scan(&cableType.CableTypeID, &cableType.Name, &cableType.Count)
-		if err != nil {
-			log.Printf("Error scanning cable type: %v", err)
-			continue
+		if err := rows.Scan(&cableType.CableTypeID, &cableType.Name, &cableType.Count); err == nil {
+			types = append(types, cableType)
 		}
-		types = append(types, cableType)
 	}
-
-	if types == nil {
-		types = []CableType{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types)
+	respondJSON(w, http.StatusOK, types)
 }
 
-// CreateCableType creates a new cable type
 func CreateCableType(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
-	var req struct {
+	var input struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || strings.TrimSpace(input.Name) == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Name is required"})
 		return
 	}
 	var id int
-	err := db.QueryRow(`INSERT INTO cable_types (name) VALUES ($1) RETURNING cable_typesid`, req.Name).Scan(&id)
-	if err != nil {
-		log.Printf("Error creating cable type: %v", err)
-		http.Error(w, `{"error":"Failed to create cable type"}`, http.StatusInternalServerError)
+	if err := repository.GetSQLDB().QueryRow(`INSERT INTO cable_types (name) VALUES ($1) RETURNING cable_typesid`, strings.TrimSpace(input.Name)).Scan(&id); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create cable type"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{"cable_type_id": id, "name": req.Name, "count": 0})
+	respondJSON(w, http.StatusCreated, CableType{CableTypeID: id, Name: strings.TrimSpace(input.Name)})
 }
 
-// UpdateCableType updates an existing cable type
 func UpdateCableType(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
-	if err != nil {
-		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
-		return
-	}
-	var req struct {
+	var input struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err != nil || json.NewDecoder(r.Body).Decode(&input) != nil || strings.TrimSpace(input.Name) == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Valid ID and name are required"})
 		return
 	}
-	res, err := db.Exec(`UPDATE cable_types SET name = $1 WHERE cable_typesid = $2`, req.Name, id)
+	result, err := repository.GetSQLDB().Exec(`UPDATE cable_types SET name = $1 WHERE cable_typesid = $2`, strings.TrimSpace(input.Name), id)
 	if err != nil {
-		log.Printf("Error updating cable type: %v", err)
-		http.Error(w, `{"error":"Failed to update cable type"}`, http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update cable type"})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable type not found"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Cable type updated successfully"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable type updated successfully"})
 }
 
-// DeleteCableType deletes a cable type if no cables use it
 func DeleteCableType(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid cable type ID"})
 		return
 	}
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM cables WHERE typ = $1`, id).Scan(&count)
-	if count > 0 {
-		http.Error(w, fmt.Sprintf(`{"error":"Kabel-Typ wird von %d Kabel(n) verwendet"}`, count), http.StatusConflict)
+	result, err := repository.GetSQLDB().Exec(`DELETE FROM cable_types WHERE cable_typesid = $1`, id)
+	if isForeignKeyViolation(err) {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Cable type is still in use"})
 		return
 	}
-	res, err := db.Exec(`DELETE FROM cable_types WHERE cable_typesid = $1`, id)
 	if err != nil {
-		log.Printf("Error deleting cable type: %v", err)
-		http.Error(w, `{"error":"Failed to delete cable type"}`, http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete cable type"})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable type not found"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Cable type deleted successfully"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable type deleted successfully"})
 }
 
-// CreateCableConnector creates a new cable connector
 func CreateCableConnector(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
-	var req struct {
+	var input struct {
 		Name         string  `json:"name"`
 		Abbreviation *string `json:"abbreviation"`
 		Gender       *string `json:"gender"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || strings.TrimSpace(input.Name) == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Name is required"})
 		return
 	}
 	var id int
-	err := db.QueryRow(
-		`INSERT INTO cable_connectors (name, abbreviation, gender) VALUES ($1, $2, $3) RETURNING cable_connectorsid`,
-		req.Name, req.Abbreviation, req.Gender,
-	).Scan(&id)
+	err := repository.GetSQLDB().QueryRow(`
+		INSERT INTO cable_connectors (name, abbreviation, gender) VALUES ($1, $2, $3) RETURNING cable_connectorsid
+	`, strings.TrimSpace(input.Name), nullableStringPtr(input.Abbreviation), nullableStringPtr(input.Gender)).Scan(&id)
 	if err != nil {
-		log.Printf("Error creating cable connector: %v", err)
-		http.Error(w, `{"error":"Failed to create cable connector"}`, http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create cable connector"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(CableConnector{ConnectorID: id, Name: req.Name, Abbreviation: req.Abbreviation, Gender: req.Gender})
+	respondJSON(w, http.StatusCreated, CableConnector{ConnectorID: id, Name: strings.TrimSpace(input.Name), Abbreviation: input.Abbreviation, Gender: input.Gender})
 }
 
-// UpdateCableConnector updates an existing cable connector
 func UpdateCableConnector(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
-	if err != nil {
-		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
-		return
-	}
-	var req struct {
+	var input struct {
 		Name         string  `json:"name"`
 		Abbreviation *string `json:"abbreviation"`
 		Gender       *string `json:"gender"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err != nil || json.NewDecoder(r.Body).Decode(&input) != nil || strings.TrimSpace(input.Name) == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Valid ID and name are required"})
 		return
 	}
-	res, err := db.Exec(
-		`UPDATE cable_connectors SET name = $1, abbreviation = $2, gender = $3 WHERE cable_connectorsid = $4`,
-		req.Name, req.Abbreviation, req.Gender, id,
-	)
+	result, err := repository.GetSQLDB().Exec(`
+		UPDATE cable_connectors SET name = $1, abbreviation = $2, gender = $3 WHERE cable_connectorsid = $4
+	`, strings.TrimSpace(input.Name), nullableStringPtr(input.Abbreviation), nullableStringPtr(input.Gender), id)
 	if err != nil {
-		log.Printf("Error updating cable connector: %v", err)
-		http.Error(w, `{"error":"Failed to update cable connector"}`, http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update cable connector"})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable connector not found"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Cable connector updated successfully"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable connector updated successfully"})
 }
 
-// DeleteCableConnector deletes a cable connector if no cables use it
 func DeleteCableConnector(w http.ResponseWriter, r *http.Request) {
-	db := repository.GetSQLDB()
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid cable connector ID"})
 		return
 	}
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM cables WHERE connector1 = $1 OR connector2 = $1`, id).Scan(&count)
-	if count > 0 {
-		http.Error(w, fmt.Sprintf(`{"error":"Anschluss wird von %d Kabel(n) verwendet"}`, count), http.StatusConflict)
+	result, err := repository.GetSQLDB().Exec(`DELETE FROM cable_connectors WHERE cable_connectorsid = $1`, id)
+	if isForeignKeyViolation(err) {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Cable connector is still in use"})
 		return
 	}
-	res, err := db.Exec(`DELETE FROM cable_connectors WHERE cable_connectorsid = $1`, id)
 	if err != nil {
-		log.Printf("Error deleting cable connector: %v", err)
-		http.Error(w, `{"error":"Failed to delete cable connector"}`, http.StatusInternalServerError)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete cable connector"})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Cable connector not found"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Cable connector deleted successfully"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Cable connector deleted successfully"})
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pqError *pq.Error
+	return errors.As(err, &pqError) && pqError.Code == "23503"
 }

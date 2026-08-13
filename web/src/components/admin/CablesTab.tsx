@@ -1,11 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Barcode,
   Cable,
-  ChevronDown,
-  ChevronRight,
   Eye,
-  LayoutGrid,
-  List,
+  MapPin,
+  PackagePlus,
   Pencil,
   Plus,
   RefreshCcw,
@@ -13,8 +12,16 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { cablesAdminApi } from '../../lib/api';
-import type { Cable as CableType, CableConnector, CableType as CableTypeData, CableCreateInput, CableUpdateInput } from '../../lib/api';
+import { cablesAdminApi, zonesApi } from '../../lib/api';
+import type {
+  Cable as CableInventoryItem,
+  CableConnector,
+  CableCreateInput,
+  CableTrackingMode,
+  CableType,
+  CableUpdateInput,
+  Zone,
+} from '../../lib/api';
 import { useBlockBodyScroll } from '../../hooks/useBlockBodyScroll';
 import { toast } from '../../lib/toast';
 
@@ -24,825 +31,593 @@ interface CableFormData {
   connector2?: number;
   typ?: number;
   length: number;
-  mm2: number;
+  mm2: string;
+  trackingMode: CableTrackingMode;
+  genericBarcode: string;
+  quantity: number;
+  zoneId: number | '';
+}
+
+interface InventoryFormData {
+  quantity: number;
+  zoneId: number | '';
 }
 
 const initialFormData: CableFormData = {
   name: '',
   length: 1,
-  mm2: 0,
+  mm2: '',
+  trackingMode: 'quantity',
+  genericBarcode: '',
+  quantity: 0,
+  zoneId: '',
 };
+
+const secondaryButton =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-light/5 px-3 py-2 text-sm font-semibold text-light transition-colors hover:bg-light/10 disabled:cursor-not-allowed disabled:opacity-50';
+const primaryButton =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-accent-red px-4 py-2 text-sm font-semibold text-light transition-colors hover:bg-accent-red-hover disabled:cursor-not-allowed disabled:opacity-50';
+const iconButton =
+  'inline-flex h-9 w-9 items-center justify-center rounded-lg bg-light/5 text-text-muted transition-colors hover:bg-light/10 hover:text-light';
+const destructiveButton =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-accent-red/15 px-3 py-2 text-sm font-semibold text-error transition-colors hover:bg-accent-red/25';
 
 function useDebouncedValue<T>(value: T, delay: number) {
   const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {
-    const handle = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(handle);
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
   }, [value, delay]);
 
   return debounced;
 }
 
+function trackingLabel(mode: CableTrackingMode) {
+  return mode === 'individual' ? 'Einzeln' : 'Menge';
+}
+
+function statusBadge(status: string) {
+  if (status === 'free' || status === 'in_storage') return 'badge badge-success';
+  if (status === 'defective' || status === 'defect') return 'badge badge-danger';
+  if (status === 'on_job' || status === 'rented') return 'badge badge-warning';
+  return 'badge badge-neutral';
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 }).format(value);
+}
+
 export function CablesTab() {
-  const [cables, setCables] = useState<CableType[]>([]);
+  const [cables, setCables] = useState<CableInventoryItem[]>([]);
   const [connectors, setConnectors] = useState<CableConnector[]>([]);
-  const [cableTypes, setCableTypes] = useState<CableTypeData[]>([]);
-  const [loadingCables, setLoadingCables] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [viewCable, setViewCable] = useState<CableType | null>(null);
-  const [editingCable, setEditingCable] = useState<number | null>(null);
-  const [formData, setFormData] = useState<CableFormData>(initialFormData);
-  const [submitting, setSubmitting] = useState(false);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => {
-    // Set default based on screen width: mobile (<768px) = cards, desktop = table
-    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table';
-  });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [connector1Filter, setConnector1Filter] = useState<number | ''>('');
-  const [connector2Filter, setConnector2Filter] = useState<number | ''>('');
-  const [typeFilter, setTypeFilter] = useState<number | ''>('');
-  const [lengthMinFilter, setLengthMinFilter] = useState<number | ''>('');
-  const [lengthMaxFilter, setLengthMaxFilter] = useState<number | ''>('');
+  const [cableTypes, setCableTypes] = useState<CableType[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<number | ''>('');
+  const [trackingFilter, setTrackingFilter] = useState<CableTrackingMode | ''>('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingCable, setEditingCable] = useState<CableInventoryItem | null>(null);
+  const [detailCable, setDetailCable] = useState<CableInventoryItem | null>(null);
+  const [formData, setFormData] = useState<CableFormData>(initialFormData);
+  const [inventoryForm, setInventoryForm] = useState<InventoryFormData>({ quantity: 1, zoneId: '' });
+  const debouncedSearch = useDebouncedValue(search, 250);
 
-  // Block body scroll when any modal is open
-  useBlockBodyScroll(modalOpen || viewCable !== null);
+  useBlockBodyScroll(formOpen || detailCable !== null);
 
-  const connectorIndex = useMemo(() => {
-    return new Map(connectors.map((connector) => [connector.connector_id, connector]));
-  }, [connectors]);
+  const connectorById = useMemo(
+    () => new Map(connectors.map((connector) => [connector.connector_id, connector])),
+    [connectors],
+  );
 
-  const connectorCompatibility = useMemo(() => {
-    const map = new Map<number, Set<number>>();
-    cables.forEach((cable) => {
-      if (!map.has(cable.connector1)) {
-        map.set(cable.connector1, new Set());
-      }
-      map.get(cable.connector1)!.add(cable.connector2);
+  const totalStock = useMemo(
+    () => cables.reduce((sum, cable) => sum + cable.stock_quantity, 0),
+    [cables],
+  );
+  const individualProducts = useMemo(
+    () => cables.filter((cable) => cable.tracking_mode === 'individual').length,
+    [cables],
+  );
 
-      if (!map.has(cable.connector2)) {
-        map.set(cable.connector2, new Set());
-      }
-      map.get(cable.connector2)!.add(cable.connector1);
-    });
-    return map;
-  }, [cables]);
-
-  const getCompatibleConnectors = useCallback(
-    (selected: number | '' | undefined) => {
-      if (!selected || connectorCompatibility.size === 0) {
-        return connectors;
-      }
-      const compatible = connectorCompatibility.get(selected);
-      if (!compatible || compatible.size === 0) {
-        return connectors.filter((connector) => connector.connector_id !== selected);
-      }
-      return connectors.filter((connector) => compatible.has(connector.connector_id));
+  const formatConnector = useCallback(
+    (id: number) => {
+      const connector = connectorById.get(id);
+      if (!connector) return 'Unbekannt';
+      const abbreviation = connector.abbreviation ? ` (${connector.abbreviation})` : '';
+      const gender = connector.gender ? ` · ${connector.gender}` : '';
+      return `${connector.name}${abbreviation}${gender}`;
     },
-    [connectors, connectorCompatibility]
+    [connectorById],
   );
-
-  const connector2FilterOptions = useMemo(
-    () => getCompatibleConnectors(connector1Filter === '' ? undefined : connector1Filter),
-    [connector1Filter, getCompatibleConnectors]
-  );
-
-  useEffect(() => {
-    if (connector1Filter === '' || connector2Filter === '') {
-      return;
-    }
-    const compatible = connectorCompatibility.get(connector1Filter);
-    if (!compatible || !compatible.has(connector2Filter)) {
-      setConnector2Filter('');
-    }
-  }, [connector1Filter, connector2Filter, connectorCompatibility]);
-
-  const debouncedSearch = useDebouncedValue(searchTerm, 300);
-
-  // Update view mode based on screen size
-  useEffect(() => {
-    const handleResize = () => {
-      const isMobile = window.innerWidth < 768;
-      setViewMode(isMobile ? 'cards' : 'table');
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const fetchCables = useCallback(async () => {
-    setLoadingCables(true);
+    setLoading(true);
     try {
-      const params: {
-        search?: string;
-        connector1?: number;
-        connector2?: number;
-        type?: number;
-        length_min?: number;
-        length_max?: number;
-      } = {};
-
-      if (debouncedSearch) params.search = debouncedSearch;
-      if (connector1Filter !== '') params.connector1 = connector1Filter;
-      if (connector2Filter !== '') params.connector2 = connector2Filter;
-      if (typeFilter !== '') params.type = typeFilter;
-      if (lengthMinFilter !== '') params.length_min = lengthMinFilter;
-      if (lengthMaxFilter !== '') params.length_max = lengthMaxFilter;
-
-      const { data } = await cablesAdminApi.getAll(params);
-      setCables(data || []);
+      const { data } = await cablesAdminApi.getAll({
+        search: debouncedSearch || undefined,
+        type: typeFilter || undefined,
+        tracking_mode: trackingFilter || undefined,
+      });
+      setCables(data ?? []);
     } catch (error) {
-      toast.error('Failed to load cables:' + " " + String(error));
+      toast.error(`Kabelbestand konnte nicht geladen werden: ${String(error)}`);
       setCables([]);
     } finally {
-      setLoadingCables(false);
+      setLoading(false);
     }
-  }, [debouncedSearch, connector1Filter, connector2Filter, typeFilter, lengthMinFilter, lengthMaxFilter]);
+  }, [debouncedSearch, trackingFilter, typeFilter]);
 
   const loadMetadata = useCallback(async () => {
     try {
-      const [connectorsRes, typesRes] = await Promise.all([
+      const [connectorResponse, typeResponse, zoneResponse] = await Promise.all([
         cablesAdminApi.getConnectors(),
         cablesAdminApi.getTypes(),
+        zonesApi.getAll(),
       ]);
-
-      setConnectors(connectorsRes.data || []);
-      setCableTypes(typesRes.data || []);
+      setConnectors(connectorResponse.data ?? []);
+      setCableTypes(typeResponse.data ?? []);
+      setZones((zoneResponse.data ?? []).filter((zone) => zone.is_active));
     } catch (error) {
-      toast.error('Failed to load metadata:' + " " + String(error));
+      toast.error(`Kabelstammdaten konnten nicht geladen werden: ${String(error)}`);
     }
   }, []);
 
   useEffect(() => {
-    fetchCables();
+    void fetchCables();
   }, [fetchCables]);
 
   useEffect(() => {
-    loadMetadata();
+    void loadMetadata();
   }, [loadMetadata]);
 
-  const handleRefresh = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchCables();
+    await Promise.all([fetchCables(), loadMetadata()]);
     setRefreshing(false);
-  }, [fetchCables]);
+  }, [fetchCables, loadMetadata]);
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setConnector1Filter('');
-    setConnector2Filter('');
-    setTypeFilter('');
-    setLengthMinFilter('');
-    setLengthMaxFilter('');
-    setExpandedCombos(new Set());
-  };
+  const loadDetail = useCallback(async (cableID: number) => {
+    try {
+      const { data } = await cablesAdminApi.getById(cableID);
+      setDetailCable(data);
+    } catch (error) {
+      toast.error(`Kabeldetails konnten nicht geladen werden: ${String(error)}`);
+    }
+  }, []);
 
-  const openCreateModal = () => {
+  const openCreate = () => {
     setEditingCable(null);
     setFormData(initialFormData);
-    setModalOpen(true);
+    setFormOpen(true);
   };
 
-  const openEditModal = (cable: CableType) => {
-    setEditingCable(cable.cable_id);
+  const openEdit = (cable: CableInventoryItem) => {
+    setEditingCable(cable);
     setFormData({
-      name: cable.name || '',
+      name: cable.name,
       connector1: cable.connector1,
       connector2: cable.connector2,
       typ: cable.typ,
       length: cable.length,
-      mm2: cable.mm2 || 0,
+      mm2: cable.mm2?.toString() ?? '',
+      trackingMode: cable.tracking_mode,
+      genericBarcode: cable.generic_barcode ?? '',
+      quantity: 0,
+      zoneId: '',
     });
-    setModalOpen(true);
+    setDetailCable(null);
+    setFormOpen(true);
   };
 
-  const handleDelete = async (cableId: number) => {
-    if (!window.confirm('Möchten Sie dieses Kabel wirklich löschen?')) {
-      return;
-    }
-
-    try {
-      await cablesAdminApi.delete(cableId);
-      await fetchCables();
-    } catch (error: unknown) {
-      toast.error('Failed to delete cable:' + " " + String(error));
-      alert('Fehler beim Löschen des Kabels');
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Validation
-    if (!formData.connector1 || !formData.connector2 || !formData.typ) {
-      alert('Bitte füllen Sie alle Pflichtfelder aus.');
-      return;
-    }
-
-    if (formData.length <= 0) {
-      alert('Die Länge muss größer als 0 sein.');
+  const submitCable = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!formData.connector1 || !formData.connector2 || !formData.typ || formData.length <= 0) {
+      toast.error('Bitte Kabeltyp, beide Anschlüsse und eine gültige Länge angeben.');
       return;
     }
 
     setSubmitting(true);
-
     try {
+      const baseData = {
+        name: formData.name.trim() || undefined,
+        connector1: formData.connector1,
+        connector2: formData.connector2,
+        typ: formData.typ,
+        length: formData.length,
+        tracking_mode: formData.trackingMode,
+        generic_barcode: formData.genericBarcode.trim() || undefined,
+      };
+
       if (editingCable) {
-        // Update existing cable
         const updateData: CableUpdateInput = {
-          name: formData.name || undefined,
-          connector1: formData.connector1,
-          connector2: formData.connector2,
-          typ: formData.typ,
-          length: formData.length,
-          mm2: formData.mm2 || undefined,
+          ...baseData,
+          mm2: formData.mm2 ? Number(formData.mm2) : null,
         };
-
-        await cablesAdminApi.update(editingCable, updateData);
+        await cablesAdminApi.update(editingCable.cable_id, updateData);
+        toast.success('Kabelprodukt aktualisiert.');
       } else {
-        // Create new cable
         const createData: CableCreateInput = {
-          name: formData.name || undefined,
-          connector1: formData.connector1,
-          connector2: formData.connector2,
-          typ: formData.typ,
-          length: formData.length,
-          mm2: formData.mm2 || undefined,
+          ...baseData,
+          mm2: formData.mm2 ? Number(formData.mm2) : undefined,
+          quantity: formData.quantity,
+          zone_id: formData.zoneId || null,
         };
-
         await cablesAdminApi.create(createData);
+        toast.success('Kabelprodukt angelegt.');
       }
-
-      setModalOpen(false);
+      setFormOpen(false);
+      setEditingCable(null);
       setFormData(initialFormData);
-      await fetchCables();
-    } catch (error: unknown) {
-      toast.error('Failed to save cable:' + " " + String(error));
-      alert('Fehler beim Speichern des Kabels');
+      await refresh();
+    } catch (error) {
+      toast.error(`Kabelprodukt konnte nicht gespeichert werden: ${String(error)}`);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleViewCable = async (cable: CableType) => {
-    setViewCable(cable);
+  const deleteCable = async (cable: CableInventoryItem) => {
+    if (!window.confirm(`„${cable.name}“ wirklich löschen? Der Bestand muss vorher null sein.`)) return;
+    try {
+      await cablesAdminApi.delete(cable.cable_id);
+      setDetailCable(null);
+      toast.success('Kabelprodukt gelöscht.');
+      await refresh();
+    } catch (error) {
+      toast.error(`Kabelprodukt konnte nicht gelöscht werden: ${String(error)}`);
+    }
   };
 
-  const formatGenderText = (gender?: string | null) => {
-    if (!gender) return '';
-    return gender === 'male' ? 'male' : 'female';
-  };
-
-  const formatConnectorLabel = (connector: CableConnector, overrideGender?: string | null) => {
-    const abbr = connector.abbreviation ? ` (${connector.abbreviation})` : '';
-    const genderText = formatGenderText(overrideGender ?? connector.gender);
-    return `${connector.name}${abbr}${genderText ? ` • ${genderText}` : ''}`;
-  };
-
-  const getConnectorDisplay = (connectorId: number, gender?: string | null) => {
-    const connector = connectorIndex.get(connectorId);
-    if (!connector) return '-';
-    return formatConnectorLabel(connector, gender);
-  };
-
-  const getCableTypeName = (typeId: number) => {
-    const type = cableTypes.find(t => t.cable_type_id === typeId);
-    return type?.name || '-';
-  };
-
-  const buildCombinationKey = (cable: CableType) =>
-    `${cable.typ}|${cable.connector1}|${cable.connector2}|${cable.length}`;
-
-  const cableCombinationSummary = useMemo(() => {
-    const summaryMap = new Map<string, {
-      key: string;
-      typeId: number;
-      connector1: number;
-      connector2: number;
-      length: number;
-      cables: CableType[];
-    }>();
-
-    cables.forEach((cable) => {
-      const key = buildCombinationKey(cable);
-      if (!summaryMap.has(key)) {
-        summaryMap.set(key, {
-          key,
-          typeId: cable.typ,
-          connector1: cable.connector1,
-          connector2: cable.connector2,
-          length: cable.length,
-          cables: [],
-        });
-      }
-      summaryMap.get(key)!.cables.push(cable);
-    });
-
-    return Array.from(summaryMap.values())
-      .map((entry) => ({
-        ...entry,
-        typeName: getCableTypeName(entry.typeId),
-        connector1Label: getConnectorDisplay(entry.connector1),
-        connector2Label: getConnectorDisplay(entry.connector2),
-        lengthLabel: `${entry.length.toFixed(2)} m`,
-        count: entry.cables.length,
-      }))
-      .sort((a, b) => a.typeName.localeCompare(b.typeName, 'de', { sensitivity: 'base' }));
-  }, [cables, getCableTypeName, getConnectorDisplay]);
-
-  const totalCableCount = useMemo(
-    () => cableCombinationSummary.reduce((sum, entry) => sum + entry.count, 0),
-    [cableCombinationSummary]
-  );
-
-  const [expandedCombos, setExpandedCombos] = useState<Set<string>>(new Set());
-
-  const toggleComboExpanded = (key: string) => {
-    setExpandedCombos((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
+  const saveInventory = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!detailCable || inventoryForm.quantity < 0) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        quantity: inventoryForm.quantity,
+        zone_id: inventoryForm.zoneId || null,
+      };
+      if (detailCable.tracking_mode === 'individual') {
+        if (inventoryForm.quantity < 1) {
+          toast.error('Mindestens ein Exemplar anlegen.');
+          return;
+        }
+        await cablesAdminApi.createUnits(detailCable.cable_id, payload);
+        toast.success(`${inventoryForm.quantity} Exemplar(e) angelegt.`);
       } else {
-        next.add(key);
+        await cablesAdminApi.setStock(detailCable.cable_id, payload);
+        toast.success('Lagerbestand aktualisiert.');
       }
-      return next;
-    });
+      setInventoryForm({ quantity: 1, zoneId: '' });
+      await Promise.all([loadDetail(detailCable.cable_id), fetchCables()]);
+    } catch (error) {
+      toast.error(`Bestand konnte nicht aktualisiert werden: ${String(error)}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  const deleteUnit = async (cableID: number, deviceID: string) => {
+    if (!window.confirm(`Exemplar ${deviceID} wirklich löschen?`)) return;
+    try {
+      await cablesAdminApi.deleteUnit(cableID, deviceID);
+      toast.success('Kabelexemplar gelöscht.');
+      await Promise.all([loadDetail(cableID), fetchCables()]);
+    } catch (error) {
+      toast.error(`Kabelexemplar konnte nicht gelöscht werden: ${String(error)}`);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Cable className="w-6 h-6 text-accent-red" />
-          <h2 className="text-2xl font-bold text-white">Kabel-Verwaltung</h2>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-3">
+            <Cable className="h-6 w-6 text-accent-red" />
+            <h2 className="text-2xl font-bold text-light">Kabelbestand</h2>
+          </div>
+          <p className="mt-1 text-sm text-text-muted">
+            Kabel als Produktbestand verwalten – mengenbasiert oder mit einzelnem Code.
+          </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Neues Kabel
+        <button type="button" onClick={openCreate} className={primaryButton}>
+          <Plus className="h-4 w-4" />
+          Kabelprodukt anlegen
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm text-gray-400">
-        <span>{cableCombinationSummary.length} Kombinationen</span>
-        <span>Gesamtbestand: <span className="text-white font-semibold">{totalCableCount}</span></span>
-      </div>
-
-      {/* Filters */}
-      <div className="glass-dark rounded-xl p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-          {/* Search */}
-          <div className="relative lg:col-span-2">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Suchen (Name)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field pl-10 w-full"
-            />
-          </div>
-
-          {/* Connector 1 Filter */}
-          <select
-            value={connector1Filter}
-            onChange={(e) => setConnector1Filter(e.target.value ? Number(e.target.value) : '')}
-            className="input-field"
-          >
-            <option value="">Alle Stecker 1</option>
-            {connectors.map((connector) => (
-              <option key={connector.connector_id} value={connector.connector_id}>
-                {formatConnectorLabel(connector)}
-              </option>
-            ))}
-          </select>
-
-          {/* Connector 2 Filter */}
-          <select
-            value={connector2Filter}
-            onChange={(e) => setConnector2Filter(e.target.value ? Number(e.target.value) : '')}
-            className="input-field"
-          >
-            <option value="">Alle Stecker 2</option>
-            {connector2FilterOptions.map((connector) => (
-              <option key={connector.connector_id} value={connector.connector_id}>
-                {formatConnectorLabel(connector)}
-              </option>
-            ))}
-          </select>
-
-          {/* Type Filter */}
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value ? Number(e.target.value) : '')}
-            className="input-field"
-          >
-            <option value="">Alle Typen</option>
-            {cableTypes.map((type) => (
-              <option key={type.cable_type_id} value={type.cable_type_id}>
-                {type.name}
-              </option>
-            ))}
-          </select>
-
-          {/* Length Min */}
-          <input
-            type="number"
-            placeholder="Min Länge (m)"
-            min="0"
-            step="0.1"
-            value={lengthMinFilter}
-            onChange={(e) => setLengthMinFilter(e.target.value ? Number(e.target.value) : '')}
-            className="input-field"
-          />
-
-          {/* Length Max */}
-          <input
-            type="number"
-            placeholder="Max Länge (m)"
-            min="0"
-            step="0.1"
-            value={lengthMaxFilter}
-            onChange={(e) => setLengthMaxFilter(e.target.value ? Number(e.target.value) : '')}
-            className="input-field"
-          />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Kabelprodukte</p>
+          <p className="mt-2 text-2xl font-bold text-light">{cables.length}</p>
         </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={clearFilters}
-              className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-gray-300 transition-colors flex items-center gap-1"
-            >
-              <X className="w-4 h-4" />
-              <span className="hidden sm:inline">Filter löschen</span>
-              <span className="sm:hidden">Löschen</span>
-            </button>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-gray-300 transition-colors disabled:opacity-50 flex items-center gap-1"
-            >
-              <RefreshCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Aktualisieren</span>
-            </button>
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'table' ? 'bg-accent-red text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
-              }`}
-              title="Tabellenansicht"
-            >
-              <List className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'cards' ? 'bg-accent-red text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'
-              }`}
-              title="Kartenansicht"
-            >
-              <LayoutGrid className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gesamtbestand</p>
+          <p className="mt-2 text-2xl font-bold text-light">{formatNumber(totalStock)}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Mit Einzelcodes</p>
+          <p className="mt-2 text-2xl font-bold text-light">{individualProducts}</p>
         </div>
       </div>
 
-      {/* Cable List */}
-      {loadingCables ? (
-        <div className="text-center py-12 text-gray-400">Lädt Kabel...</div>
-      ) : cableCombinationSummary.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          {debouncedSearch || connector1Filter || connector2Filter || typeFilter || lengthMinFilter || lengthMaxFilter
-            ? 'Keine Kabel gefunden mit den aktuellen Filtern'
-            : 'Noch keine Kabel vorhanden'}
+      <div className="card grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
+        <label className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Name, Barcode oder Anschluss suchen"
+            className="w-full py-2 pl-10 pr-3"
+          />
+        </label>
+        <select
+          value={typeFilter}
+          onChange={(event) => setTypeFilter(event.target.value ? Number(event.target.value) : '')}
+          className="w-full px-3 py-2"
+          aria-label="Kabeltyp filtern"
+        >
+          <option value="">Alle Kabeltypen</option>
+          {cableTypes.map((type) => (
+            <option key={type.cable_type_id} value={type.cable_type_id}>{type.name}</option>
+          ))}
+        </select>
+        <select
+          value={trackingFilter}
+          onChange={(event) => setTrackingFilter(event.target.value as CableTrackingMode | '')}
+          className="w-full px-3 py-2"
+          aria-label="Tracking filtern"
+        >
+          <option value="">Beide Trackingarten</option>
+          <option value="quantity">Mengenbestand</option>
+          <option value="individual">Einzelcodes</option>
+        </select>
+        <button type="button" onClick={() => void refresh()} disabled={refreshing} className={secondaryButton}>
+          <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Aktualisieren
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="card p-12 text-center text-text-muted">Kabelbestand wird geladen …</div>
+      ) : cables.length === 0 ? (
+        <div className="card p-12 text-center">
+          <Cable className="mx-auto h-9 w-9 text-text-tertiary" />
+          <p className="mt-3 font-semibold text-light">Keine Kabelprodukte gefunden</p>
+          <p className="mt-1 text-sm text-text-muted">Lege das erste Kabelprodukt an oder passe die Filter an.</p>
         </div>
-      ) : viewMode === 'table' ? (
-        <div className="glass-dark rounded-xl overflow-hidden">
+      ) : (
+        <div className="card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-white/5">
+            <table className="w-full min-w-[860px]">
+              <thead className="bg-light/5 text-left text-xs uppercase tracking-wide text-text-muted">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Kombination</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-300">Anzahl</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-300">Aktionen</th>
+                  <th className="px-4 py-3">Kabelprodukt</th>
+                  <th className="px-4 py-3">Spezifikation</th>
+                  <th className="px-4 py-3">Tracking</th>
+                  <th className="px-4 py-3">Barcode</th>
+                  <th className="px-4 py-3 text-right">Bestand</th>
+                  <th className="px-4 py-3 text-right">Aktionen</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {cableCombinationSummary.map((combo) => {
-                  const isExpanded = expandedCombos.has(combo.key);
-                  return (
-                    <Fragment key={combo.key}>
-                      <tr>
-                        <td className="px-4 py-3 text-sm text-white">
-                          <button
-                            onClick={() => toggleComboExpanded(combo.key)}
-                            className="inline-flex items-center gap-2 text-left font-semibold hover:text-accent-red transition-colors"
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="w-4 h-4 text-accent-red" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4 text-gray-400" />
-                            )}
-                            <span>
-                              {combo.typeName || 'Unbekannt'} ({combo.connector1Label} - {combo.connector2Label}) • {combo.lengthLabel}
-                            </span>
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-right text-sm text-gray-200 font-semibold">{combo.count}</td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => toggleComboExpanded(combo.key)}
-                            className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-gray-300 transition-colors"
-                          >
-                            {isExpanded ? 'Schließen' : 'Details'}
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={3} className="bg-white/5 px-4 pb-4">
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="text-left text-gray-400">
-                                    <th className="py-2 pr-2">ID</th>
-                                    <th className="py-2 pr-2">Name</th>
-                                    <th className="py-2 pr-2">Stecker 1</th>
-                                    <th className="py-2 pr-2">Stecker 2</th>
-                                    <th className="py-2 pr-2">Typ</th>
-                                    <th className="py-2 pr-2">Länge</th>
-                                    <th className="py-2 pr-2">mm²</th>
-                                    <th className="py-2 text-right">Aktionen</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/10">
-                                  {combo.cables.map((cable) => (
-                                    <tr key={cable.cable_id}>
-                                      <td className="py-2 pr-2 text-gray-400">#{cable.cable_id}</td>
-                                      <td className="py-2 pr-2 text-white">{cable.name || '-'}</td>
-                                      <td className="py-2 pr-2 text-gray-300">
-                                        {getConnectorDisplay(cable.connector1, cable.connector1_gender)}
-                                      </td>
-                                      <td className="py-2 pr-2 text-gray-300">
-                                        {getConnectorDisplay(cable.connector2, cable.connector2_gender)}
-                                      </td>
-                                      <td className="py-2 pr-2 text-gray-300">{getCableTypeName(cable.typ)}</td>
-                                      <td className="py-2 pr-2 text-gray-300">{cable.length} m</td>
-                                      <td className="py-2 pr-2 text-gray-300">{cable.mm2 ? `${cable.mm2} mm²` : '-'}</td>
-                                      <td className="py-2 text-right">
-                                        <div className="flex justify-end gap-2">
-                                          <button
-                                            onClick={() => handleViewCable(cable)}
-                                            className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors"
-                                          >
-                                            <Eye className="w-4 h-4" />
-                                          </button>
-                                          <button
-                                            onClick={() => openEditModal(cable)}
-                                            className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors"
-                                          >
-                                            <Pencil className="w-4 h-4" />
-                                          </button>
-                                          <button
-                                            onClick={() => handleDelete(cable.cable_id)}
-                                            className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
-                                          >
-                                            <Trash2 className="w-4 h-4" />
-                                          </button>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </td>
-                        </tr>
+              <tbody className="divide-y divide-light/5">
+                {cables.map((cable) => (
+                  <tr key={cable.cable_id} className="transition-colors hover:bg-light/[0.03]">
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-light">{cable.name}</p>
+                      <p className="mt-1 text-xs text-text-muted">Produkt #{cable.product_id}</p>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-text-muted">
+                      <p className="text-light">{cable.cable_type_name} · {formatNumber(cable.length)} m</p>
+                      <p className="mt-1">{formatConnector(cable.connector1)} → {formatConnector(cable.connector2)}</p>
+                      {cable.mm2 && <p className="mt-1">{formatNumber(cable.mm2)} mm²</p>}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={cable.tracking_mode === 'individual' ? 'badge badge-info' : 'badge badge-neutral'}>
+                        {trackingLabel(cable.tracking_mode)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 font-mono text-sm text-text-muted">
+                      {cable.generic_barcode ?? '—'}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <p className="font-semibold text-light">{formatNumber(cable.stock_quantity)}</p>
+                      {cable.available_quantity !== cable.stock_quantity && (
+                        <p className="mt-1 text-xs text-text-muted">{formatNumber(cable.available_quantity)} verfügbar</p>
                       )}
-                    </Fragment>
-                  );
-                })}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => void loadDetail(cable.cable_id)} className={iconButton} title="Details">
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button type="button" onClick={() => openEdit(cable)} className={iconButton} title="Bearbeiten">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {cableCombinationSummary.map((combo) => (
-            <div key={combo.key} className="glass-dark rounded-xl p-4 space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-bold text-white">{combo.typeName}</h3>
-                  <p className="text-sm text-gray-400">
-                    {combo.connector1Label} → {combo.connector2Label} • {combo.lengthLabel}
-                  </p>
-                </div>
-                <span className="px-2 py-1 bg-white/10 text-white rounded-full text-xs font-semibold">
-                  {combo.count}
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {combo.cables.map((cable) => (
-                  <div key={cable.cable_id} className="rounded-xl border border-white/10 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-white font-semibold">{cable.name || `Kabel #${cable.cable_id}`}</p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleViewCable(cable)}
-                          className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(cable)}
-                          className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(cable.cable_id)}
-                          className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="text-xs text-gray-400 flex flex-wrap gap-3">
-                      <span>#{cable.cable_id}</span>
-                      <span>{cable.mm2 ? `${cable.mm2} mm²` : 'mm² n/a'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
       )}
-      {/* Create/Edit Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-[120] flex min-h-screen items-center justify-center bg-black/80 p-4">
-          <div className="glass-dark rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-white">
-                {editingCable ? 'Kabel bearbeiten' : 'Neues Kabel erstellen'}
-              </h3>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-400" />
+
+      {formOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-dark/90 p-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-light/10 bg-dark-100 p-6 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-2xl font-bold text-light">
+                  {editingCable ? 'Kabelprodukt bearbeiten' : 'Kabelprodukt anlegen'}
+                </h3>
+                <p className="mt-1 text-sm text-text-muted">Technische Daten und Bestandsführung festlegen.</p>
+              </div>
+              <button type="button" onClick={() => setFormOpen(false)} className={iconButton}>
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Name (optional)
+            <form onSubmit={submitCable} className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="sm:col-span-2">
+                  <span className="mb-2 block text-sm font-medium text-light">Name</span>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                    placeholder="Wird aus Typ, Anschlüssen und Länge erzeugt"
+                    className="w-full px-3 py-2"
+                  />
                 </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="input-field w-full"
-                  placeholder="z.B. Haupt-Stromkabel"
-                />
-              </div>
-
-              {/* Connectors */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Stecker 1 *
-                  </label>
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-light">Anschluss A *</span>
                   <select
-                    value={formData.connector1 || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, connector1: e.target.value ? Number(e.target.value) : undefined })
-                    }
-                    className="input-field w-full"
                     required
+                    value={formData.connector1 ?? ''}
+                    onChange={(event) => setFormData({ ...formData, connector1: Number(event.target.value) || undefined })}
+                    className="w-full px-3 py-2"
                   >
-                    <option value="">Stecker auswählen...</option>
+                    <option value="">Anschluss auswählen</option>
                     {connectors.map((connector) => (
-                      <option key={connector.connector_id} value={connector.connector_id}>
-                        {formatConnectorLabel(connector)}
-                      </option>
+                      <option key={connector.connector_id} value={connector.connector_id}>{formatConnector(connector.connector_id)}</option>
                     ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Stecker 2 *
-                  </label>
+                </label>
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-light">Anschluss B *</span>
                   <select
-                    value={formData.connector2 || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, connector2: e.target.value ? Number(e.target.value) : undefined })
-                    }
-                    className="input-field w-full"
                     required
+                    value={formData.connector2 ?? ''}
+                    onChange={(event) => setFormData({ ...formData, connector2: Number(event.target.value) || undefined })}
+                    className="w-full px-3 py-2"
                   >
-                    <option value="">Stecker auswählen...</option>
+                    <option value="">Anschluss auswählen</option>
                     {connectors.map((connector) => (
-                      <option key={connector.connector_id} value={connector.connector_id}>
-                        {formatConnectorLabel(connector)}
-                      </option>
+                      <option key={connector.connector_id} value={connector.connector_id}>{formatConnector(connector.connector_id)}</option>
                     ))}
                   </select>
-                </div>
-              </div>
-
-              {/* Cable Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Kabeltyp *
                 </label>
-                <select
-                  value={formData.typ || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, typ: e.target.value ? Number(e.target.value) : undefined })
-                  }
-                  className="input-field w-full"
-                  required
-                >
-                  <option value="">Typ auswählen...</option>
-                  {cableTypes.map((type) => (
-                    <option key={type.cable_type_id} value={type.cable_type_id}>
-                      {type.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Length and mm² */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Länge (Meter) *
-                  </label>
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-light">Kabeltyp *</span>
+                  <select
+                    required
+                    value={formData.typ ?? ''}
+                    onChange={(event) => setFormData({ ...formData, typ: Number(event.target.value) || undefined })}
+                    className="w-full px-3 py-2"
+                  >
+                    <option value="">Kabeltyp auswählen</option>
+                    {cableTypes.map((type) => (
+                      <option key={type.cable_type_id} value={type.cable_type_id}>{type.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-light">Artikelbarcode</span>
+                  <input
+                    type="text"
+                    value={formData.genericBarcode}
+                    onChange={(event) => setFormData({ ...formData, genericBarcode: event.target.value })}
+                    placeholder="Automatisch, wenn leer"
+                    className="w-full px-3 py-2 font-mono"
+                  />
+                </label>
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-light">Länge in Metern *</span>
                   <input
                     type="number"
-                    min="0.1"
-                    step="0.1"
+                    min="0.01"
+                    step="0.01"
+                    required
                     value={formData.length}
-                    onChange={(e) =>
-                      setFormData({ ...formData, length: Number(e.target.value) || 1 })
-                    }
-                    className="input-field w-full"
-                    required
+                    onChange={(event) => setFormData({ ...formData, length: Number(event.target.value) })}
+                    className="w-full px-3 py-2"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Querschnitt (mm²)
-                  </label>
+                </label>
+                <label>
+                  <span className="mb-2 block text-sm font-medium text-light">Querschnitt in mm²</span>
                   <input
                     type="number"
-                    min="0"
-                    step="0.1"
+                    min="0.01"
+                    step="0.01"
                     value={formData.mm2}
-                    onChange={(e) =>
-                      setFormData({ ...formData, mm2: Number(e.target.value) || 0 })
-                    }
-                    className="input-field w-full"
+                    onChange={(event) => setFormData({ ...formData, mm2: event.target.value })}
+                    className="w-full px-3 py-2"
                   />
-                </div>
+                </label>
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-lg font-semibold text-gray-300 transition-colors"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 btn-primary disabled:opacity-50"
-                >
-                  {submitting
-                    ? 'Speichert...'
-                    : editingCable
-                    ? 'Aktualisieren'
-                    : 'Erstellen'}
+              <fieldset>
+                <legend className="mb-3 text-sm font-medium text-light">Bestandsführung</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {([
+                    { value: 'quantity' as const, title: 'Mengenbestand', text: 'Ein Artikelbarcode, Bestand pro Lagerzone.' },
+                    { value: 'individual' as const, title: 'Einzelcodes', text: 'Jedes physische Kabel erhält einen eigenen Code.' },
+                  ]).map((option) => (
+                    <label
+                      key={option.value}
+                      className={`cursor-pointer rounded-xl border p-4 transition-colors ${
+                        formData.trackingMode === option.value
+                          ? 'border-accent-red bg-accent-red/10'
+                          : 'border-light/10 bg-light/[0.03] hover:bg-light/5'
+                      } ${editingCable && editingCable.stock_quantity > 0 ? 'cursor-not-allowed opacity-60' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="trackingMode"
+                        value={option.value}
+                        checked={formData.trackingMode === option.value}
+                        disabled={Boolean(editingCable && editingCable.stock_quantity > 0)}
+                        onChange={() => setFormData({ ...formData, trackingMode: option.value })}
+                        className="sr-only"
+                      />
+                      <span className="font-semibold text-light">{option.title}</span>
+                      <span className="mt-1 block text-sm text-text-muted">{option.text}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {!editingCable && (
+                <div className="grid gap-4 rounded-xl border border-light/10 bg-light/[0.03] p-4 sm:grid-cols-2">
+                  <label>
+                    <span className="mb-2 block text-sm font-medium text-light">
+                      {formData.trackingMode === 'individual' ? 'Anzahl Exemplare' : 'Anfangsbestand'}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={formData.quantity}
+                      onChange={(event) => setFormData({ ...formData, quantity: Math.max(0, Number(event.target.value)) })}
+                      className="w-full px-3 py-2"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-2 block text-sm font-medium text-light">Lagerzone</span>
+                    <select
+                      value={formData.zoneId}
+                      onChange={(event) => setFormData({ ...formData, zoneId: event.target.value ? Number(event.target.value) : '' })}
+                      className="w-full px-3 py-2"
+                    >
+                      <option value="">Noch nicht zugeordnet</option>
+                      {zones.map((zone) => (
+                        <option key={zone.zone_id} value={zone.zone_id}>{zone.name} ({zone.code})</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setFormOpen(false)} className={secondaryButton}>Abbrechen</button>
+                <button type="submit" disabled={submitting} className={primaryButton}>
+                  {submitting ? 'Speichert …' : editingCable ? 'Änderungen speichern' : 'Kabelprodukt anlegen'}
                 </button>
               </div>
             </form>
@@ -850,76 +625,170 @@ export function CablesTab() {
         </div>
       )}
 
-      {/* View Cable Modal */}
-      {viewCable && (
-        <div className="fixed inset-0 z-[120] flex min-h-screen items-center justify-center bg-black/80 p-4">
-          <div className="glass-dark rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-white">Kabel-Details</h3>
-              <button
-                onClick={() => setViewCable(null)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-400" />
+      {detailCable && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-dark/90 p-4">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-light/10 bg-dark-100 p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-2xl font-bold text-light">{detailCable.name}</h3>
+                  <span className={detailCable.tracking_mode === 'individual' ? 'badge badge-info' : 'badge badge-neutral'}>
+                    {trackingLabel(detailCable.tracking_mode)}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-text-muted">Produkt #{detailCable.product_id} · Kabel #{detailCable.cable_id}</p>
+              </div>
+              <button type="button" onClick={() => setDetailCable(null)} className={iconButton}>
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-400">Kabel-ID</p>
-                  <p className="text-white font-semibold">{viewCable.cable_id}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400">Name</p>
-                  <p className="text-white font-semibold">{viewCable.name || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400">Stecker 1</p>
-                  <p className="text-white font-semibold">
-                    {getConnectorDisplay(viewCable.connector1, viewCable.connector1_gender)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400">Stecker 2</p>
-                  <p className="text-white font-semibold">
-                    {getConnectorDisplay(viewCable.connector2, viewCable.connector2_gender)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400">Kabeltyp</p>
-                  <p className="text-white font-semibold">{getCableTypeName(viewCable.typ)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400">Länge</p>
-                  <p className="text-white font-semibold">{viewCable.length}m</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-400">Querschnitt</p>
-                  <p className="text-white font-semibold">{viewCable.mm2 ? `${viewCable.mm2}mm²` : '-'}</p>
-                </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl bg-light/[0.04] p-4">
+                <p className="text-xs uppercase tracking-wide text-text-muted">Kabeltyp</p>
+                <p className="mt-2 font-semibold text-light">{detailCable.cable_type_name}</p>
               </div>
+              <div className="rounded-xl bg-light/[0.04] p-4">
+                <p className="text-xs uppercase tracking-wide text-text-muted">Länge / Querschnitt</p>
+                <p className="mt-2 font-semibold text-light">
+                  {formatNumber(detailCable.length)} m · {detailCable.mm2 ? `${formatNumber(detailCable.mm2)} mm²` : '—'}
+                </p>
+              </div>
+              <div className="rounded-xl bg-light/[0.04] p-4">
+                <p className="text-xs uppercase tracking-wide text-text-muted">Bestand</p>
+                <p className="mt-2 font-semibold text-light">{formatNumber(detailCable.stock_quantity)}</p>
+              </div>
+              <div className="rounded-xl bg-light/[0.04] p-4">
+                <p className="text-xs uppercase tracking-wide text-text-muted">Artikelbarcode</p>
+                <p className="mt-2 break-all font-mono text-sm font-semibold text-light">{detailCable.generic_barcode ?? '—'}</p>
+              </div>
+            </div>
 
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setViewCable(null);
-                    openEditModal(viewCable);
-                  }}
-                  className="flex-1 btn-primary flex items-center justify-center gap-2"
-                >
-                  <Pencil className="w-5 h-5" />
-                  Bearbeiten
+            <div className="mt-4 rounded-xl border border-light/10 p-4">
+              <p className="text-sm font-semibold text-light">Anschlüsse</p>
+              <p className="mt-2 text-sm text-text-muted">{formatConnector(detailCable.connector1)} → {formatConnector(detailCable.connector2)}</p>
+            </div>
+
+            <form onSubmit={saveInventory} className="mt-6 rounded-xl border border-light/10 bg-light/[0.03] p-4">
+              <div className="flex items-center gap-2">
+                <PackagePlus className="h-5 w-5 text-accent-red" />
+                <h4 className="font-semibold text-light">
+                  {detailCable.tracking_mode === 'individual' ? 'Exemplare hinzufügen' : 'Zonenbestand setzen'}
+                </h4>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <label>
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-text-muted">Lagerzone</span>
+                  <select
+                    value={inventoryForm.zoneId}
+                    onChange={(event) => setInventoryForm({ ...inventoryForm, zoneId: event.target.value ? Number(event.target.value) : '' })}
+                    className="w-full px-3 py-2"
+                  >
+                    <option value="">Ohne Lagerzone</option>
+                    {zones.map((zone) => (
+                      <option key={zone.zone_id} value={zone.zone_id}>{zone.name} ({zone.code})</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-text-muted">
+                    {detailCable.tracking_mode === 'individual' ? 'Neue Exemplare' : 'Neuer Bestand'}
+                  </span>
+                  <input
+                    type="number"
+                    min={detailCable.tracking_mode === 'individual' ? 1 : 0}
+                    step="1"
+                    value={inventoryForm.quantity}
+                    onChange={(event) => setInventoryForm({ ...inventoryForm, quantity: Math.max(0, Number(event.target.value)) })}
+                    className="w-full px-3 py-2"
+                  />
+                </label>
+                <button type="submit" disabled={submitting} className={`${primaryButton} self-end`}>
+                  {detailCable.tracking_mode === 'individual' ? 'Anlegen' : 'Bestand setzen'}
                 </button>
-                <button
-                  onClick={() => {
-                    setViewCable(null);
-                    handleDelete(viewCable.cable_id);
-                  }}
-                  className="px-4 py-3 bg-red-500/20 hover:bg-red-500/30 rounded-lg font-semibold text-red-400 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="w-5 h-5" />
-                  Löschen
+              </div>
+            </form>
+
+            {detailCable.tracking_mode === 'quantity' ? (
+              <section className="mt-6">
+                <h4 className="flex items-center gap-2 font-semibold text-light">
+                  <MapPin className="h-4 w-4 text-accent-red" />
+                  Bestand nach Lagerzone
+                </h4>
+                <div className="mt-3 divide-y divide-light/5 rounded-xl border border-light/10">
+                  {(detailCable.zone_stocks ?? []).length === 0 ? (
+                    <p className="p-4 text-sm text-text-muted">Noch kein Bestand erfasst.</p>
+                  ) : detailCable.zone_stocks?.map((stock) => (
+                    <div key={stock.zone_id ?? 'unassigned'} className="flex items-center justify-between gap-4 p-4">
+                      <div>
+                        <p className="font-medium text-light">{stock.zone_name}</p>
+                        {stock.zone_code && <p className="text-xs text-text-muted">{stock.zone_code}</p>}
+                      </div>
+                      <p className="font-semibold text-light">{formatNumber(stock.quantity)} Stk</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <section className="mt-6">
+                <h4 className="flex items-center gap-2 font-semibold text-light">
+                  <Barcode className="h-4 w-4 text-accent-red" />
+                  Einzelne Kabelexemplare
+                </h4>
+                <div className="mt-3 overflow-hidden rounded-xl border border-light/10">
+                  {(detailCable.units ?? []).length === 0 ? (
+                    <p className="p-4 text-sm text-text-muted">Noch keine Exemplare angelegt.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[620px]">
+                        <thead className="bg-light/5 text-left text-xs uppercase tracking-wide text-text-muted">
+                          <tr>
+                            <th className="px-4 py-3">Code</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Lagerzone</th>
+                            <th className="px-4 py-3 text-right">Aktion</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-light/5">
+                          {detailCable.units?.map((unit) => (
+                            <tr key={unit.device_id}>
+                              <td className="px-4 py-3">
+                                <p className="font-mono text-sm text-light">{unit.barcode ?? unit.device_id}</p>
+                                <p className="mt-1 text-xs text-text-muted">{unit.device_id}</p>
+                              </td>
+                              <td className="px-4 py-3"><span className={statusBadge(unit.status)}>{unit.status}</span></td>
+                              <td className="px-4 py-3 text-sm text-text-muted">{unit.zone_name}</td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteUnit(detailCable.cable_id, unit.device_id)}
+                                  disabled={unit.current_job_id !== null}
+                                  className={`${iconButton} disabled:cursor-not-allowed disabled:opacity-40`}
+                                  title={unit.current_job_id ? 'Im Job verwendet' : 'Exemplar löschen'}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-light/10 pt-5 sm:flex-row sm:justify-between">
+              <button type="button" onClick={() => void deleteCable(detailCable)} className={destructiveButton}>
+                <Trash2 className="h-4 w-4" />
+                Kabelprodukt löschen
+              </button>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setDetailCable(null)} className={secondaryButton}>Schließen</button>
+                <button type="button" onClick={() => openEdit(detailCable)} className={primaryButton}>
+                  <Pencil className="h-4 w-4" />
+                  Bearbeiten
                 </button>
               </div>
             </div>
