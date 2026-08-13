@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,6 +18,10 @@ import (
 	"time"
 
 	"github.com/disintegration/imaging"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"gorm.io/gorm"
 
 	"warehousecore/internal/models"
@@ -31,6 +36,10 @@ const (
 )
 
 var safeLabelFilename = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+var zplCopiesPattern = regexp.MustCompile(`\^PQ\d+`)
+
+var supportedPrinterDPIs = []int{203, 300, 600}
 
 type LabelFieldDefinition struct {
 	Key   string `json:"key"`
@@ -308,21 +317,9 @@ func (s *LabelService) defaultTemplate(targetType string) (*models.LabelTemplate
 }
 
 func (s *LabelService) GenerateLabelForTarget(targetType, targetID string, templateID int) (*LabelRenderResult, error) {
-	target, err := s.GetTarget(targetType, targetID)
+	target, template, err := s.targetAndTemplate(targetType, targetID, templateID)
 	if err != nil {
 		return nil, err
-	}
-	var template *models.LabelTemplate
-	if templateID > 0 {
-		template, err = s.GetTemplateByID(templateID)
-	} else {
-		template, err = s.defaultTemplate(targetType)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if template.TargetType != targetType {
-		return nil, fmt.Errorf("template %d belongs to %s labels", template.ID, template.TargetType)
 	}
 
 	var elements []models.LabelElement
@@ -356,6 +353,26 @@ func (s *LabelService) GenerateLabelForTarget(targetType, targetID string, templ
 		processed = append(processed, item)
 	}
 	return &LabelRenderResult{Target: target, Template: template, Elements: processed}, nil
+}
+
+func (s *LabelService) targetAndTemplate(targetType, targetID string, templateID int) (LabelTarget, *models.LabelTemplate, error) {
+	target, err := s.GetTarget(targetType, targetID)
+	if err != nil {
+		return LabelTarget{}, nil, err
+	}
+	var template *models.LabelTemplate
+	if templateID > 0 {
+		template, err = s.GetTemplateByID(templateID)
+	} else {
+		template, err = s.defaultTemplate(targetType)
+	}
+	if err != nil {
+		return LabelTarget{}, nil, err
+	}
+	if template.TargetType != targetType {
+		return LabelTarget{}, nil, fmt.Errorf("template %d belongs to %s labels", template.ID, template.TargetType)
+	}
+	return target, template, nil
 }
 
 func (s *LabelService) RenderTargetLabel(targetType, targetID string, templateID int, save bool) (*LabelRenderResult, error) {
@@ -401,7 +418,9 @@ func (s *LabelService) RenderTargetLabels(request LabelBatchRequest) ([]*LabelRe
 	}
 	for index, base64PNG := range base64PNGs {
 		result := results[index]
-		result.ImageData = "data:image/png;base64," + base64PNG
+		if request.IncludeImage {
+			result.ImageData = "data:image/png;base64," + base64PNG
+		}
 		if request.Save {
 			result.LabelPath, err = s.saveTargetLabel(result, base64PNG)
 			if err != nil {
@@ -419,61 +438,110 @@ func (s *LabelService) ExportTargetsPDF(request LabelPDFRequest) ([]byte, error)
 	if len(request.TargetIDs) == 0 || len(request.TargetIDs) > 250 || len(request.TargetIDs)*request.Copies > 500 {
 		return nil, fmt.Errorf("PDF export allows at most 250 targets and 500 label pages")
 	}
-	results, err := s.RenderTargetLabels(LabelBatchRequest{
-		TargetType: request.TargetType, TargetIDs: request.TargetIDs, TemplateID: request.TemplateID, Save: true, IncludeImage: true,
-	})
+	assets, err := s.ensureCachedLabelPDFs(request.TargetType, request.TargetIDs, request.TemplateID)
 	if err != nil {
 		return nil, err
 	}
-	images := make([]string, 0, len(results))
-	for _, result := range results {
-		images = append(images, result.ImageData)
-	}
-	template := results[0].Template
-	htmlContent := buildLabelPDFHTML(images, template.Width, template.Height, request.Copies)
-	return s.renderHTMLToPDF(htmlContent, template.Width, template.Height)
+	return mergeCachedLabelPDFs(assets, request.Copies)
 }
 
-func buildLabelPDFHTML(images []string, widthMM, heightMM float64, copies int) string {
-	var html strings.Builder
-	fmt.Fprintf(&html, `<!doctype html><html><head><meta charset="utf-8"><style>
-@page { size: %.4fmm %.4fmm; margin: 0; }
-html, body { margin: 0; padding: 0; background: white; }
-.label-page { width: %.4fmm; height: %.4fmm; margin: 0; overflow: hidden; break-after: page; page-break-after: always; }
-.label-page:last-child { break-after: auto; page-break-after: auto; }
-.label-page img { display: block; width: 100%%; height: 100%%; }
-</style></head><body>`, widthMM, heightMM, widthMM, heightMM)
-	for _, imageData := range images {
+func mergeCachedLabelPDFs(assets []cachedLabelPDF, copies int) ([]byte, error) {
+	readers := make([]io.ReadSeeker, 0, len(assets)*copies)
+	for _, asset := range assets {
 		for range copies {
-			fmt.Fprintf(&html, `<div class="label-page"><img src="%s" alt=""></div>`, imageData)
+			readers = append(readers, bytes.NewReader(asset.PDF))
 		}
 	}
-	html.WriteString(`<script>
-window.pdfReady = false;
-Promise.all(Array.from(document.images).map((image) => image.complete ? Promise.resolve() : new Promise((resolve) => {
-  image.addEventListener('load', resolve, { once: true });
-  image.addEventListener('error', resolve, { once: true });
-}))).then(() => { window.pdfReady = true; });
-</script></body></html>`)
-	return html.String()
+	var merged bytes.Buffer
+	if err := api.MergeRaw(readers, &merged, false, model.NewDefaultConfiguration()); err != nil {
+		return nil, fmt.Errorf("merge cached label PDFs: %w", err)
+	}
+	return merged.Bytes(), nil
+}
+
+type cachedLabelPDF struct {
+	Target LabelTarget
+	Path   string
+	PDF    []byte
+}
+
+func (s *LabelService) ensureCachedLabelPDFs(targetType string, targetIDs []string, templateID int) ([]cachedLabelPDF, error) {
+	if !ValidLabelTargetType(targetType) || len(targetIDs) == 0 {
+		return nil, fmt.Errorf("target type and at least one target are required")
+	}
+	staleIDs := make([]string, 0)
+	for _, targetID := range targetIDs {
+		target, template, err := s.targetAndTemplate(targetType, targetID, templateID)
+		if err != nil {
+			return nil, err
+		}
+		current, _, err := currentCachedLabelPDF(target, template)
+		if err != nil {
+			return nil, err
+		}
+		if !current {
+			staleIDs = append(staleIDs, targetID)
+		}
+	}
+	for offset := 0; offset < len(staleIDs); offset += 250 {
+		end := min(offset+250, len(staleIDs))
+		if _, err := s.RenderTargetLabels(LabelBatchRequest{
+			TargetType: targetType, TargetIDs: staleIDs[offset:end], TemplateID: templateID, Save: true, IncludeImage: false,
+		}); err != nil {
+			return nil, fmt.Errorf("generate missing label PDFs: %w", err)
+		}
+	}
+
+	assets := make([]cachedLabelPDF, 0, len(targetIDs))
+	for _, targetID := range targetIDs {
+		target, template, err := s.targetAndTemplate(targetType, targetID, templateID)
+		if err != nil {
+			return nil, err
+		}
+		current, asset, err := currentCachedLabelPDF(target, template)
+		if err != nil {
+			return nil, err
+		}
+		if !current {
+			return nil, fmt.Errorf("generated PDF cache for %s %s is not current", targetType, targetID)
+		}
+		assets = append(assets, asset)
+	}
+	return assets, nil
 }
 
 func (s *LabelService) saveTargetLabel(result *LabelRenderResult, base64PNG string) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(base64PNG)
+	pngData, err := base64.StdEncoding.DecodeString(base64PNG)
 	if err != nil {
 		return "", fmt.Errorf("decode rendered label: %w", err)
+	}
+	pdfData, err := pngBytesToPDF(pngData, result.Template.Width, result.Template.Height)
+	if err != nil {
+		return "", err
 	}
 	safeID := safeLabelFilename.ReplaceAllString(result.Target.ID, "_")
 	dir := filepath.Join("web", "dist", "labels", result.Target.TargetType)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("create label directory: %w", err)
 	}
-	filename := fmt.Sprintf("%s_r%d.png", safeID, result.Template.Revision)
-	if err := os.WriteFile(filepath.Join(dir, filename), data, 0644); err != nil {
-		return "", fmt.Errorf("save rendered label: %w", err)
+	filename := fmt.Sprintf("%s_r%d.pdf", safeID, result.Template.Revision)
+	diskPath := filepath.Join(dir, filename)
+	if err := writeFileAtomically(diskPath, pdfData, 0644); err != nil {
+		return "", fmt.Errorf("save rendered label PDF: %w", err)
+	}
+	for _, dpi := range supportedPrinterDPIs {
+		zpl, zplErr := encodePNGAsZPL(pngData, result.Template.Width, result.Template.Height, dpi, 1)
+		if zplErr != nil {
+			return "", fmt.Errorf("prepare %d DPI printer cache: %w", dpi, zplErr)
+		}
+		if err := writeFileAtomically(zplSidecarPath(diskPath, dpi), []byte(zpl), 0644); err != nil {
+			return "", fmt.Errorf("save %d DPI printer cache: %w", dpi, err)
+		}
 	}
 	path := "/labels/" + result.Target.TargetType + "/" + filename
 	db := repository.GetSQLDB()
+	var previousPath sql.NullString
+	_ = db.QueryRow(`SELECT label_path FROM label_assets WHERE target_type = $1 AND target_id = $2`, result.Target.TargetType, result.Target.ID).Scan(&previousPath)
 	_, err = db.Exec(`INSERT INTO label_assets
 		(target_type, target_id, template_id, template_revision, source_updated_at, label_path, generated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
@@ -495,7 +563,113 @@ func (s *LabelService) saveTargetLabel(result *LabelRenderResult, base64PNG stri
 	if err != nil {
 		return "", fmt.Errorf("update target label path: %w", err)
 	}
+	if previousPath.Valid && previousPath.String != path {
+		removeCachedLabelFiles(previousPath.String)
+	}
 	return path, nil
+}
+
+func pngBytesToPDF(pngData []byte, widthMM, heightMM float64) ([]byte, error) {
+	if widthMM <= 0 || heightMM <= 0 {
+		return nil, fmt.Errorf("label dimensions must be positive")
+	}
+	config := fmt.Sprintf("dim:%.4f %.4f, pos:c, sc:1", widthMM, heightMM)
+	imp, err := pdfcpu.ParseImportDetails(config, types.MILLIMETRES)
+	if err != nil {
+		return nil, fmt.Errorf("configure label PDF: %w", err)
+	}
+	var output bytes.Buffer
+	if err := api.ImportImages(nil, &output, []io.Reader{bytes.NewReader(pngData)}, imp, model.NewDefaultConfiguration()); err != nil {
+		return nil, fmt.Errorf("create label PDF: %w", err)
+	}
+	if !bytes.HasPrefix(output.Bytes(), []byte("%PDF-")) {
+		return nil, fmt.Errorf("create label PDF: invalid output")
+	}
+	return output.Bytes(), nil
+}
+
+func currentCachedLabelPDF(target LabelTarget, template *models.LabelTemplate) (bool, cachedLabelPDF, error) {
+	var assetTemplateID sql.NullInt64
+	var assetRevision int
+	var sourceUpdatedAt sql.NullTime
+	var labelPath string
+	err := repository.GetSQLDB().QueryRow(`SELECT template_id, template_revision, source_updated_at, label_path
+		FROM label_assets WHERE target_type = $1 AND target_id = $2`, target.TargetType, target.ID).
+		Scan(&assetTemplateID, &assetRevision, &sourceUpdatedAt, &labelPath)
+	if err == sql.ErrNoRows {
+		return false, cachedLabelPDF{}, nil
+	}
+	if err != nil {
+		return false, cachedLabelPDF{}, fmt.Errorf("load cached label metadata: %w", err)
+	}
+	if !assetTemplateID.Valid || int(assetTemplateID.Int64) != template.ID || assetRevision != template.Revision ||
+		!sourceUpdatedAt.Valid || target.UpdatedAt.After(sourceUpdatedAt.Time) || !strings.HasSuffix(strings.ToLower(labelPath), ".pdf") {
+		return false, cachedLabelPDF{}, nil
+	}
+	diskPath, err := labelDiskPath(labelPath)
+	if err != nil {
+		return false, cachedLabelPDF{}, nil
+	}
+	pdfData, err := os.ReadFile(diskPath)
+	if os.IsNotExist(err) {
+		return false, cachedLabelPDF{}, nil
+	}
+	if err != nil {
+		return false, cachedLabelPDF{}, fmt.Errorf("read cached label PDF: %w", err)
+	}
+	if !bytes.HasPrefix(pdfData, []byte("%PDF-")) {
+		return false, cachedLabelPDF{}, nil
+	}
+	return true, cachedLabelPDF{Target: target, Path: labelPath, PDF: pdfData}, nil
+}
+
+func labelDiskPath(labelPath string) (string, error) {
+	const prefix = "/labels/"
+	if !strings.HasPrefix(labelPath, prefix) {
+		return "", fmt.Errorf("invalid label path %q", labelPath)
+	}
+	relative := filepath.Clean(strings.TrimPrefix(labelPath, prefix))
+	if relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid label path %q", labelPath)
+	}
+	return filepath.Join("web", "dist", "labels", relative), nil
+}
+
+func zplSidecarPath(pdfPath string, dpi int) string {
+	return strings.TrimSuffix(pdfPath, filepath.Ext(pdfPath)) + fmt.Sprintf(".%d.zpl", dpi)
+}
+
+func writeFileAtomically(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	temporary, err := os.CreateTemp(dir, ".label-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Chmod(mode); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
+}
+
+func removeCachedLabelFiles(labelPath string) {
+	diskPath, err := labelDiskPath(labelPath)
+	if err != nil {
+		return
+	}
+	_ = os.Remove(diskPath)
+	for _, dpi := range supportedPrinterDPIs {
+		_ = os.Remove(zplSidecarPath(diskPath, dpi))
+	}
 }
 
 func (s *LabelService) ListPrinters() ([]models.LabelPrinter, error) {
@@ -587,16 +761,33 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 	if err := query.First(&printer).Error; err != nil {
 		return nil, fmt.Errorf("active printer not found")
 	}
-	rendered := make([]*LabelRenderResult, 0, len(request.TargetIDs))
-	for offset := 0; offset < len(request.TargetIDs); offset += 250 {
-		end := min(offset+250, len(request.TargetIDs))
-		batch, err := s.RenderTargetLabels(LabelBatchRequest{
-			TargetType: request.TargetType, TargetIDs: request.TargetIDs[offset:end], TemplateID: request.TemplateID, Save: true, IncludeImage: true,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("render print batch: %w", err)
+	assets, err := s.ensureCachedLabelPDFs(request.TargetType, request.TargetIDs, request.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	missingPrinterCache := make([]string, 0)
+	for _, asset := range assets {
+		diskPath, pathErr := labelDiskPath(asset.Path)
+		if pathErr != nil {
+			return nil, pathErr
 		}
-		rendered = append(rendered, batch...)
+		if _, statErr := os.Stat(zplSidecarPath(diskPath, printer.DPI)); statErr != nil {
+			missingPrinterCache = append(missingPrinterCache, asset.Target.ID)
+		}
+	}
+	for offset := 0; offset < len(missingPrinterCache); offset += 250 {
+		end := min(offset+250, len(missingPrinterCache))
+		if _, err := s.RenderTargetLabels(LabelBatchRequest{
+			TargetType: request.TargetType, TargetIDs: missingPrinterCache[offset:end], TemplateID: request.TemplateID, Save: true, IncludeImage: false,
+		}); err != nil {
+			return nil, fmt.Errorf("prepare direct-print cache: %w", err)
+		}
+	}
+	if len(missingPrinterCache) > 0 {
+		assets, err = s.ensureCachedLabelPDFs(request.TargetType, request.TargetIDs, request.TemplateID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	jobs := make([]models.LabelPrintJob, 0, len(request.TargetIDs))
@@ -612,16 +803,17 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 		job.StartedAt = &now
 		repository.GetDB().Model(&models.LabelPrintJob{}).Where("id = ?", job.ID).Updates(map[string]any{"status": job.Status, "started_at": now})
 
-		result := rendered[index]
-		pngData, renderErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(result.ImageData, "data:image/png;base64,"))
+		asset := assets[index]
+		diskPath, renderErr := labelDiskPath(asset.Path)
+		var zpl []byte
 		if renderErr == nil {
-			var zpl string
-			zpl, renderErr = encodePNGAsZPL(pngData, result.Template.Width, result.Template.Height, printer.DPI, request.Copies)
-			if renderErr == nil {
-				renderErr = sendRawPrinterData(printer.Address, printer.Port, []byte(zpl))
-			}
+			zpl, renderErr = os.ReadFile(zplSidecarPath(diskPath, printer.DPI))
 		}
-		job.LabelPath = result.LabelPath
+		if renderErr == nil {
+			zpl = []byte(zplCopiesPattern.ReplaceAllString(string(zpl), fmt.Sprintf("^PQ%d", request.Copies)))
+			renderErr = sendRawPrinterData(printer.Address, printer.Port, zpl)
+		}
+		job.LabelPath = asset.Path
 		finished := time.Now()
 		job.CompletedAt = &finished
 		if renderErr != nil {

@@ -45,6 +45,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
     if (!device?.label_path) return null;
     return `${device.label_path}?t=${Date.now()}`;
   }, [device?.label_path]);
+  const labelIsPDF = device?.label_path?.toLowerCase().endsWith('.pdf') ?? false;
 
   if (!isOpen || !device) return null;
 
@@ -307,7 +308,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
                 </h3>
                 <a
                   href={labelUrl}
-                  download={`${device.device_id}_label.png`}
+                  download={`${device.device_id}_label.${labelIsPDF ? 'pdf' : 'png'}`}
                   className="flex items-center gap-2 rounded-xl bg-accent-red px-4 py-2 font-semibold text-white transition-all hover:scale-105 hover:bg-accent-red-hover hover:shadow-lg hover:shadow-accent-red/30 active:scale-95"
                 >
                   <Download className="w-4 h-4" />
@@ -315,11 +316,20 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
                 </a>
               </div>
               <div className="flex justify-center p-4 bg-black/20 rounded-xl">
-                <img
-                  src={labelUrl}
-                  alt={`Label für ${device.device_id}`}
-                  className="max-w-sm h-auto border border-white/10 rounded shadow-lg"
-                />
+                {labelIsPDF ? (
+                  <object
+                    data={labelUrl}
+                    type="application/pdf"
+                    aria-label={`Label für ${device.device_id}`}
+                    className="h-64 w-full max-w-sm rounded border border-white/10 bg-white shadow-lg"
+                  />
+                ) : (
+                  <img
+                    src={labelUrl}
+                    alt={`Label für ${device.device_id}`}
+                    className="max-w-sm h-auto border border-white/10 rounded shadow-lg"
+                  />
+                )}
               </div>
             </div>
           )}

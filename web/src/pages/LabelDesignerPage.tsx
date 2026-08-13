@@ -115,28 +115,6 @@ async function downloadErrorMessage(error: unknown, fallback: string) {
   return requestErrorMessage(error, fallback);
 }
 
-function openBrowserPrint(images: string[], width: number, height: number, copies: number, win: Window) {
-  win.document.title = 'WarehouseCore Labels';
-  const style = win.document.createElement('style');
-  style.textContent = `@page { size: ${width}mm ${height}mm; margin: 0; } body { margin: 0; background: white; } img { display:block; width:${width}mm; height:${height}mm; break-after:page; } img:last-child { break-after:auto; }`;
-  win.document.head.appendChild(style);
-  for (const src of images) {
-    for (let copy = 0; copy < copies; copy += 1) {
-      const image = win.document.createElement('img');
-      image.src = src;
-      win.document.body.appendChild(image);
-    }
-  }
-  const allImages = Array.from(win.document.images);
-  Promise.all(allImages.map(image => image.complete ? Promise.resolve() : new Promise<void>(resolve => {
-    image.onload = () => resolve();
-    image.onerror = () => resolve();
-  }))).then(() => {
-    win.focus();
-    win.print();
-  });
-}
-
 export default function LabelDesignerPage() {
   const [tab, setTab] = useState<StudioTab>('designer');
   const [targetType, setTargetType] = useState<LabelTargetType>('device');
@@ -499,24 +477,25 @@ export default function LabelDesignerPage() {
       toast.error('Der Browser hat das Druckfenster blockiert.');
       return;
     }
-    printWindow.document.body.textContent = 'Labels werden vorbereitet …';
+    printWindow.document.body.textContent = 'PDF-Druckansicht wird vorbereitet …';
     setBusy(true);
     try {
       const targetIDs = Array.from(selectedTargets);
-      const images: string[] = [];
-      for (let offset = 0; offset < targetIDs.length; offset += 100) {
-        const { data } = await labelsApi.renderTargets({
-          target_type: targetType, target_ids: targetIDs.slice(offset, offset + 100),
-          template_id: activeTemplateID, save: true, include_images: true,
-        });
-        images.push(...data.results.map(result => result.image_data));
+      const total = targetIDs.length * copies;
+      if (targetIDs.length > 250 || total > 500) {
+        throw new Error('Die Druckansicht darf höchstens 250 Einträge und 500 Labelseiten enthalten.');
       }
-      printWindow.document.body.replaceChildren();
-      openBrowserPrint(images, labelWidth, labelHeight, copies, printWindow);
+      const response = await labelsApi.exportPDF({
+        target_type: targetType, target_ids: targetIDs, template_id: activeTemplateID, copies,
+      });
+      const url = URL.createObjectURL(response.data);
+      printWindow.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
+      toast.success('PDF-Druckansicht geöffnet.');
       await loadTargets(targetType, search);
     } catch (error) {
       printWindow.close();
-      toast.error(String(error));
+      toast.error(await downloadErrorMessage(error, 'Druckansicht konnte nicht erstellt werden.'));
     } finally { setBusy(false); }
   }
 

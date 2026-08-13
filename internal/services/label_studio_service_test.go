@@ -6,10 +6,14 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"net"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
 func TestValidLabelTargetType(t *testing.T) {
@@ -41,16 +45,45 @@ func TestCableLabelFields(t *testing.T) {
 	}
 }
 
-func TestBuildLabelPDFHTML(t *testing.T) {
+func TestPNGBytesToPDF(t *testing.T) {
 	t.Parallel()
-	html := buildLabelPDFHTML([]string{"data:image/png;base64,AAA", "data:image/png;base64,BBB"}, 51, 25, 2)
-	if pages := strings.Count(html, `<div class="label-page">`); pages != 4 {
-		t.Fatalf("expected 4 PDF pages, got %d", pages)
+	img := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
 	}
-	for _, expected := range []string{"size: 51.0000mm 25.0000mm", "data:image/png;base64,AAA", "data:image/png;base64,BBB", "window.pdfReady = true"} {
-		if !strings.Contains(html, expected) {
-			t.Errorf("expected PDF HTML to contain %q", expected)
-		}
+	pdfData, err := pngBytesToPDF(encoded.Bytes(), 51, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(pdfData, []byte("%PDF-")) {
+		t.Fatalf("expected PDF data, got %d bytes", len(pdfData))
+	}
+	pages, err := api.PageCount(bytes.NewReader(pdfData), model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pages != 1 {
+		t.Fatalf("expected one PDF page, got %d", pages)
+	}
+	dimensions, err := api.PageDims(bytes.NewReader(pdfData), model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dimensions) != 1 || math.Abs(dimensions[0].Width-51*72/25.4) > 0.1 || math.Abs(dimensions[0].Height-25*72/25.4) > 0.1 {
+		t.Fatalf("unexpected PDF dimensions: %+v", dimensions)
+	}
+
+	merged, err := mergeCachedLabelPDFs([]cachedLabelPDF{{PDF: pdfData}, {PDF: pdfData}}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err = api.PageCount(bytes.NewReader(merged), model.NewDefaultConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pages != 4 {
+		t.Fatalf("expected four merged PDF pages, got %d", pages)
 	}
 }
 
@@ -58,8 +91,7 @@ func TestRenderLabelPDFWithChromium(t *testing.T) {
 	if os.Getenv("WAREHOUSECORE_CHROME_TEST") != "1" {
 		t.Skip("set WAREHOUSECORE_CHROME_TEST=1 to run the Chromium integration test")
 	}
-	const onePixelPNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-	html := buildLabelPDFHTML([]string{onePixelPNG}, 51, 25, 1)
+	html := `<!doctype html><html><body><div>Label</div><script>window.pdfReady = true;</script></body></html>`
 	// A real multi-label export can easily exceed the size Chromium accepts in
 	// a data URL. Keep this document deliberately large to cover that failure.
 	html += "<!--" + strings.Repeat("x", 8<<20) + "-->"

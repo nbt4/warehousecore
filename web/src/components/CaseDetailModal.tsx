@@ -34,13 +34,14 @@ export function CaseDetailModal({
   // Block body scroll when modal is open
   useBlockBodyScroll(isOpen);
 
-  if (!isOpen) return null;
-
   // Cache-busting for label image - regenerates URL when label_path changes
   const labelUrl = useMemo(() => {
     if (!caseInfo?.label_path) return null;
     return `${caseInfo.label_path}?t=${Date.now()}`;
   }, [caseInfo?.label_path]);
+  const labelIsPDF = caseInfo?.label_path?.toLowerCase().endsWith('.pdf') ?? false;
+
+  if (!isOpen) return null;
 
   const formatDimension = (value?: number) => {
     if (value === undefined || Number.isNaN(value)) {
@@ -133,14 +134,23 @@ export function CaseDetailModal({
               </p>
               {labelUrl ? (
                 <div className="flex flex-col gap-2">
-                  <img
-                    src={labelUrl}
-                    alt={`Label für Case ${caseInfo.case_id}`}
-                    className="w-full h-auto rounded border border-white/10 shadow-sm"
-                  />
+                  {labelIsPDF ? (
+                    <object
+                      data={labelUrl}
+                      type="application/pdf"
+                      aria-label={`Label für Case ${caseInfo.case_id}`}
+                      className="h-56 w-full rounded border border-white/10 bg-white shadow-sm"
+                    />
+                  ) : (
+                    <img
+                      src={labelUrl}
+                      alt={`Label für Case ${caseInfo.case_id}`}
+                      className="w-full h-auto rounded border border-white/10 shadow-sm"
+                    />
+                  )}
                   <a
                     href={labelUrl}
-                    download={`CASE-${caseInfo.case_id}_label.png`}
+                    download={`CASE-${caseInfo.case_id}_label.${labelIsPDF ? 'pdf' : 'png'}`}
                     className="flex items-center justify-center gap-1 px-2 py-1 text-xs font-semibold rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white"
                   >
                     <Download className="w-3 h-3" />

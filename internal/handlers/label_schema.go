@@ -2,11 +2,16 @@ package handlers
 
 import (
 	"fmt"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"warehousecore/internal/repository"
 )
 
-const labelStudioSchemaVersion = "035_cable_labels_and_pdf_export"
+const labelStudioSchemaVersion = "036_pdf_label_cache"
 
 // EnsureLabelStudioSchema installs the target-aware label and direct-print schema.
 // It is idempotent so deployments do not depend on an external migration runner.
@@ -79,6 +84,10 @@ func EnsureLabelStudioSchema() error {
 		 SELECT 'case', caseid::text, label_path, updated_at FROM cases
 		 WHERE label_path IS NOT NULL AND label_path <> ''
 		 ON CONFLICT (target_type, target_id) DO NOTHING`,
+		`UPDATE devices SET label_path = NULL WHERE LOWER(COALESCE(label_path, '')) LIKE '%.png'`,
+		`UPDATE cases SET label_path = NULL WHERE LOWER(COALESCE(label_path, '')) LIKE '%.png'`,
+		`UPDATE storage_zones SET label_url = NULL WHERE LOWER(COALESCE(label_url, '')) LIKE '%.png'`,
+		`DELETE FROM label_assets WHERE LOWER(label_path) LIKE '%.png'`,
 		`INSERT INTO label_templates (name, description, width, height, template_json, is_default, target_type, revision)
 		 SELECT 'Standard Geräte-Label', 'Geräte-Label 51x25mm', 51, 25, '[{"type":"qrcode","x":2,"y":2,"width":21,"height":21,"rotation":0,"content":"code","style":{"format":"qr"}},{"type":"text","x":25,"y":3,"width":24,"height":7,"rotation":0,"content":"product_name","style":{"font_size":9,"font_weight":"bold","font_family":"Arial","color":"#000000","alignment":"left"}},{"type":"text","x":25,"y":13,"width":24,"height":5,"rotation":0,"content":"device_id","style":{"font_size":8,"font_weight":"normal","font_family":"Arial","color":"#000000","alignment":"left"}}]', TRUE, 'device', 1
 		 WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE target_type = 'device' AND is_default)
@@ -113,6 +122,37 @@ func EnsureLabelStudioSchema() error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit label studio migration: %w", err)
+	}
+	if err := removeLegacyPNGLabelCache(filepath.Join("web", "dist", "labels")); err != nil {
+		return fmt.Errorf("remove legacy PNG label cache: %w", err)
+	}
+	return nil
+}
+
+func removeLegacyPNGLabelCache(root string) error {
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	removed := 0
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".png") {
+			return nil
+		}
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		removed++
+		return nil
+	}); err != nil {
+		return err
+	}
+	if removed > 0 {
+		log.Printf("[LABEL MIGRATION] Removed %d legacy PNG label cache files", removed)
 	}
 	return nil
 }
