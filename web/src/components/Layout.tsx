@@ -40,6 +40,20 @@ export function Layout({ children }: LayoutProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [location.pathname, isMobile]);
+
+  useEffect(() => {
+    const locked = isMobile && sidebarOpen;
+    document.documentElement.classList.toggle('modal-open', locked);
+    document.body.classList.toggle('modal-open', locked);
+    return () => {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+    };
+  }, [isMobile, sidebarOpen]);
+
   const closeSidebar = () => {
     if (isMobile) {
       setSidebarOpen(false);
@@ -100,10 +114,6 @@ export function Layout({ children }: LayoutProps) {
   };
   const dashboardURL = getCoresDashboardURL();
 
-  // Debug log
-  console.log('RentalCore URL:', rentalCoreURL);
-
-
   const mainNavItems = useMemo(() => ([
     { key: 'dashboard', path: '/', icon: Home, label: t('nav.dashboard') },
     { key: 'scan', path: '/scan', icon: ScanLine, label: t('nav.scan') },
@@ -138,10 +148,10 @@ export function Layout({ children }: LayoutProps) {
   }, [productNavActive]);
 
   return (
-    <div className="min-h-screen bg-dark">
+    <div className="mobile-app-shell min-h-screen bg-dark">
       {/* Header */}
       <header
-        className={`fixed top-0 right-0 z-50 glass-dark transition-all duration-300 ${
+        className={`mobile-app-header fixed top-0 right-0 z-50 glass-dark transition-all duration-300 ${
           !isMobile && sidebarOpen ? 'left-64' : !isMobile ? 'left-20' : 'left-0'
         }`}
         style={{ height: '60px', borderBottom: '1px solid var(--border-subtle)' }}
@@ -175,16 +185,17 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Mobile Backdrop */}
       {isMobile && sidebarOpen && (
-        <div
+        <button
           className="fixed inset-0 z-40"
           style={{ background: 'var(--bg-overlay)' }}
           onClick={closeSidebar}
+          aria-label="Close menu"
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 bottom-0 z-50 glass-dark flex flex-col transition-all duration-300 ease-in-out ${
+        className={`mobile-app-drawer fixed left-0 top-0 bottom-0 z-50 glass-dark flex flex-col transition-all duration-300 ease-in-out ${
           isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0'
         } ${isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'}`}
         style={{ borderRight: '1px solid var(--border-subtle)' }}
@@ -413,13 +424,33 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Main Content */}
       <main
-        className={`transition-all duration-300 ${isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'}`}
+        className={`mobile-app-main transition-all duration-300 ${isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'}`}
         style={{ paddingTop: '60px' }}
       >
-        <div className="p-4 sm:p-6">
+        <div className="mobile-app-content p-4 sm:p-6">
           {children}
         </div>
       </main>
+
+      <nav className="mobile-app-tabbar" aria-label="Main navigation">
+        {[
+          { path: '/', icon: Home, label: t('nav.dashboard'), exact: true },
+          { path: '/scan', icon: ScanLine, label: t('nav.scan') },
+          { path: '/jobs', icon: Briefcase, label: t('nav.jobs') },
+        ].map(({ path, icon: Icon, label, exact }) => {
+          const active = exact ? location.pathname === path : location.pathname.startsWith(path);
+          return (
+            <Link key={path} to={path} className={`mobile-app-tab ${active ? 'is-active' : ''}`}>
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+        <button type="button" className={`mobile-app-tab ${sidebarOpen ? 'is-active' : ''}`} onClick={() => setSidebarOpen(true)}>
+          <Menu aria-hidden="true" />
+          <span>Mehr</span>
+        </button>
+      </nav>
     </div>
   );
 }

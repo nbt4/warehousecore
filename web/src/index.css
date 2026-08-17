@@ -36,6 +36,10 @@
 
 /* ===== CSS VARIABLES — Semantic design tokens ===== */
 :root {
+  --app-safe-top: env(safe-area-inset-top, 0px);
+  --app-safe-right: env(safe-area-inset-right, 0px);
+  --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-safe-left: env(safe-area-inset-left, 0px);
   /* Semantic aliases — use these in TSX inline styles */
   --accent-red: #D0021B;
   --accent-red-hover: #a30017;
@@ -100,6 +104,113 @@ body {
   color: var(--color-light);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+#root {
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+.mobile-app-tabbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  button,
+  [role="button"] {
+    min-height: 44px;
+  }
+
+  .mobile-app-header {
+    height: calc(3.75rem + var(--app-safe-top)) !important;
+    padding-top: var(--app-safe-top);
+    padding-left: var(--app-safe-left);
+    padding-right: var(--app-safe-right);
+  }
+
+  .mobile-app-drawer {
+    width: min(86vw, 20rem) !important;
+    padding-top: var(--app-safe-top);
+    padding-bottom: var(--app-safe-bottom);
+  }
+
+  .mobile-app-main {
+    min-height: 100dvh;
+    padding-top: calc(3.75rem + var(--app-safe-top)) !important;
+    padding-bottom: calc(4.25rem + var(--app-safe-bottom));
+  }
+
+  .mobile-app-content {
+    padding-left: max(1rem, var(--app-safe-left));
+    padding-right: max(1rem, var(--app-safe-right));
+  }
+
+  .mobile-app-tabbar {
+    position: fixed;
+    z-index: 35;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: calc(4rem + var(--app-safe-bottom));
+    padding: 0.35rem max(0.5rem, var(--app-safe-right)) var(--app-safe-bottom) max(0.5rem, var(--app-safe-left));
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(var(--color-dark-rgb), 0.96);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
+  .mobile-app-tab {
+    display: flex;
+    min-width: 0;
+    min-height: 3.35rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    border: 0;
+    border-radius: 0.75rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .mobile-app-tab svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .mobile-app-tab.is-active {
+    color: var(--text-primary);
+    background: rgba(var(--accent-red-rgb), 0.14);
+  }
+
 }
 
 ::selection {

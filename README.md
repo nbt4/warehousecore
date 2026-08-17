@@ -18,7 +18,7 @@
 - **Öffentliche Produktseite** — Ungeschützte API für getrennte Produkt- und Paketlisten, jeweils mit Website-Freigabe und Bildern
 - **Produktpakete** — Pakete unabhängig von normalen Produkten verwalten, Produkte mit Mengen zuweisen und eigene Paketbilder pflegen
 - **Role-Based Access** — Feingranulares Rollensystem mit Admin-Bereich für Benutzer-, Kategorie- und LED-Konfiguration
-- **Installierbare Web-App (PWA)** — Responsive Nutzung im Standalone-Modus mit WarehouseCore-App-Icon; auf iPhone/iPad über Safari → Teilen → „Zum Home-Bildschirm“ installieren
+- **Installierbare Mobile-App (PWA)** — Standalone-Modus mit WarehouseCore-App-Icon, Safe-Area-Unterstützung, großen Touch-Zielen, App-Tabbar und Drawer-Navigation; auf iPhone/iPad über Safari → Teilen → „Zum Home-Bildschirm“ installieren
 
 ---
 
