@@ -34,6 +34,13 @@ var brandingSvc *services.BrandingService
 
 // spaHandler serves the SPA and falls back to index.html for client-side routes
 func spaHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/sw.js" {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if r.URL.Path == "/manifest.webmanifest" {
+		w.Header().Set("Content-Type", "application/manifest+json")
+	}
+
 	// Build file path
 	path := "./web/dist" + r.URL.Path
 
