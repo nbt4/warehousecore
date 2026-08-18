@@ -344,7 +344,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 }
 
 // HealthCheck returns server health status
-var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "2.1.0")
+var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.54")
 
 // HandleScan processes barcode/QR scan requests
 func HandleScan(w http.ResponseWriter, r *http.Request) {
@@ -1457,6 +1457,36 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, jobs)
+}
+
+// GetJobByScan resolves the actual persisted job code instead of assuming
+// that its numeric suffix is always identical to the database ID.
+func GetJobByScan(w http.ResponseWriter, r *http.Request) {
+	scanCode := strings.TrimSpace(r.URL.Query().Get("scan_code"))
+	if scanCode == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "scan_code is required"})
+		return
+	}
+
+	var jobID int
+	err := repository.GetSQLDB().QueryRow(`
+		SELECT j.jobid
+		FROM jobs j
+		WHERE UPPER(COALESCE(j.job_code, CONCAT('JOB', LPAD(CAST(j.jobid AS TEXT), 6, '0')))) = UPPER($1)
+		   OR CAST(j.jobid AS TEXT) = $1
+		LIMIT 1
+	`, scanCode).Scan(&jobID)
+	if err == sql.ErrNoRows {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Job nicht gefunden"})
+		return
+	}
+	if err != nil {
+		log.Printf("Error resolving scanned job: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	GetJobSummary(w, mux.SetURLVars(r, map[string]string{"id": strconv.Itoa(jobID)}))
 }
 
 func GetJobSummary(w http.ResponseWriter, r *http.Request) {
@@ -2590,16 +2620,29 @@ func GetInspections(w http.ResponseWriter, r *http.Request) {
 func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
-	var inStorage, onJob, defective int
-	db.QueryRow(`SELECT COUNT(*) FROM devices WHERE status = 'in_storage'`).Scan(&inStorage)
-	db.QueryRow(`SELECT COUNT(*) FROM devices WHERE status = 'on_job' OR status = 'rented'`).Scan(&onJob)
-	db.QueryRow(`SELECT COUNT(*) FROM devices WHERE status = 'defective'`).Scan(&defective)
+	var inStorage, onJob, returnPending, locationUnknown, defective, total int
+	err := db.QueryRow(`
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'in_storage'),
+			COUNT(*) FILTER (WHERE status IN ('on_job', 'rented')),
+			COUNT(*) FILTER (WHERE status = 'return_pending'),
+			COUNT(*) FILTER (WHERE status = 'location_unknown'),
+			COUNT(*) FILTER (WHERE status = 'defective'),
+			COUNT(*)
+		FROM devices
+	`).Scan(&inStorage, &onJob, &returnPending, &locationUnknown, &defective, &total)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load device statistics"})
+		return
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"in_storage": inStorage,
-		"on_job":     onJob,
-		"defective":  defective,
-		"total":      inStorage + onJob + defective,
+		"in_storage":       inStorage,
+		"on_job":           onJob,
+		"return_pending":   returnPending,
+		"location_unknown": locationUnknown,
+		"defective":        defective,
+		"total":            total,
 	})
 }
 

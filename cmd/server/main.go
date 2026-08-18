@@ -161,6 +161,9 @@ func main() {
 	if err := handlers.EnsureProductManagementSchema(); err != nil {
 		log.Fatalf("Failed to initialize product management schema: %v", err)
 	}
+	if err := handlers.EnsureDeviceStatusSchema(); err != nil {
+		log.Fatalf("Failed to initialize device status schema: %v", err)
+	}
 	if err := handlers.EnsureLabelStudioSchema(); err != nil {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
@@ -208,7 +211,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "2.1.0")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.54")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -251,6 +254,7 @@ func main() {
 
 	// Job endpoints
 	api.HandleFunc("/jobs", handlers.GetJobs).Methods("GET")
+	api.HandleFunc("/jobs/scan", handlers.GetJobByScan).Methods("GET")
 	api.HandleFunc("/jobs/{id}", handlers.GetJobSummary).Methods("GET")
 	api.HandleFunc("/jobs/{id}/requirements", handlers.GetJobRequirements).Methods("GET")
 	api.HandleFunc("/jobs/{id}/picklist", handlers.GetJobPicklist).Methods("GET")

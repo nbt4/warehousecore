@@ -17,6 +17,7 @@ import { api, devicesAdminApi, labelsApi } from '../../lib/api';
 import type { Device, DeviceCreateInput, DeviceUpdateInput, LabelTemplate } from '../../lib/api';
 import { useBlockBodyScroll } from '../../hooks/useBlockBodyScroll';
 import { toast } from '../../lib/toast';
+import { formatStatus, getStatusColor } from '../../lib/utils';
 
 interface Product {
   product_id: number;
@@ -360,7 +361,10 @@ export function DevicesTab() {
           >
             <option value="">Alle Status</option>
             <option value="free">Frei</option>
-            <option value="on_job">Im Einsatz</option>
+            <option value="in_storage">Im Lager</option>
+            <option value="on_job">Ausgegeben</option>
+            <option value="return_pending">Rückgabe offen</option>
+            <option value="location_unknown">Standort ungeklärt</option>
             <option value="defective">Defekt</option>
             <option value="maintenance">Wartung</option>
             <option value="retired">Ausgemustert</option>
@@ -476,17 +480,9 @@ export function DevicesTab() {
                     <td className="px-4 py-3 text-sm text-gray-300">{device.serial_number || '-'}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          device.status === 'free'
-                            ? 'bg-green-500/20 text-green-400'
-                            : device.status === 'on_job'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : device.status === 'defective'
-                            ? 'bg-red-500/20 text-red-400'
-                            : 'bg-yellow-500/20 text-yellow-400'
-                        }`}
+                        className={`px-2 py-1 rounded-full bg-white/10 text-xs font-semibold ${getStatusColor(device.status)}`}
                       >
-                        {device.status}
+                        {formatStatus(device.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-300">
@@ -553,17 +549,9 @@ export function DevicesTab() {
                 )}
               </div>
                 <span
-                  className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                    device.status === 'free'
-                      ? 'bg-green-500/20 text-green-400'
-                      : device.status === 'on_job'
-                      ? 'bg-blue-500/20 text-blue-400'
-                      : device.status === 'defective'
-                      ? 'bg-red-500/20 text-red-400'
-                      : 'bg-yellow-500/20 text-yellow-400'
-                  }`}
+                  className={`px-2 py-1 rounded-full bg-white/10 text-xs font-semibold ${getStatusColor(device.status)}`}
                 >
-                  {device.status}
+                  {formatStatus(device.status)}
                 </span>
               </div>
 
@@ -728,7 +716,10 @@ export function DevicesTab() {
                     required
                   >
                     <option value="free">Frei</option>
-                    <option value="on_job">Im Einsatz</option>
+                    <option value="in_storage">Im Lager</option>
+                    <option value="on_job" disabled>Ausgegeben (nur Scanner)</option>
+                    <option value="return_pending" disabled>Rückgabe offen (nur Scanner)</option>
+                    <option value="location_unknown">Standort ungeklärt</option>
                     <option value="defective">Defekt</option>
                     <option value="maintenance">Wartung</option>
                     <option value="retired">Ausgemustert</option>

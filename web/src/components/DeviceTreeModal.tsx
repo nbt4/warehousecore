@@ -3,6 +3,7 @@ import { X, ChevronRight, Package } from 'lucide-react';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
 import { toast } from '../lib/toast';
+import { formatStatus } from '../lib/utils';
 
 interface Device {
   device_id: string;
@@ -355,6 +356,8 @@ function DeviceNode({
     in_storage: 'text-green-400',
     on_job: 'text-yellow-400',
     rented: 'text-yellow-400',
+    return_pending: 'text-yellow-400',
+    location_unknown: 'text-orange-400',
     defective: 'text-red-400',
     in_transit: 'text-blue-400',
   };
@@ -386,7 +389,7 @@ function DeviceNode({
           <span className="text-xs text-gray-500">📍 {device.zone_code}</span>
         )}
         <span className={`text-xs font-medium ${statusColors[device.status] || 'text-gray-400'}`}>
-          {device.status}
+          {formatStatus(device.status)}
         </span>
       </div>
     </div>

@@ -1,403 +1,327 @@
-import { useState } from 'react';
-import { ScanLine, CheckCircle, XCircle, MapPin, Lightbulb } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { scansApi, zonesApi, jobsApi, ledApi } from '../lib/api';
-import type { ScanResponse } from '../lib/api';
-import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BriefcaseBusiness,
+  CheckCircle,
+  MapPin,
+  PackageCheck,
+  PackageMinus,
+  RotateCcw,
+  ScanLine,
+  Search,
+  XCircle,
+} from 'lucide-react';
+import { jobsApi, scansApi, zonesApi } from '../lib/api';
+import type { JobSummary, ScanResponse } from '../lib/api';
+import { formatStatus } from '../lib/utils';
 import { toast } from '../lib/toast';
 
-type ScanStep = 'device' | 'zone';
+type ScanAction = 'check' | 'intake' | 'outtake';
+type ScanStep = 'job' | 'device' | 'zone';
+
+const actionOptions: Array<{
+  value: ScanAction;
+  label: string;
+  description: string;
+  icon: typeof Search;
+}> = [
+  { value: 'check', label: 'Prüfen', description: 'Status und Standort anzeigen', icon: Search },
+  { value: 'intake', label: 'Einlagern', description: 'Artikel und danach Lagerplatz scannen', icon: PackageCheck },
+  { value: 'outtake', label: 'Auslagern', description: 'Job und danach Artikel scannen', icon: PackageMinus },
+];
+
+const closedJobStatuses = new Set([
+  'abgeschlossen',
+  'abgerechnet',
+  'storniert',
+  'completed',
+  'paid',
+  'canceled',
+  'cancelled',
+]);
+
+const firstStep = (action: ScanAction): ScanStep => (action === 'outtake' ? 'job' : 'device');
+
+function requestError(error: unknown, fallback: string): string {
+  const candidate = error as { response?: { data?: { error?: string } }; message?: string };
+  return candidate.response?.data?.error || candidate.message || fallback;
+}
 
 export function ScanPage() {
-  const navigate = useNavigate();
+  const [action, setAction] = useState<ScanAction>('check');
+  const [step, setStep] = useState<ScanStep>('device');
   const [scanCode, setScanCode] = useState('');
-  const [action, setAction] = useState<'intake' | 'outtake' | 'check'>('check');
+  const [quantity, setQuantity] = useState(1);
   const [result, setResult] = useState<ScanResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
+  const [pendingItemCode, setPendingItemCode] = useState('');
+  const [pendingItem, setPendingItem] = useState<ScanResponse | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Two-step workflow for intake
-  const [step, setStep] = useState<ScanStep>('device');
-  const [deviceScanCode, setDeviceScanCode] = useState('');
-  const [consumableQuantity, setConsumableQuantity] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [action, step, loading]);
 
-  // Job-Code scan states
-  const [showLEDModal, setShowLEDModal] = useState(false);
-  const [scannedJobId, setScannedJobId] = useState<number | null>(null);
+  const prompt = useMemo(() => {
+    if (step === 'job') return 'Job-Code scannen';
+    if (step === 'zone') return 'Lagerplatz scannen';
+    if (action === 'outtake' && selectedJob) return `Artikel für ${selectedJob.job_code} scannen`;
+    return 'Barcode, QR-Code oder Geräte-ID scannen';
+  }, [action, selectedJob, step]);
 
-  // Block body scroll when LED modal is open
-  useBlockBodyScroll(showLEDModal);
+  const resetWorkflow = (nextAction = action) => {
+    setStep(firstStep(nextAction));
+    setScanCode('');
+    setQuantity(1);
+    setResult(null);
+    setSelectedJob(null);
+    setPendingItemCode('');
+    setPendingItem(null);
+  };
 
-  const handleScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scanCode.trim()) return;
+  const changeAction = (nextAction: ScanAction) => {
+    setAction(nextAction);
+    resetWorkflow(nextAction);
+  };
 
-    // Check if scan code is a Job-Code (format: JOB######)
-    const jobCodeMatch = scanCode.match(/^JOB(\d{6})$/i);
-    if (jobCodeMatch) {
-      const jobId = parseInt(jobCodeMatch[1], 10);
-      await handleJobCodeScan(jobId);
+  const selectJob = async (code: string) => {
+    const { data: job } = await jobsApi.getByScan(code);
+    if (closedJobStatuses.has(job.status.trim().toLowerCase())) {
+      setResult({
+        success: false,
+        message: `${job.job_code} ist bereits ${job.status} und kann nicht mehr ausgelagert werden.`,
+        action: 'outtake',
+        duplicate: false,
+      });
       return;
     }
-
-    setLoading(true);
-    try {
-      // Step 1: Scan device
-      if (action === 'intake' && step === 'device') {
-        // Verify device exists by trying to scan it (check action)
-        const { data } = await scansApi.process({
-          scan_code: scanCode,
-          action: 'check',
-        });
-
-        if (data.success) {
-          // Check if this is an accessory/consumable (has product info with unit)
-          if (data.product && data.product.unit) {
-            // This is an accessory/consumable - ask for quantity
-            const quantityStr = window.prompt(`Menge zum Einlagern (${data.product.unit}):`);
-
-            if (!quantityStr || isNaN(Number(quantityStr)) || Number(quantityStr) <= 0) {
-              setResult({
-                success: false,
-                message: 'Ungültige Menge eingegeben',
-                action,
-                duplicate: false,
-              });
-              setLoading(false);
-              return;
-            }
-
-            // Store quantity and proceed to zone scan
-            setConsumableQuantity(Number(quantityStr));
-            setDeviceScanCode(scanCode);
-            setStep('zone');
-            setScanCode('');
-            setResult(null);
-            setLoading(false);
-            return;
-          }
-
-          // Regular device - proceed to zone scan
-          setDeviceScanCode(scanCode);
-          setStep('zone');
-          setScanCode('');
-          setResult(null);
-        } else {
-          setResult(data);
-        }
-      }
-      // Step 2: Scan zone for intake
-      else if (action === 'intake' && step === 'zone') {
-        // Find zone by barcode
-        const { data: zone } = await zonesApi.getByScan(scanCode);
-
-        // Now process the actual intake with zone_id (and quantity if it's a consumable)
-        const { data } = await scansApi.process({
-          scan_code: deviceScanCode,
-          action: 'intake',
-          zone_id: zone.zone_id,
-          job_id: consumableQuantity, // Pass quantity for consumables
-        });
-
-        setResult(data);
-        setScanCode('');
-        setDeviceScanCode('');
-        setConsumableQuantity(undefined);
-        setStep('device');
-      }
-      // All other actions (outtake, check) - single step
-      else {
-        // For consumables with intake/outtake, ask for quantity first
-        let quantity = undefined;
-        if ((action === 'intake' || action === 'outtake')) {
-          // First check if this might be a consumable (quick check without committing)
-          const checkResponse = await scansApi.process({
-            scan_code: scanCode,
-            action: 'check',
-          });
-
-          // If the response includes product info with a unit, it's an accessory/consumable
-          if (checkResponse.data.product && checkResponse.data.product.unit) {
-            const promptText = action === 'intake'
-              ? `Menge zum Einlagern (${checkResponse.data.product.unit}):`
-              : `Menge zum Auslagern (${checkResponse.data.product.unit}):`;
-            const quantityStr = window.prompt(promptText);
-
-            if (!quantityStr || isNaN(Number(quantityStr)) || Number(quantityStr) <= 0) {
-              setResult({
-                success: false,
-                message: 'Ungültige Menge eingegeben',
-                action,
-                duplicate: false,
-              });
-              setLoading(false);
-              return;
-            }
-            quantity = Number(quantityStr);
-          }
-        }
-
-        // Now do the actual scan with quantity if provided
-        const { data } = await scansApi.process({
-          scan_code: scanCode,
-          action,
-          job_id: quantity, // Pass quantity via job_id field (backend expects this)
-        });
-        setResult(data);
-        setScanCode('');
-      }
-    } catch (error: any) {
-      toast.error('Scan failed:' + " " + String(error));
-      setResult({
-        success: false,
-        message: error.response?.data?.error || 'Scan fehlgeschlagen',
-        action,
-        duplicate: false,
-      });
-
-      // Reset to step 1 on error
-      if (step === 'zone') {
-        setStep('device');
-        setDeviceScanCode('');
-        setScanCode('');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  const handleActionChange = (newAction: 'intake' | 'outtake' | 'check') => {
-    setAction(newAction);
+    setSelectedJob(job);
     setStep('device');
-    setDeviceScanCode('');
-    setConsumableQuantity(undefined);
     setScanCode('');
-    setResult(null);
+    setResult({
+      success: true,
+      message: `${job.job_code} ausgewählt – jetzt Geräte oder Mengenartikel scannen.`,
+      action: 'outtake',
+      duplicate: false,
+    });
   };
 
-  const handleJobCodeScan = async (jobId: number) => {
+  const checkItemForIntake = async (code: string) => {
+    const { data } = await scansApi.process({ scan_code: code, action: 'check' });
+    setResult(data);
+    if (!data.success) return;
+    setPendingItemCode(code);
+    setPendingItem(data);
+    setStep('zone');
     setScanCode('');
+  };
+
+  const finishIntake = async (zoneCode: string) => {
+    const { data: zone } = await zonesApi.getByScan(zoneCode);
+    const { data } = await scansApi.process({
+      scan_code: pendingItemCode,
+      action: 'intake',
+      zone_id: zone.zone_id,
+      quantity,
+    });
+    setResult(data);
+    if (!data.success) return;
+    setStep('device');
+    setScanCode('');
+    setPendingItemCode('');
+    setPendingItem(null);
+    setQuantity(1);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const code = scanCode.trim();
+    if (!code || loading) return;
     setLoading(true);
 
     try {
-      // First, verify job exists
-      await jobsApi.getById(jobId);
-
-      // Check LED status
-      const { data: ledStatus } = await ledApi.getStatus();
-
-      if (ledStatus.mqtt_connected) {
-        // LED is on - navigate directly to job
-        await ledApi.highlightJob(jobId);
-        navigate(`/jobs/${jobId}`);
+      if (step === 'job') {
+        await selectJob(code);
+      } else if (action === 'intake' && step === 'device') {
+        await checkItemForIntake(code);
+      } else if (action === 'intake' && step === 'zone') {
+        await finishIntake(code);
+      } else if (action === 'outtake') {
+        if (!selectedJob) {
+          setStep('job');
+          setResult({ success: false, message: 'Bitte zuerst einen Job scannen.', action, duplicate: false });
+        } else {
+          const { data } = await scansApi.process({
+            scan_code: code,
+            action: 'outtake',
+            job_id: selectedJob.job_id,
+            quantity,
+          });
+          setResult(data);
+          setScanCode('');
+          if (data.success) setQuantity(1);
+        }
       } else {
-        // LED is off - ask user if they want to enable it
-        setScannedJobId(jobId);
-        setShowLEDModal(true);
+        const { data } = await scansApi.process({ scan_code: code, action: 'check' });
+        setResult(data);
+        setScanCode('');
       }
-    } catch (error: any) {
-      toast.error('Job scan failed:' + " " + String(error));
-      setResult({
-        success: false,
-        message: error.response?.data?.error || `Job ${jobId} nicht gefunden`,
-        action: 'check',
-        duplicate: false,
-      });
+    } catch (error) {
+      const message = requestError(error, 'Scan fehlgeschlagen');
+      toast.error(message);
+      setResult({ success: false, message, action, duplicate: false });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLEDModalConfirm = async () => {
-    if (!scannedJobId) return;
-
-    try {
-      setLoading(true);
-      await ledApi.highlightJob(scannedJobId);
-      setShowLEDModal(false);
-      navigate(`/jobs/${scannedJobId}`);
-    } catch (error) {
-      toast.error('LED activation failed:' + " " + String(error));
-      setShowLEDModal(false);
-      navigate(`/jobs/${scannedJobId}`);
-    }
-  };
-
-  const handleLEDModalCancel = () => {
-    if (scannedJobId) {
-      navigate(`/jobs/${scannedJobId}`);
-    }
-    setShowLEDModal(false);
-    setScannedJobId(null);
-  };
+  const currentStepNumber = action === 'check' ? 1 : step === firstStep(action) ? 1 : 2;
 
   return (
-    <div className="flex items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-2xl my-auto">
-        {/* Scan Form */}
-        <div className="glass-dark rounded-2xl sm:rounded-3xl p-4 sm:p-8 border-2 border-white/10">
-          <div className="text-center mb-6 sm:mb-8">
-            <div className="inline-block p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-accent-red to-red-700 mb-3 sm:mb-4">
-              {step === 'zone' ? (
-                <MapPin className="w-8 h-8 sm:w-12 sm:h-12 text-white" />
-              ) : (
-                <ScanLine className="w-8 h-8 sm:w-12 sm:h-12 text-white" />
-              )}
-            </div>
-            <h1 className="text-2xl sm:text-4xl font-bold text-white mb-1 sm:mb-2">
-              {step === 'zone' ? 'Lagerplatz Scannen' : 'Barcode Scanner'}
-            </h1>
-            <p className="text-sm sm:text-base text-gray-400">
-              {step === 'zone'
-                ? 'Scanne den Barcode des Lagerplatzes'
-                : 'Gerät scannen oder Code eingeben'}
-            </p>
-          </div>
+    <div className="mx-auto w-full max-w-5xl space-y-4 p-3 sm:space-y-6 sm:p-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white sm:text-3xl">Warehouse Scanner</h1>
+        <p className="mt-1 text-sm text-gray-400">Geführte Ein- und Auslagerung mit eindeutiger Statusprüfung</p>
+      </div>
 
-          {/* Step Indicator for Intake */}
-          {action === 'intake' && (
-            <div className="mb-4 sm:mb-6 flex items-center justify-center gap-2 sm:gap-4">
-              <div className={`flex items-center gap-1.5 sm:gap-2 ${step === 'device' ? 'text-accent-red' : 'text-green-500'}`}>
-                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm sm:text-base ${
-                  step === 'device' ? 'bg-accent-red' : 'bg-green-500'
-                }`}>
-                  {step === 'zone' ? '✓' : '1'}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {actionOptions.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === action;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => changeAction(option.value)}
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                active
+                  ? 'border-accent-red bg-accent-red/15'
+                  : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.07]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icon className={`h-5 w-5 ${active ? 'text-accent-red' : 'text-gray-400'}`} />
+                <div>
+                  <div className="font-semibold text-white">{option.label}</div>
+                  <div className="mt-0.5 text-xs text-gray-400">{option.description}</div>
                 </div>
-                <span className="text-sm sm:text-base font-semibold">Gerät</span>
               </div>
-              <div className="w-8 sm:w-12 h-0.5 bg-white/20"></div>
-              <div className={`flex items-center gap-1.5 sm:gap-2 ${step === 'zone' ? 'text-accent-red' : 'text-gray-500'}`}>
-                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm sm:text-base ${
-                  step === 'zone' ? 'bg-accent-red' : 'bg-gray-700'
-                }`}>
-                  2
-                </div>
-                <span className="text-sm sm:text-base font-semibold">Lagerplatz</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="glass-dark rounded-2xl border-2 border-white/10 p-4 sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-accent-red/15 p-3 text-accent-red">
+              {step === 'job' ? <BriefcaseBusiness className="h-6 w-6" /> : step === 'zone' ? <MapPin className="h-6 w-6" /> : <ScanLine className="h-6 w-6" />}
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Schritt {currentStepNumber}{action === 'check' ? '' : ' von 2'}
+              </div>
+              <h2 className="text-xl font-bold text-white">{prompt}</h2>
+            </div>
+          </div>
+          {(selectedJob || pendingItemCode) && (
+            <button
+              type="button"
+              onClick={() => resetWorkflow()}
+              className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
+            >
+              <RotateCcw className="h-4 w-4" /> Ablauf zurücksetzen
+            </button>
+          )}
+        </div>
+
+        {selectedJob && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-blue-500/30 bg-blue-500/10 p-3">
+            <div>
+              <div className="text-xs text-blue-300">Gewählter Job</div>
+              <div className="font-semibold text-white">{selectedJob.job_code} · {selectedJob.status}</div>
+            </div>
+            <BriefcaseBusiness className="h-5 w-5 text-blue-300" />
+          </div>
+        )}
+
+        {pendingItemCode && (
+          <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/10 p-3">
+            <div className="text-xs text-green-300">Artikel erkannt</div>
+            <div className="font-semibold text-white">
+              {pendingItem?.device?.product_name || pendingItem?.product?.name || pendingItemCode}
+            </div>
+            <div className="mt-1 text-xs text-gray-400">Jetzt den tatsächlichen Lagerplatz scannen.</div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            ref={inputRef}
+            type="text"
+            value={scanCode}
+            onChange={(event) => setScanCode(event.target.value)}
+            placeholder={step === 'job' ? 'JOB001234' : step === 'zone' ? 'Lagerplatz-Code' : 'Barcode / QR-Code / Geräte-ID'}
+            autoComplete="off"
+            className="w-full rounded-xl border-2 border-white/20 bg-white/10 px-4 py-4 text-lg text-white placeholder-gray-500 outline-none transition-colors focus:border-accent-red sm:px-6 sm:text-xl"
+          />
+
+          {action !== 'check' && step === 'device' && (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
+              <label htmlFor="scan-quantity" className="text-sm font-medium text-gray-300">Menge</label>
+              <div>
+                <input
+                  id="scan-quantity"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={quantity}
+                  onChange={(event) => setQuantity(Number(event.target.value))}
+                  className="input-field w-full"
+                />
+                <p className="mt-1 text-xs text-gray-500">Für Einzelgeräte wird die Menge ignoriert.</p>
               </div>
             </div>
           )}
 
-          <form onSubmit={handleScan} className="space-y-4 sm:space-y-6">
-            {/* Scan Input */}
-            <div>
-              <input
-                type="text"
-                value={scanCode}
-                onChange={(e) => setScanCode(e.target.value)}
-                placeholder={step === 'zone' ? 'Lagerplatz-Barcode / Code' : 'Barcode / QR-Code / Geräte-ID'}
-                autoFocus
-                className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-xl text-white text-base sm:text-xl placeholder-gray-500 focus:outline-none focus:border-accent-red transition-colors"
-              />
-            </div>
-
-            {/* Action Selection - only show in step 1 */}
-            {step === 'device' && (
-              <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                {[
-                  { value: 'check', label: 'Prüfen', color: 'blue' },
-                  { value: 'intake', label: 'Einlagern', color: 'green' },
-                  { value: 'outtake', label: 'Auslagern', color: 'red' },
-                ].map((btn) => (
-                  <button
-                    key={btn.value}
-                    type="button"
-                    onClick={() => handleActionChange(btn.value as any)}
-                    className={`px-3 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl text-sm sm:text-base font-semibold transition-all ${
-                      action === btn.value
-                        ? 'bg-accent-red text-white scale-105'
-                        : 'glass text-gray-400 hover:text-white hover:scale-105'
-                    }`}
-                  >
-                    {btn.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading || !scanCode.trim()}
-              className="w-full py-3 sm:py-4 bg-gradient-to-r from-accent-red to-red-700 text-white font-bold text-base sm:text-lg rounded-xl hover:shadow-lg hover:shadow-accent-red/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 active:scale-95"
-            >
-              {loading ? 'Scannen...' : step === 'zone' ? 'Lagerplatz Scannen' : 'Gerät Scannen'}
-            </button>
-          </form>
-        </div>
-
-        {/* Scan Result */}
-        {result && (
-          <div className={`mt-4 sm:mt-6 glass rounded-xl sm:rounded-2xl p-4 sm:p-6 border-2 ${
-            result.success ? 'border-green-500/50' : 'border-red-500/50'
-          } animate-fade-in`}>
-            <div className="flex items-start gap-3 sm:gap-4">
-              {result.success ? (
-                <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-green-500 flex-shrink-0" />
-              ) : (
-                <XCircle className="w-6 h-6 sm:w-8 sm:h-8 text-red-500 flex-shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className={`text-base sm:text-lg font-semibold ${
-                  result.success ? 'text-green-400' : 'text-red-400'
-                }`}>
-                  {result.message}
-                </p>
-                {result.device && (
-                  <div className="mt-2 sm:mt-3 space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
-                    <p className="text-gray-300 truncate">
-                      <span className="text-gray-500">Gerät:</span> {result.device.product_name}
-                    </p>
-                    <p className="text-gray-300 truncate">
-                      <span className="text-gray-500">ID:</span> {result.device.device_id}
-                    </p>
-                    <p className="text-gray-300">
-                      <span className="text-gray-500">Status:</span>{' '}
-                      <span className={result.success ? 'text-green-400' : 'text-yellow-400'}>
-                        {result.new_status || result.device.status}
-                      </span>
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* LED Activation Modal */}
-        {showLEDModal && (
-          <div className="fixed inset-0 z-[120] flex min-h-screen items-center justify-center bg-black/80 p-4">
-            <div className="flex justify-center">
-              <div className="glass-dark rounded-2xl p-6 sm:p-8 border-2 border-white/10 max-w-md w-full">
-              <div className="text-center mb-6">
-                <div className="inline-block p-4 rounded-xl bg-yellow-500/20 mb-4">
-                  <Lightbulb className="w-12 h-12 text-yellow-300" />
-                </div>
-                <h2 className="text-2xl font-bold text-white mb-2">LED-Licht aktivieren?</h2>
-                <p className="text-gray-400 text-sm sm:text-base">
-                  Das LED-Licht ist aktuell ausgeschaltet. Möchtest du es aktivieren, um die Job-Geräte zu markieren?
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleLEDModalCancel}
-                  className="flex-1 px-4 py-3 rounded-lg font-semibold bg-white/10 text-white hover:bg-white/20 transition-colors"
-                >
-                  Nein, direkt zum Job
-                </button>
-                <button
-                  onClick={handleLEDModalConfirm}
-                  disabled={loading}
-                  className="flex-1 px-4 py-3 rounded-lg font-semibold bg-gradient-to-r from-accent-red to-red-700 text-white hover:shadow-lg hover:shadow-accent-red/50 disabled:opacity-50 transition-all"
-                >
-                  Ja, LED aktivieren
-                </button>
-              </div>
-              </div>
-            </div>
-          </div>
-        )}
+          <button
+            type="submit"
+            disabled={loading || !scanCode.trim() || quantity <= 0}
+            className="w-full rounded-xl bg-gradient-to-r from-accent-red to-red-700 py-4 text-base font-bold text-white transition-all hover:shadow-lg hover:shadow-accent-red/40 disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg"
+          >
+            {loading ? 'Verarbeite Scan…' : prompt}
+          </button>
+        </form>
       </div>
+
+      {result && (
+        <div className={`rounded-2xl border-2 p-4 sm:p-5 ${result.success ? 'border-green-500/40 bg-green-500/10' : 'border-red-500/40 bg-red-500/10'}`}>
+          <div className="flex items-start gap-3">
+            {result.success ? <CheckCircle className="mt-0.5 h-6 w-6 flex-shrink-0 text-green-400" /> : <XCircle className="mt-0.5 h-6 w-6 flex-shrink-0 text-red-400" />}
+            <div className="min-w-0 flex-1">
+              <p className={`font-semibold ${result.success ? 'text-green-300' : 'text-red-300'}`}>{result.message}</p>
+              {result.device && (
+                <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-gray-300 sm:grid-cols-2">
+                  <div><span className="text-gray-500">Gerät:</span> {result.device.device_id}</div>
+                  <div><span className="text-gray-500">Produkt:</span> {result.device.product_name || '–'}</div>
+                  <div>
+                    <span className="text-gray-500">Status:</span>{' '}
+                    {result.device.status_label || formatStatus(result.new_status || result.device.status)}
+                  </div>
+                  {result.device.status_detail && (
+                    <div className="sm:col-span-2"><span className="text-gray-500">Hinweis:</span> {result.device.status_detail}</div>
+                  )}
+                </div>
+              )}
+              {result.product && (
+                <div className="mt-3 text-sm text-gray-300">
+                  <span className="text-gray-500">Bestand:</span> {result.product.stock} {result.product.unit}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

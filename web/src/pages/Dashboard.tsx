@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Package, Warehouse, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Package, Warehouse, AlertTriangle, TrendingUp, Clock3, MapPinOff } from 'lucide-react';
 import { dashboardApi } from '../lib/api';
 import type { DashboardStats, Movement } from '../lib/api';
 import { LowStockAlertsWidget } from '../components/LowStockAlertsWidget';
@@ -9,6 +9,8 @@ export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     in_storage: 0,
     on_job: 0,
+    return_pending: 0,
+    location_unknown: 0,
     defective: 0,
     total: 0,
   });
@@ -135,12 +137,28 @@ export function Dashboard() {
       valueColor: 'var(--text-primary)',
     },
     {
-      title: 'Auf Job',
+      title: 'Ausgegeben',
       value: stats.on_job,
       icon: Package,
       iconColor: 'var(--accent-red)',
       iconBg: 'rgba(var(--accent-red-rgb), 0.1)',
       valueColor: 'var(--accent-red-light)',
+    },
+    {
+      title: 'Rückgabe offen',
+      value: stats.return_pending,
+      icon: Clock3,
+      iconColor: 'var(--color-warning)',
+      iconBg: 'rgba(var(--color-warning-rgb), 0.1)',
+      valueColor: 'var(--color-warning)',
+    },
+    {
+      title: 'Standort ungeklärt',
+      value: stats.location_unknown,
+      icon: MapPinOff,
+      iconColor: 'var(--color-warning)',
+      iconBg: 'rgba(var(--color-warning-rgb), 0.1)',
+      valueColor: 'var(--color-warning)',
     },
     {
       title: 'Defekt',
@@ -178,7 +196,7 @@ export function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (

@@ -2,9 +2,11 @@ package services
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"warehousecore/internal/led"
@@ -26,6 +28,18 @@ func NewScanService() *ScanService {
 
 // ProcessScan handles a barcode/QR scan and performs the appropriate action
 func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr, userAgent string) (*models.ScanResponse, error) {
+	req.ScanCode = strings.TrimSpace(req.ScanCode)
+	req.Action = strings.ToLower(strings.TrimSpace(req.Action))
+	if req.ScanCode == "" {
+		return &models.ScanResponse{Success: false, Message: "Scan-Code fehlt", Action: req.Action}, nil
+	}
+	if req.Action != "intake" && req.Action != "outtake" && req.Action != "check" && req.Action != "transfer" {
+		return &models.ScanResponse{Success: false, Message: "Unbekannte Scan-Aktion", Action: req.Action}, nil
+	}
+	if _, err := requestedQuantity(req.Quantity); err != nil {
+		return &models.ScanResponse{Success: false, Message: err.Error(), Action: req.Action}, nil
+	}
+
 	// Start transaction
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -44,7 +58,7 @@ func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr,
 			tx.Commit()
 			return &models.ScanResponse{
 				Success: false,
-				Message: fmt.Sprintf("Product not found: %v", err),
+				Message: "Kein Gerät oder Mengenartikel zu diesem Scan-Code gefunden",
 			}, nil
 		}
 
@@ -53,14 +67,15 @@ func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr,
 	}
 
 	// Check for duplicate scan (same job)
-	if req.JobID != nil && device.CurrentJobID.Valid && device.CurrentJobID.Int64 == *req.JobID {
-		// Duplicate scan - treat as job complete signal
+	if req.Action == "outtake" && req.JobID != nil && device.CurrentJobID.Valid &&
+		device.CurrentJobID.Int64 == *req.JobID && device.CurrentPackStatus == "issued" &&
+		!isClosedJobStatus(device.CurrentJobStatus) {
 		s.logScanEvent(tx, req.ScanCode, &device.DeviceID, "check", req.JobID, req.ZoneID, userID, true, "", ipAddr, userAgent)
 		tx.Commit()
 
 		return &models.ScanResponse{
 			Success:   true,
-			Message:   "Duplicate scan detected - job ready to complete",
+			Message:   fmt.Sprintf("%s ist bereits für %s ausgegeben", device.DeviceID, device.CurrentJobCode),
 			Device:    s.getDeviceWithDetails(device.DeviceID),
 			Action:    "check",
 			Duplicate: true,
@@ -89,7 +104,7 @@ func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr,
 		tx.Commit()
 		return &models.ScanResponse{
 			Success: false,
-			Message: fmt.Sprintf("Action failed: %v", err),
+			Message: fmt.Sprintf("Aktion fehlgeschlagen: %v", err),
 			Device:  s.getDeviceWithDetails(device.DeviceID),
 		}, nil
 	}
@@ -104,6 +119,12 @@ func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr,
 
 	response.Device = s.getDeviceWithDetails(device.DeviceID)
 	response.Movement = movement
+	if req.Action == "check" && response.Device != nil {
+		response.Message = response.Device.StatusLabel
+		if response.Device.StatusDetail != "" {
+			response.Message += ": " + response.Device.StatusDetail
+		}
+	}
 
 	// Update LED status after successful outtake
 	if req.Action == "outtake" && movement != nil && movement.FromZoneID.Valid && req.JobID != nil {
@@ -115,6 +136,9 @@ func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr,
 
 // processIntake handles device intake from job back to warehouse
 func (s *ScanService) processIntake(tx *sql.Tx, device *models.Device, zoneID *int64) (*models.ScanResponse, *models.DeviceMovement, error) {
+	if zoneID == nil {
+		return nil, nil, fmt.Errorf("für die Einlagerung muss ein Lagerplatz gescannt werden")
+	}
 	previousStatus := device.Status
 	var fromJobID *int64
 	if device.CurrentJobID.Valid {
@@ -131,18 +155,17 @@ func (s *ScanService) processIntake(tx *sql.Tx, device *models.Device, zoneID *i
 		return nil, nil, err
 	}
 
-	// Reset pack status instead of removing from job
-	// This makes it appear as "not scanned" again in the job
+	// Preserve assignment history while making the physical return explicit.
 	if fromJobID != nil {
 		_, err = tx.Exec(`
 			UPDATE job_devices
-			SET pack_status = 'pending', pack_ts = NULL
-			WHERE deviceID = $1 AND jobID = $2
-		`, device.DeviceID, *fromJobID)
+			SET pack_status = 'returned', pack_ts = CURRENT_TIMESTAMP
+			WHERE deviceID = $1 AND pack_status = 'issued'
+		`, device.DeviceID)
 		if err != nil {
-			log.Printf("Warning: failed to reset pack status: %v", err)
+			log.Printf("Warning: failed to mark device return: %v", err)
 		} else {
-			log.Printf("Reset pack_status to 'pending' for device %s in job %d", device.DeviceID, *fromJobID)
+			log.Printf("Marked device %s as returned from job %d", device.DeviceID, *fromJobID)
 		}
 	}
 
@@ -166,7 +189,7 @@ func (s *ScanService) processIntake(tx *sql.Tx, device *models.Device, zoneID *i
 
 	return &models.ScanResponse{
 		Success:        true,
-		Message:        "Device successfully returned to warehouse",
+		Message:        "Gerät erfolgreich eingelagert",
 		Action:         "intake",
 		PreviousStatus: previousStatus,
 		NewStatus:      "in_storage",
@@ -176,7 +199,27 @@ func (s *ScanService) processIntake(tx *sql.Tx, device *models.Device, zoneID *i
 // processOuttake handles device outtake from warehouse to job
 func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *int64) (*models.ScanResponse, *models.DeviceMovement, error) {
 	if jobID == nil {
-		return nil, nil, fmt.Errorf("job_id is required for outtake")
+		return nil, nil, fmt.Errorf("für die Ausgabe muss zuerst ein Job gewählt werden")
+	}
+
+	var jobCode, jobStatus string
+	err := tx.QueryRow(`
+		SELECT j.job_code, COALESCE(s.status, '')
+		FROM jobs j
+		LEFT JOIN status s ON s.statusid = j.statusid
+		WHERE j.jobid = $1 AND j.deleted_at IS NULL
+	`, *jobID).Scan(&jobCode, &jobStatus)
+	if err == sql.ErrNoRows {
+		return nil, nil, fmt.Errorf("Job %d wurde nicht gefunden", *jobID)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("Job konnte nicht geprüft werden: %w", err)
+	}
+	if isClosedJobStatus(jobStatus) {
+		return nil, nil, fmt.Errorf("%s ist bereits %s und kann nicht mehr ausgegeben werden", jobCode, jobStatus)
+	}
+	if err := validateDeviceForOuttake(device, *jobID); err != nil {
+		return nil, nil, err
 	}
 
 	previousStatus := device.Status
@@ -214,20 +257,21 @@ func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *i
 	}
 
 	// Update device status to on_job
-	_, err := tx.Exec(`
+	_, err = tx.Exec(`
 		UPDATE devices
-		SET status = 'on_job', zone_id = NULL
-		WHERE deviceID = $1
-	`, device.DeviceID)
+		SET status = 'on_job', zone_id = NULL, current_location = $1
+		WHERE deviceID = $2
+	`, "job:"+jobCode, device.DeviceID)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Assign to job and update pack_status to issued
 	_, err = tx.Exec(`
-		INSERT INTO job_devices (deviceID, jobID, pack_status)
-		VALUES ($1, $2, 'issued')
-		ON CONFLICT (deviceID, jobID) DO UPDATE SET pack_status = 'issued'
+		INSERT INTO job_devices (deviceID, jobID, pack_status, pack_ts)
+		VALUES ($1, $2, 'issued', CURRENT_TIMESTAMP)
+		ON CONFLICT (deviceID, jobID) DO UPDATE
+		SET pack_status = 'issued', pack_ts = CURRENT_TIMESTAMP
 	`, device.DeviceID, *jobID)
 	if err != nil {
 		return nil, nil, err
@@ -309,7 +353,7 @@ func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *i
 
 	return &models.ScanResponse{
 		Success:        true,
-		Message:        "Device assigned to job",
+		Message:        fmt.Sprintf("%s erfolgreich für %s ausgegeben", device.DeviceID, jobCode),
 		Action:         "outtake",
 		PreviousStatus: previousStatus,
 		NewStatus:      "on_job",
@@ -323,7 +367,7 @@ func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *i
 func (s *ScanService) processCheck(tx *sql.Tx, device *models.Device) (*models.ScanResponse, error) {
 	return &models.ScanResponse{
 		Success: true,
-		Message: fmt.Sprintf("Device status: %s", device.Status),
+		Message: deviceStatusLabel(device.Status),
 		Action:  "check",
 	}, nil
 }
@@ -331,7 +375,10 @@ func (s *ScanService) processCheck(tx *sql.Tx, device *models.Device) (*models.S
 // processTransfer moves device between zones
 func (s *ScanService) processTransfer(tx *sql.Tx, device *models.Device, toZoneID *int64) (*models.ScanResponse, *models.DeviceMovement, error) {
 	if toZoneID == nil {
-		return nil, nil, fmt.Errorf("zone_id is required for transfer")
+		return nil, nil, fmt.Errorf("für das Verschieben muss ein Lagerplatz gescannt werden")
+	}
+	if device.Status == "on_job" || device.Status == "rented" || device.Status == "return_pending" {
+		return nil, nil, fmt.Errorf("Gerät muss zuerst eingelagert werden, bevor es verschoben werden kann")
 	}
 
 	var fromZoneID *int64
@@ -340,7 +387,11 @@ func (s *ScanService) processTransfer(tx *sql.Tx, device *models.Device, toZoneI
 	}
 
 	// Update device zone
-	_, err := tx.Exec(`UPDATE devices SET zone_id = $1 WHERE deviceID = $2`, *toZoneID, device.DeviceID)
+	_, err := tx.Exec(`
+		UPDATE devices
+		SET zone_id = $1, status = 'in_storage', current_location = 'warehouse'
+		WHERE deviceID = $2
+	`, *toZoneID, device.DeviceID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -365,7 +416,7 @@ func (s *ScanService) processTransfer(tx *sql.Tx, device *models.Device, toZoneI
 
 	return &models.ScanResponse{
 		Success: true,
-		Message: "Device transferred to new zone",
+		Message: "Gerät erfolgreich in den neuen Lagerplatz verschoben",
 		Action:  "transfer",
 	}, movement, nil
 }
@@ -377,9 +428,11 @@ func (s *ScanService) findDeviceByScan(scanCode string) (*models.Device, error) 
 		SELECT deviceID, productID, serialnumber, barcode, qr_code, status,
 		       current_location, zone_id, condition_rating, usage_hours
 		FROM devices
-		WHERE barcode = $1 OR qr_code = $2 OR deviceID = $3
+		WHERE UPPER(COALESCE(barcode, '')) = UPPER($1)
+		   OR UPPER(COALESCE(qr_code, '')) = UPPER($1)
+		   OR UPPER(deviceID) = UPPER($1)
 		LIMIT 1
-	`, scanCode, scanCode, scanCode).Scan(
+	`, scanCode).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
 		&device.Barcode, &device.QRCode, &device.Status,
 		&device.CurrentLocation, &device.ZoneID, &device.ConditionRating, &device.UsageHours,
@@ -388,11 +441,24 @@ func (s *ScanService) findDeviceByScan(scanCode string) (*models.Device, error) 
 		return nil, err
 	}
 
-	// Get current job if on_job
-	if device.Status == "on_job" || device.Status == "rented" {
-		s.db.QueryRow(`
-			SELECT jobID FROM job_devices WHERE deviceID = $1 LIMIT 1
-		`, device.DeviceID).Scan(&device.CurrentJobID)
+	// The latest physical issue is the relevant assignment. Pending rows are
+	// reservations and must never make a device look as though it left storage.
+	err = s.db.QueryRow(`
+		SELECT jd.jobid, COALESCE(j.job_code, ''), COALESCE(st.status, ''), jd.pack_status
+		FROM job_devices jd
+		JOIN jobs j ON j.jobid = jd.jobid
+		LEFT JOIN status st ON st.statusid = j.statusid
+		WHERE jd.deviceid = $1 AND jd.pack_status = 'issued'
+		ORDER BY jd.pack_ts DESC NULLS LAST, jd.jobid DESC
+		LIMIT 1
+	`, device.DeviceID).Scan(
+		&device.CurrentJobID,
+		&device.CurrentJobCode,
+		&device.CurrentJobStatus,
+		&device.CurrentPackStatus,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
 	}
 
 	return &device, nil
@@ -407,38 +473,62 @@ func (s *ScanService) getDeviceWithDetails(deviceID string) *models.DeviceWithDe
 		       COALESCE(p.name, '') as product_name,
 		       COALESCE(z.name, '') as zone_name,
 		       COALESCE(c.name, '') as case_name,
-		       COALESCE(CAST(j.jobID AS CHAR), '') as job_number
+		       assignment.jobid,
+		       COALESCE(assignment.job_code, '') as job_number,
+		       COALESCE(assignment.job_status, ''),
+		       COALESCE(assignment.pack_status, '')
 		FROM devices d
 		LEFT JOIN products p ON d.productID = p.productID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
 		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
 		LEFT JOIN cases c ON dc.caseID = c.caseID
-		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID
-		LEFT JOIN jobs j ON jd.jobID = j.jobID
+		LEFT JOIN LATERAL (
+			SELECT jd.jobid, j.job_code, st.status AS job_status, jd.pack_status
+			FROM job_devices jd
+			JOIN jobs j ON j.jobid = jd.jobid
+			LEFT JOIN status st ON st.statusid = j.statusid
+			WHERE jd.deviceid = d.deviceid AND jd.pack_status = 'issued'
+			ORDER BY jd.pack_ts DESC NULLS LAST, jd.jobid DESC
+			LIMIT 1
+		) assignment ON TRUE
 		WHERE d.deviceID = $1
-		LIMIT 1
 	`, deviceID).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
 		&device.Barcode, &device.QRCode, &device.Status,
 		&device.CurrentLocation, &device.ZoneID, &device.ConditionRating, &device.UsageHours,
-		&device.ProductName, &device.ZoneName, &device.CaseName, &device.JobNumber,
+		&device.ProductName, &device.ZoneName, &device.CaseName,
+		&device.CurrentJobID, &device.JobNumber, &device.CurrentJobStatus, &device.CurrentPackStatus,
 	)
 	if err != nil {
 		log.Printf("Error fetching device details: %v", err)
 		return nil
 	}
+	device.CurrentJobCode = device.JobNumber
+	decorateDeviceStatus(&device)
 	return &device
 }
 
 // logScanEvent records a scan event
-func (s *ScanService) logScanEvent(tx *sql.Tx, scanCode string, deviceID *string, action string, jobID, zoneID, userID *int64, success bool, errorMsg, ipAddr, userAgent string) {
+func (s *ScanService) logScanEvent(tx *sql.Tx, scanCode string, deviceID *string, action string, jobID, zoneID, userID *int64, success bool, errorMsg, ipAddr, userAgent string, quantity ...float64) {
 	scanResult := "success"
 	if !success {
 		scanResult = "error"
 	}
-	meta := fmt.Sprintf(`{"job_id":%s,"error_message":"%s","ip_address":"%s","user_agent":"%s"}`,
-		nullInt64JSON(jobID), escapeJSON(errorMsg), escapeJSON(ipAddr), escapeJSON(userAgent))
-	_, err := tx.Exec(`
+	metadata := map[string]interface{}{
+		"job_id":        jobID,
+		"error_message": errorMsg,
+		"ip_address":    ipAddr,
+		"user_agent":    userAgent,
+	}
+	if len(quantity) > 0 {
+		metadata["quantity"] = quantity[0]
+	}
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		log.Printf("Failed to encode scan metadata: %v", err)
+		meta = []byte(`{}`)
+	}
+	_, err = tx.Exec(`
 		INSERT INTO scan_events
 		(device_id, zone_id, scan_type, barcode_value, scanned_by, scan_result, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -446,25 +536,6 @@ func (s *ScanService) logScanEvent(tx *sql.Tx, scanCode string, deviceID *string
 	if err != nil {
 		log.Printf("Failed to log scan event: %v", err)
 	}
-}
-
-func nullInt64JSON(v *int64) string {
-	if v == nil {
-		return "null"
-	}
-	return strconv.FormatInt(*v, 10)
-}
-
-func escapeJSON(s string) string {
-	result := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '"' || c == '\\' {
-			result = append(result, '\\')
-		}
-		result = append(result, c)
-	}
-	return string(result)
 }
 
 // syncProductStockFromLocations recalculates product.stock_quantity from sum of product_locations
@@ -531,10 +602,12 @@ func (s *ScanService) findConsumableByScan(scanCode string) (*ConsumableProduct,
 		       COALESCE(ct.abbreviation, 'Stk') as unit
 		FROM products p
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		WHERE (p.is_consumable = TRUE OR p.is_accessory = TRUE)
-		  AND (p.generic_barcode = $1 OR CAST(p.productID AS CHAR) = $2)
+		WHERE p.lifecycle_status = 'active'
+		  AND p.tracking_mode = 'quantity'
+		  AND (p.is_consumable = TRUE OR p.is_accessory = TRUE)
+		  AND (UPPER(COALESCE(p.generic_barcode, '')) = UPPER($1) OR CAST(p.productID AS CHAR) = $1)
 		LIMIT 1
-	`, scanCode, scanCode).Scan(
+	`, scanCode).Scan(
 		&product.ProductID, &product.Name, &product.IsConsumable,
 		&product.IsAccessory, &product.Barcode, &product.Unit,
 	)
@@ -551,9 +624,9 @@ func (s *ScanService) processConsumableScan(tx *sql.Tx, product *ConsumableProdu
 	// Handle different actions
 	switch req.Action {
 	case "intake":
-		return s.processConsumableIntake(tx, product, req.ZoneID, req.JobID, &productIDStr, req.ScanCode, userID, ipAddr, userAgent)
+		return s.processConsumableIntake(tx, product, req.ZoneID, req.Quantity, &productIDStr, req.ScanCode, userID, ipAddr, userAgent)
 	case "outtake":
-		return s.processConsumableOuttake(tx, product, req.ZoneID, req.JobID, &productIDStr, req.ScanCode, userID, ipAddr, userAgent)
+		return s.processConsumableOuttake(tx, product, req.ZoneID, req.JobID, req.Quantity, &productIDStr, req.ScanCode, userID, ipAddr, userAgent)
 	case "check":
 		return s.processConsumableCheck(tx, product, &productIDStr, req.ScanCode, userID, ipAddr, userAgent)
 	default:
@@ -568,9 +641,9 @@ func (s *ScanService) processConsumableScan(tx *sql.Tx, product *ConsumableProdu
 }
 
 // processConsumableIntake increases stock when returning consumable to warehouse
-func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumableProduct, zoneID *int64, jobID *int64, productIDStr *string, scanCode string, userID *int64, ipAddr, userAgent string) (*models.ScanResponse, error) {
+func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumableProduct, zoneID *int64, quantityInput *float64, productIDStr *string, scanCode string, userID *int64, ipAddr, userAgent string) (*models.ScanResponse, error) {
 	if zoneID == nil {
-		err := fmt.Errorf("zone_id is required for consumable intake")
+		err := fmt.Errorf("für die Einlagerung muss ein Lagerplatz gescannt werden")
 		s.logScanEvent(tx, scanCode, productIDStr, "intake", nil, zoneID, userID, false, err.Error(), ipAddr, userAgent)
 		tx.Commit()
 		return &models.ScanResponse{
@@ -579,11 +652,7 @@ func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumablePro
 		}, nil
 	}
 
-	// Get quantity from JobID field (frontend passes quantity via this field as a workaround)
-	quantity := 1.0
-	if jobID != nil && *jobID > 0 {
-		quantity = float64(*jobID)
-	}
+	quantity, _ := requestedQuantity(quantityInput)
 
 	// Update or insert stock in product_locations (single source of truth)
 	_, err := tx.Exec(`
@@ -596,7 +665,7 @@ func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumablePro
 		tx.Commit()
 		return &models.ScanResponse{
 			Success: false,
-			Message: fmt.Sprintf("Failed to update stock: %v", err),
+			Message: fmt.Sprintf("Bestand konnte nicht aktualisiert werden: %v", err),
 		}, nil
 	}
 
@@ -610,7 +679,7 @@ func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumablePro
 		log.Printf("Warning: failed to sync products.stock_quantity: %v", err)
 	}
 
-	s.logScanEvent(tx, scanCode, productIDStr, "intake", nil, zoneID, userID, true, "", ipAddr, userAgent)
+	s.logScanEvent(tx, scanCode, productIDStr, "intake", nil, zoneID, userID, true, "", ipAddr, userAgent, quantity)
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
@@ -618,23 +687,42 @@ func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumablePro
 
 	return &models.ScanResponse{
 		Success: true,
-		Message: fmt.Sprintf("%s: +%.1f %s returned to warehouse", product.Name, quantity, product.Unit),
+		Message: fmt.Sprintf("%s: %.1f %s eingelagert", product.Name, quantity, product.Unit),
 		Action:  "intake",
 	}, nil
 }
 
 // processConsumableOuttake decreases stock when taking consumable from warehouse
-func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumableProduct, zoneID *int64, jobID *int64, productIDStr *string, scanCode string, userID *int64, ipAddr, userAgent string) (*models.ScanResponse, error) {
-	// Get quantity from JobID field (frontend passes quantity via this field as a workaround)
-	quantity := 1.0
-	if jobID != nil && *jobID > 0 {
-		quantity = float64(*jobID)
+func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumableProduct, zoneID *int64, jobID *int64, quantityInput *float64, productIDStr *string, scanCode string, userID *int64, ipAddr, userAgent string) (*models.ScanResponse, error) {
+	if jobID == nil {
+		err := fmt.Errorf("für die Ausgabe muss zuerst ein Job gewählt werden")
+		s.logScanEvent(tx, scanCode, productIDStr, "outtake", nil, zoneID, userID, false, err.Error(), ipAddr, userAgent)
+		tx.Commit()
+		return &models.ScanResponse{Success: false, Message: err.Error(), Action: "outtake"}, nil
 	}
+	var jobCode, jobStatus string
+	err := tx.QueryRow(`
+		SELECT j.job_code, COALESCE(s.status, '')
+		FROM jobs j
+		LEFT JOIN status s ON s.statusid = j.statusid
+		WHERE j.jobid = $1 AND j.deleted_at IS NULL
+	`, *jobID).Scan(&jobCode, &jobStatus)
+	if err == sql.ErrNoRows {
+		err = fmt.Errorf("Job %d wurde nicht gefunden", *jobID)
+	} else if err == nil && isClosedJobStatus(jobStatus) {
+		err = fmt.Errorf("%s ist bereits %s und kann nicht mehr ausgegeben werden", jobCode, jobStatus)
+	}
+	if err != nil {
+		s.logScanEvent(tx, scanCode, productIDStr, "outtake", jobID, zoneID, userID, false, err.Error(), ipAddr, userAgent)
+		tx.Commit()
+		return &models.ScanResponse{Success: false, Message: err.Error(), Action: "outtake"}, nil
+	}
+	quantity, _ := requestedQuantity(quantityInput)
 
 	// If no zone specified, automatically select the zone with the most stock
 	var selectedZoneID sql.NullInt64
 	var currentStock float64
-	var err error
+	// err already contains the result of the job validation above.
 
 	if zoneID == nil {
 		// Auto-select zone with most stock
@@ -647,7 +735,7 @@ func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumablePr
 		`, product.ProductID, quantity).Scan(&selectedZoneID, &currentStock)
 
 		if err == sql.ErrNoRows {
-			err = fmt.Errorf("no stock available for %s", product.Name)
+			err = fmt.Errorf("kein ausreichender Bestand für %s verfügbar", product.Name)
 			s.logScanEvent(tx, scanCode, productIDStr, "outtake", jobID, nil, userID, false, err.Error(), ipAddr, userAgent)
 			tx.Commit()
 			return &models.ScanResponse{
@@ -659,7 +747,7 @@ func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumablePr
 			tx.Commit()
 			return &models.ScanResponse{
 				Success: false,
-				Message: fmt.Sprintf("Failed to find stock location: %v", err),
+				Message: fmt.Sprintf("Lagerplatz konnte nicht ermittelt werden: %v", err),
 			}, nil
 		}
 
@@ -688,7 +776,7 @@ func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumablePr
 	}
 
 	if currentStock < quantity {
-		err = fmt.Errorf("insufficient stock (available: %.0f, requested: %.0f)", currentStock, quantity)
+		err = fmt.Errorf("Bestand reicht nicht aus (verfügbar: %.0f, angefordert: %.0f)", currentStock, quantity)
 		s.logScanEvent(tx, scanCode, productIDStr, "outtake", jobID, zoneID, userID, false, err.Error(), ipAddr, userAgent)
 		tx.Commit()
 		return &models.ScanResponse{
@@ -733,7 +821,7 @@ func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumablePr
 		log.Printf("Warning: failed to sync products.stock_quantity: %v", err)
 	}
 
-	s.logScanEvent(tx, scanCode, productIDStr, "outtake", jobID, zoneID, userID, true, "", ipAddr, userAgent)
+	s.logScanEvent(tx, scanCode, productIDStr, "outtake", jobID, zoneID, userID, true, "", ipAddr, userAgent, quantity)
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
@@ -741,7 +829,7 @@ func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumablePr
 
 	return &models.ScanResponse{
 		Success: true,
-		Message: fmt.Sprintf("%s: -%.1f %s taken from warehouse", product.Name, quantity, product.Unit),
+		Message: fmt.Sprintf("%s: %.1f %s für %s ausgegeben", product.Name, quantity, product.Unit, jobCode),
 		Action:  "outtake",
 	}, nil
 }
@@ -765,14 +853,14 @@ func (s *ScanService) processConsumableCheck(tx *sql.Tx, product *ConsumableProd
 	s.logScanEvent(tx, scanCode, productIDStr, "check", nil, nil, userID, true, "", ipAddr, userAgent)
 	tx.Commit()
 
-	productType := "Consumable"
+	productType := "Verbrauchsmaterial"
 	if product.IsAccessory {
-		productType = "Accessory"
+		productType = "Zubehör"
 	}
 
 	return &models.ScanResponse{
 		Success: true,
-		Message: fmt.Sprintf("%s: %s (Stock: %.0f %s)", product.Name, productType, totalStock, product.Unit),
+		Message: fmt.Sprintf("%s: %s (Bestand: %.0f %s)", product.Name, productType, totalStock, product.Unit),
 		Action:  "check",
 		Product: &models.ProductInfo{
 			ProductID:    int(product.ProductID),

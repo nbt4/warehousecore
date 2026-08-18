@@ -23,6 +23,7 @@ import { ProductDetailModal } from '../ProductDetailModal';
 import { ProductDevicesModal } from '../ProductDevicesModal';
 import { DeviceDetailModal } from '../DeviceDetailModal';
 import { toast } from '../../lib/toast';
+import { formatStatus } from '../../lib/utils';
 
 interface Product {
   product_id: number;
@@ -1418,7 +1419,7 @@ export function ProductsTab() {
                                   {device.device_id}
                                 </span>
                                 <span className="ml-2 text-xs text-gray-400">
-                                  {device.status}
+                                  {formatStatus(device.status)}
                                 </span>
                               </div>
                             </div>

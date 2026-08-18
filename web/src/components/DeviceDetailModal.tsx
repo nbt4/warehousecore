@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
 import { toast } from '../lib/toast';
+import { formatStatus } from '../lib/utils';
 
 interface DeviceDetailModalProps {
   device: Device | null;
@@ -95,6 +96,8 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
     in_storage: { bg: 'bg-green-500/20', text: 'text-green-400' },
     on_job: { bg: 'bg-accent-red/20', text: 'text-accent-red' },
     rented: { bg: 'bg-yellow-500/20', text: 'text-yellow-400' },
+    return_pending: { bg: 'bg-yellow-500/20', text: 'text-yellow-400' },
+    location_unknown: { bg: 'bg-orange-500/20', text: 'text-orange-400' },
     defective: { bg: 'bg-red-500/20', text: 'text-red-400' },
     in_transit: { bg: 'bg-white/10', text: 'text-gray-200' },
   };
@@ -128,7 +131,7 @@ export function DeviceDetailModal({ device, isOpen, onClose }: DeviceDetailModal
             </h3>
             <div className="flex items-center gap-2">
               <span className={`px-3 py-1 rounded-full text-sm font-semibold ${statusColor.bg} ${statusColor.text}`}>
-                {device.status}
+                {formatStatus(device.status)}
               </span>
             </div>
           </div>

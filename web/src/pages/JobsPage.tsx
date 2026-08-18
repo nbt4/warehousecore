@@ -4,6 +4,7 @@ import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, L
 import { jobsApi, scansApi, ledApi } from '../lib/api';
 import type { Job, JobSummary, JobDevice, LEDStatus, JobRequirement } from '../lib/api';
 import { toast } from '../lib/toast';
+import { formatStatus, getStatusColor } from '../lib/utils';
 
 const JOB_CODE_PATTERN = /^JOB\d+$/i;
 
@@ -639,15 +640,9 @@ export function JobsPage() {
                             <div className="flex items-center gap-3">
                               <div className="text-right">
                                 <span
-                                  className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                                    device.status === 'on_job'
-                                      ? 'bg-blue-500/20 text-blue-400'
-                                      : device.status === 'in_storage'
-                                      ? 'bg-green-500/20 text-green-400'
-                                      : 'bg-gray-500/20 text-gray-400'
-                                  }`}
+                                  className={`text-xs px-2 py-1 rounded-full bg-white/10 font-semibold ${getStatusColor(device.status)}`}
                                 >
-                                  {device.status}
+                                  {formatStatus(device.status)}
                                 </span>
                               </div>
 

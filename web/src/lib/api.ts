@@ -27,7 +27,13 @@ export interface Device {
   case_name?: string;
   case_id?: number;
   current_job_id?: number;
+  current_job_code?: string;
+  current_job_status?: string;
+  current_pack_status?: string;
   job_number?: string;
+  status_label?: string;
+  status_detail?: string;
+  needs_return?: boolean;
   condition_rating?: number;
   usage_hours?: number;
   label_path?: string;
@@ -150,6 +156,7 @@ export interface ScanRequest {
   action: 'intake' | 'outtake' | 'check' | 'transfer';
   job_id?: number;
   zone_id?: number;
+  quantity?: number;
   notes?: string;
 }
 
@@ -164,15 +171,18 @@ export interface ScanResponse {
   product?: {
     product_id: number;
     name: string;
-    stock_quantity: number;
-    min_stock_level: number;
     unit: string;
+    stock: number;
+    is_accessory: boolean;
+    is_consumable: boolean;
   };
 }
 
 export interface DashboardStats {
   in_storage: number;
   on_job: number;
+  return_pending: number;
+  location_unknown: number;
   defective: number;
   total: number;
 }
@@ -350,6 +360,7 @@ export interface JobRequirement {
 
 export const jobsApi = {
   getAll: (params?: { status?: string }) => api.get<Job[]>('/jobs', { params }),
+  getByScan: (scanCode: string) => api.get<JobSummary>('/jobs/scan', { params: { scan_code: scanCode } }),
   getById: (id: number) => api.get<JobSummary>(`/jobs/${id}`),
   getRequirements: (id: number) => api.get<JobRequirement[]>(`/jobs/${id}/requirements`),
 };

@@ -9,12 +9,14 @@ import (
 type DeviceStatus string
 
 const (
-	StatusInStorage DeviceStatus = "in_storage"
-	StatusOnJob     DeviceStatus = "on_job"
-	StatusDefective DeviceStatus = "defective"
-	StatusRepair    DeviceStatus = "repair"
-	StatusFree      DeviceStatus = "free"
-	StatusRented    DeviceStatus = "rented"
+	StatusInStorage       DeviceStatus = "in_storage"
+	StatusOnJob           DeviceStatus = "on_job"
+	StatusDefective       DeviceStatus = "defective"
+	StatusRepair          DeviceStatus = "repair"
+	StatusFree            DeviceStatus = "free"
+	StatusRented          DeviceStatus = "rented"
+	StatusReturnPending   DeviceStatus = "return_pending"
+	StatusLocationUnknown DeviceStatus = "location_unknown"
 )
 
 // Device represents a physical device in the warehouse
@@ -30,6 +32,9 @@ type Device struct {
 	ZoneID            sql.NullInt64  `json:"zone_id,omitempty" db:"zone_id"`
 	CaseID            sql.NullInt64  `json:"case_id,omitempty" db:"case_id"`
 	CurrentJobID      sql.NullInt64  `json:"current_job_id,omitempty" db:"current_job_id"`
+	CurrentJobCode    string         `json:"current_job_code,omitempty" db:"current_job_code"`
+	CurrentJobStatus  string         `json:"current_job_status,omitempty" db:"current_job_status"`
+	CurrentPackStatus string         `json:"current_pack_status,omitempty" db:"current_pack_status"`
 	ConditionRating   float64        `json:"condition_rating" db:"condition_rating"`
 	UsageHours        float64        `json:"usage_hours" db:"usage_hours"`
 	PurchaseDate      sql.NullTime   `json:"purchase_date" db:"purchaseDate"`
@@ -48,6 +53,9 @@ type DeviceWithDetails struct {
 	ZoneCode        string         `json:"zone_code,omitempty" db:"zone_code"`
 	CaseName        string         `json:"case_name,omitempty" db:"case_name"`
 	JobNumber       string         `json:"job_number,omitempty" db:"job_number"`
+	StatusLabel     string         `json:"status_label,omitempty"`
+	StatusDetail    string         `json:"status_detail,omitempty"`
+	NeedsReturn     bool           `json:"needs_return"`
 	LabelPath       sql.NullString `json:"label_path,omitempty" db:"label_path"`
 }
 
@@ -64,12 +72,12 @@ type DeviceFilter struct {
 
 // ScanResult represents the result of a barcode/QR scan
 type ScanResult struct {
-	Success      bool        `json:"success"`
-	Device       *Device     `json:"device,omitempty"`
-	Message      string      `json:"message"`
-	Action       string      `json:"action"`
-	PreviousJob  *int64      `json:"previous_job,omitempty"`
-	AssignedJob  *int64      `json:"assigned_job,omitempty"`
-	Duplicate    bool        `json:"duplicate"`
-	Timestamp    time.Time   `json:"timestamp"`
+	Success     bool      `json:"success"`
+	Device      *Device   `json:"device,omitempty"`
+	Message     string    `json:"message"`
+	Action      string    `json:"action"`
+	PreviousJob *int64    `json:"previous_job,omitempty"`
+	AssignedJob *int64    `json:"assigned_job,omitempty"`
+	Duplicate   bool      `json:"duplicate"`
+	Timestamp   time.Time `json:"timestamp"`
 }
