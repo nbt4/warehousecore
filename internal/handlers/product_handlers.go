@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 
+	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
@@ -50,6 +52,9 @@ type Product struct {
 	MinStockLevel       *float64 `json:"min_stock_level"`
 	GenericBarcode      *string  `json:"generic_barcode"`
 	PricePerUnit        *float64 `json:"price_per_unit"`
+	ProductType         string   `json:"product_type"`
+	TrackingMode        string   `json:"tracking_mode"`
+	LifecycleStatus     string   `json:"lifecycle_status"`
 
 	// Joined fields for display
 	WebsiteVisible   bool     `json:"website_visible"`
@@ -85,6 +90,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
 	categoryID := r.URL.Query().Get("category_id")
 	subcategoryID := r.URL.Query().Get("subcategory_id")
+	lifecycleStatus := strings.TrimSpace(r.URL.Query().Get("lifecycle_status"))
 
 	db := repository.GetSQLDB()
 
@@ -113,6 +119,9 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			p.min_stock_level,
 			p.generic_barcode,
 			p.price_per_unit,
+			p.product_type,
+			p.tracking_mode,
+			p.lifecycle_status,
 			COALESCE(p.website_visible, false) as website_visible,
 			p.website_thumbnail,
 			p.website_images_json,
@@ -140,9 +149,21 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			  )
 		)
 	`
+	if lifecycleStatus == "" {
+		lifecycleStatus = "active"
+	}
 
 	var args []interface{}
 	argIdx := 0
+	if lifecycleStatus != "all" {
+		if lifecycleStatus != "active" && lifecycleStatus != "archived" {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid lifecycle status"})
+			return
+		}
+		argIdx++
+		query += fmt.Sprintf(" AND p.lifecycle_status = $%d", argIdx)
+		args = append(args, lifecycleStatus)
+	}
 
 	if search != "" {
 		argIdx++
@@ -201,6 +222,9 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			&p.MinStockLevel,
 			&p.GenericBarcode,
 			&p.PricePerUnit,
+			&p.ProductType,
+			&p.TrackingMode,
+			&p.LifecycleStatus,
 			&p.WebsiteVisible,
 			&p.WebsiteThumbnail,
 			&rawImages,
@@ -261,6 +285,9 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			p.min_stock_level,
 			p.generic_barcode,
 			p.price_per_unit,
+			p.product_type,
+			p.tracking_mode,
+			p.lifecycle_status,
 			COALESCE(p.website_visible, false) as website_visible,
 			p.website_thumbnail,
 			p.website_images_json,
@@ -308,6 +335,9 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		&p.MinStockLevel,
 		&p.GenericBarcode,
 		&p.PricePerUnit,
+		&p.ProductType,
+		&p.TrackingMode,
+		&p.LifecycleStatus,
 		&p.WebsiteVisible,
 		&p.WebsiteThumbnail,
 		&rawImages,
@@ -615,6 +645,194 @@ func getProductName(productID int) (string, error) {
 	return name, err
 }
 
+func normalizeProductRequest(req *Product) error {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		return fmt.Errorf("Product name is required")
+	}
+	if len(req.Name) > 255 {
+		return fmt.Errorf("Product name must be at most 255 characters")
+	}
+
+	if req.ProductType == "" {
+		switch {
+		case req.IsConsumable:
+			req.ProductType = "consumable"
+		case req.IsAccessory:
+			req.ProductType = "accessory"
+		default:
+			req.ProductType = "equipment"
+		}
+	}
+	switch req.ProductType {
+	case "equipment":
+		req.IsAccessory = false
+		req.IsConsumable = false
+	case "accessory":
+		req.IsAccessory = true
+		req.IsConsumable = false
+	case "consumable":
+		req.IsAccessory = false
+		req.IsConsumable = true
+	default:
+		return fmt.Errorf("Invalid product type")
+	}
+
+	if req.TrackingMode == "" {
+		if req.ProductType == "equipment" {
+			req.TrackingMode = "individual"
+		} else {
+			req.TrackingMode = "quantity"
+		}
+	}
+	switch req.TrackingMode {
+	case "individual", "quantity", "none":
+	default:
+		return fmt.Errorf("Invalid tracking mode")
+	}
+	if req.ProductType == "consumable" && req.TrackingMode != "quantity" {
+		return fmt.Errorf("Consumables must use quantity tracking")
+	}
+	if req.ProductType == "equipment" && req.TrackingMode == "quantity" {
+		return fmt.Errorf("Equipment must use individual or no tracking")
+	}
+	if req.TrackingMode == "quantity" && req.CountTypeID == nil {
+		return fmt.Errorf("A measurement unit is required for quantity-tracked products")
+	}
+
+	if req.Description != nil {
+		value := strings.TrimSpace(*req.Description)
+		if value == "" {
+			req.Description = nil
+		} else {
+			req.Description = &value
+		}
+	}
+	if req.GenericBarcode != nil {
+		value := strings.TrimSpace(*req.GenericBarcode)
+		if value == "" {
+			req.GenericBarcode = nil
+		} else {
+			req.GenericBarcode = &value
+		}
+	}
+
+	for label, value := range map[string]*float64{
+		"Daily price": req.ItemCostPerDay, "Weight": req.Weight, "Height": req.Height,
+		"Width": req.Width, "Depth": req.Depth, "Power consumption": req.PowerConsumption,
+		"Stock quantity": req.StockQuantity, "Minimum stock level": req.MinStockLevel,
+		"Unit price": req.PricePerUnit,
+	} {
+		if value != nil && *value < 0 {
+			return fmt.Errorf("%s cannot be negative", label)
+		}
+	}
+	if req.MaintenanceInterval != nil && *req.MaintenanceInterval < 0 {
+		return fmt.Errorf("Maintenance interval cannot be negative")
+	}
+	if req.PosInCategory != nil && *req.PosInCategory < 1 {
+		return fmt.Errorf("Category position must be at least 1")
+	}
+	return nil
+}
+
+func validateProductRelations(db *sql.DB, req *Product, productID int) error {
+	var exists bool
+	if err := db.QueryRow(`SELECT EXISTS (
+		SELECT 1 FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) AND productid <> $2
+	)`, req.Name, productID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("A product with this name already exists")
+	}
+	if req.GenericBarcode != nil {
+		if err := db.QueryRow(`SELECT EXISTS (
+			SELECT 1 FROM products WHERE LOWER(TRIM(generic_barcode)) = LOWER(TRIM($1)) AND productid <> $2
+		)`, *req.GenericBarcode, productID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return fmt.Errorf("This barcode is already assigned to another product")
+		}
+	}
+
+	if req.SubcategoryID != nil {
+		var categoryID int
+		if err := db.QueryRow("SELECT categoryid FROM subcategories WHERE subcategoryid = $1", *req.SubcategoryID).Scan(&categoryID); err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("Selected subcategory does not exist")
+			}
+			return err
+		}
+		if req.CategoryID == nil || *req.CategoryID != categoryID {
+			return fmt.Errorf("Selected subcategory does not belong to the category")
+		}
+	}
+	if req.SubbiercategoryID != nil {
+		var subcategoryID string
+		if err := db.QueryRow("SELECT subcategoryid FROM subbiercategories WHERE subbiercategoryid = $1", *req.SubbiercategoryID).Scan(&subcategoryID); err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("Selected third-level category does not exist")
+			}
+			return err
+		}
+		if req.SubcategoryID == nil || *req.SubcategoryID != subcategoryID {
+			return fmt.Errorf("Selected third-level category does not belong to the subcategory")
+		}
+	}
+	if req.CountTypeID != nil {
+		if err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM count_types WHERE count_type_id = $1)", *req.CountTypeID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("Selected measurement unit does not exist")
+		}
+	}
+	if req.BrandID != nil {
+		var brandManufacturer sql.NullInt64
+		if err := db.QueryRow("SELECT manufacturerid FROM brands WHERE brandid = $1", *req.BrandID).Scan(&brandManufacturer); err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("Selected brand does not exist")
+			}
+			return err
+		}
+		if brandManufacturer.Valid {
+			if req.ManufacturerID == nil {
+				value := int(brandManufacturer.Int64)
+				req.ManufacturerID = &value
+			} else if *req.ManufacturerID != int(brandManufacturer.Int64) {
+				return fmt.Errorf("Selected brand does not belong to the manufacturer")
+			}
+		}
+	}
+	return nil
+}
+
+func recordProductAudit(tx *sql.Tx, r *http.Request, action string, productID int, oldValues, newValues interface{}) error {
+	var userID interface{}
+	if user, ok := middleware.GetUserFromContext(r); ok {
+		userID = user.UserID
+	}
+	oldJSON, _ := json.Marshal(oldValues)
+	newJSON, _ := json.Marshal(newValues)
+	ipAddress := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		ipAddress = host
+	}
+	if len(ipAddress) > 45 {
+		ipAddress = ipAddress[:45]
+	}
+	_, err := tx.Exec(`
+		INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent)
+		VALUES ($1, $2, 'product', $3, $4::jsonb, $5::jsonb, $6, $7)
+	`, userID, action, strconv.Itoa(productID), string(oldJSON), string(newJSON), ipAddress, r.UserAgent())
+	if err != nil {
+		log.Printf("[PRODUCT AUDIT] Failed to record %s for product %d: %v", action, productID, err)
+	}
+	return err
+}
+
 // CreateProduct creates a new product
 func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var req Product
@@ -623,30 +841,44 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Product name is required"})
+	if err := normalizeProductRequest(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
 	db := repository.GetSQLDB()
-	imagesJSON := nullJSONFromSlice(req.WebsiteImages)
+	if err := validateProductRelations(db, &req, 0); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
+		return
+	}
+	defer tx.Rollback()
+
+	initialStock := 0.0
+	if req.TrackingMode == "quantity" && req.StockQuantity != nil {
+		initialStock = *req.StockQuantity
+	}
 	var id int64
-	err := db.QueryRow(`
+	err = tx.QueryRow(`
 		INSERT INTO products (
 			name, categoryID, subcategoryID, subbiercategoryID, manufacturerid, brandid,
 			description, maintenanceinterval, itemcostperday, weight, height, width, depth,
 			powerconsumption, pos_in_category, is_accessory, is_consumable, count_type_id,
 			stock_quantity, min_stock_level, generic_barcode, price_per_unit,
-			website_visible, website_thumbnail, website_images_json
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+			product_type, tracking_mode, lifecycle_status, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 'active', CURRENT_TIMESTAMP)
 		RETURNING productID
 	`,
 		req.Name, req.CategoryID, req.SubcategoryID, req.SubbiercategoryID,
 		req.ManufacturerID, req.BrandID, req.Description, req.MaintenanceInterval,
 		req.ItemCostPerDay, req.Weight, req.Height, req.Width, req.Depth,
 		req.PowerConsumption, req.PosInCategory, req.IsAccessory, req.IsConsumable,
-		req.CountTypeID, req.StockQuantity, req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
-		req.WebsiteVisible, req.WebsiteThumbnail, imagesJSON,
+		req.CountTypeID, 0, req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
+		req.ProductType, req.TrackingMode,
 	).Scan(&id)
 
 	if err != nil {
@@ -654,8 +886,27 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
 		return
 	}
+	if req.TrackingMode == "quantity" && initialStock > 0 {
+		if _, err := tx.Exec(`INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, NULL, $2)`, id, initialStock); err != nil {
+			log.Printf("Failed to create initial stock for product %d: %v", id, err)
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create initial product stock"})
+			return
+		}
+	}
 
 	req.ProductID = int(id)
+	req.LifecycleStatus = "active"
+	if req.TrackingMode == "quantity" {
+		req.StockQuantity = &initialStock
+	}
+	if err := recordProductAudit(tx, r, "product.create", int(id), nil, req); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
+		return
+	}
 	websiteRevalidator.Revalidate("/products")
 
 	respondJSON(w, http.StatusCreated, req)
@@ -677,19 +928,14 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
-	req.WebsiteImages = sanitizeWebsiteImages(req.WebsiteImages)
-	if req.WebsiteThumbnail != nil && strings.TrimSpace(*req.WebsiteThumbnail) == "" {
-		req.WebsiteThumbnail = nil
-	}
-	if filteredImages, filteredThumb, err := filterAllowedImages(id, req.WebsiteImages, req.WebsiteThumbnail); err == nil {
-		req.WebsiteImages = filteredImages
-		req.WebsiteThumbnail = filteredThumb
-	} else if !errors.Is(err, errPicturesUnavailable) {
-		log.Printf("[WEBSITE] Failed to validate images for product %d: %v", id, err)
-		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Failed to validate product images"})
+	if err := normalizeProductRequest(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	imagesJSON := nullJSONFromSlice(req.WebsiteImages)
+	if err := validateProductRelations(db, &req, id); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -699,6 +945,48 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	var existingTracking, existingLifecycle, oldValues string
+	var currentStock float64
+	err = tx.QueryRow(`
+		SELECT tracking_mode, lifecycle_status, COALESCE(stock_quantity, 0), row_to_json(p)::text
+		FROM products p WHERE productid = $1
+	`, id).Scan(&existingTracking, &existingLifecycle, &currentStock, &oldValues)
+	if err == sql.ErrNoRows {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
+		return
+	}
+	if err != nil {
+		log.Printf("Failed to load product before update: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
+		return
+	}
+	req.LifecycleStatus = existingLifecycle
+
+	if existingTracking != req.TrackingMode {
+		if existingTracking == "individual" && req.TrackingMode != "individual" {
+			var deviceCount int
+			if err := tx.QueryRow("SELECT COUNT(*) FROM devices WHERE productid = $1", id).Scan(&deviceCount); err != nil {
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to validate tracking mode"})
+				return
+			}
+			if deviceCount > 0 {
+				respondJSON(w, http.StatusConflict, map[string]string{"error": "Products with devices must use individual tracking"})
+				return
+			}
+		}
+		if existingTracking == "quantity" && req.TrackingMode != "quantity" {
+			var locationStock float64
+			if err := tx.QueryRow("SELECT COALESCE(SUM(quantity), 0) FROM product_locations WHERE product_id = $1", id).Scan(&locationStock); err != nil {
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to validate tracking mode"})
+				return
+			}
+			if locationStock > 0 {
+				respondJSON(w, http.StatusConflict, map[string]string{"error": "Quantity-tracked products with stock cannot change tracking mode"})
+				return
+			}
+		}
+	}
+
 	result, err := tx.Exec(`
 		UPDATE products SET
 			name = $1, categoryID = $2, subcategoryID = $3, subbiercategoryID = $4,
@@ -706,17 +994,17 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 			itemcostperday = $9, weight = $10, height = $11, width = $12, depth = $13,
 			powerconsumption = $14, pos_in_category = $15,
 			is_accessory = $16, is_consumable = $17, count_type_id = $18,
-			stock_quantity = $19, min_stock_level = $20, generic_barcode = $21, price_per_unit = $22,
-			website_visible = $23, website_thumbnail = $24, website_images_json = $25
-		WHERE productID = $26
+			min_stock_level = $19, generic_barcode = $20, price_per_unit = $21,
+			product_type = $22, tracking_mode = $23, updated_at = CURRENT_TIMESTAMP
+		WHERE productID = $24
 	`,
 		req.Name, req.CategoryID, req.SubcategoryID, req.SubbiercategoryID,
 		req.ManufacturerID, req.BrandID, req.Description, req.MaintenanceInterval,
 		req.ItemCostPerDay, req.Weight, req.Height, req.Width, req.Depth,
 		req.PowerConsumption, req.PosInCategory,
 		req.IsAccessory, req.IsConsumable, req.CountTypeID,
-		req.StockQuantity, req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
-		req.WebsiteVisible, req.WebsiteThumbnail, imagesJSON,
+		req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
+		req.ProductType, req.TrackingMode,
 		id,
 	)
 
@@ -741,66 +1029,59 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// For consumables/accessories: sync stock changes to product_locations
-	if (req.IsConsumable || req.IsAccessory) && req.StockQuantity != nil {
-		// Get current total from product_locations
-		var currentTotal float64
-		err := tx.QueryRow(`
-			SELECT COALESCE(SUM(quantity), 0) FROM product_locations WHERE product_id = $1
-		`, id).Scan(&currentTotal)
-
-		if err != nil {
-			log.Printf("Warning: Failed to get current stock total: %v", err)
-		} else {
-			newTotal := *req.StockQuantity
-			difference := newTotal - currentTotal
-
-			if difference != 0 {
-				// Get the zone with most stock, or create default location
-				var defaultZoneID sql.NullInt64
-				err := tx.QueryRow(`
-					SELECT zone_id FROM product_locations WHERE product_id = $1 ORDER BY quantity DESC LIMIT 1
-				`, id).Scan(&defaultZoneID)
-
-				if err == sql.ErrNoRows {
-					// No locations exist - create in zone with full quantity
-					_, err = tx.Exec(`
-						INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, NULL, $2)
-					`, id, newTotal)
-					if err != nil {
-						log.Printf("Error: Failed to create product location: %v", err)
-					}
-				} else if err == nil {
-					// Update the primary zone
-					_, err = tx.Exec(`
-						UPDATE product_locations SET quantity = quantity + $1 WHERE product_id = $2 AND zone_id <=> $3
-					`, difference, id, defaultZoneID)
-					if err != nil {
-						log.Printf("Error: Failed to update product_locations: %v", err)
-					} else {
-						log.Printf("Updated product_locations for product %d: %+.2f kg (zone_id=%v)", id, difference, defaultZoneID)
-					}
-				}
+	if req.TrackingMode == "quantity" {
+		desiredStock := currentStock
+		if req.StockQuantity != nil {
+			desiredStock = *req.StockQuantity
+		}
+		var currentLocationStock float64
+		var assignedLocationCount int
+		if err := tx.QueryRow(`
+			SELECT COALESCE(SUM(quantity), 0), COUNT(*) FILTER (WHERE zone_id IS NOT NULL)
+			FROM product_locations WHERE product_id = $1
+		`, id).Scan(&currentLocationStock, &assignedLocationCount); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product stock"})
+			return
+		}
+		if desiredStock != currentLocationStock {
+			if assignedLocationCount > 0 {
+				respondJSON(w, http.StatusConflict, map[string]string{
+					"error": "Stock distributed across zones must be adjusted from the warehouse or scan workflow",
+				})
+				return
 			}
+			if _, err := tx.Exec(`
+				INSERT INTO product_locations (product_id, zone_id, quantity, updated_at)
+				VALUES ($1, NULL, $2, CURRENT_TIMESTAMP)
+				ON CONFLICT (product_id, zone_id) DO UPDATE
+				SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+			`, id, desiredStock); err != nil {
+				log.Printf("Failed to update unassigned stock for product %d: %v", id, err)
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product stock"})
+				return
+			}
+		}
+	} else if existingTracking == "quantity" {
+		if _, err := tx.Exec("DELETE FROM product_locations WHERE product_id = $1", id); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to change tracking mode"})
+			return
+		}
+		if _, err := tx.Exec(`
+			UPDATE products
+			SET stock_quantity = CASE
+				WHEN tracking_mode = 'individual' THEN (SELECT COUNT(*) FROM devices WHERE productid = $1)
+				ELSE NULL
+			END
+			WHERE productid = $1
+		`, id); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to change tracking mode"})
+			return
 		}
 	}
 
-	// BEFORE commit: Recalculate stock_quantity from product_locations (within transaction)
-	if req.IsConsumable || req.IsAccessory {
-		_, err := tx.Exec(`
-			UPDATE products
-			SET stock_quantity = (
-				SELECT COALESCE(SUM(quantity), 0)
-				FROM product_locations
-				WHERE product_id = $1
-			)
-			WHERE productID = $2
-		`, id, id)
-		if err != nil {
-			log.Printf("Error: Failed to recalculate stock_quantity: %v", err)
-		} else {
-			log.Printf("Recalculated stock_quantity for product %d from product_locations", id)
-		}
+	if err := recordProductAudit(tx, r, "product.update", id, json.RawMessage(oldValues), req); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -814,7 +1095,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Product updated successfully"})
 }
 
-// DeleteProduct deletes a product and cascades to delete all associated devices
+// DeleteProduct archives a product. Devices and historical references remain intact.
 func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -824,10 +1105,15 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to archive product"})
+		return
+	}
+	defer tx.Rollback()
 
-	// Get product name for logging
-	var productName string
-	err = db.QueryRow("SELECT name FROM products WHERE productID = $1", id).Scan(&productName)
+	var productName, oldStatus string
+	err = tx.QueryRow("SELECT name, lifecycle_status FROM products WHERE productID = $1 FOR UPDATE", id).Scan(&productName, &oldStatus)
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 		return
@@ -837,53 +1123,21 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count devices to be deleted
 	var deviceCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM devices WHERE productID = $1", id).Scan(&deviceCount)
+	err = tx.QueryRow("SELECT COUNT(*) FROM devices WHERE productID = $1", id).Scan(&deviceCount)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to check product devices"})
 		return
 	}
 
-	log.Printf("[PRODUCT DELETE] Deleting product %d (%s) with %d associated device(s)", id, productName, deviceCount)
-
-	// Cascade delete: Delete all associated devices first
-	if deviceCount > 0 {
-		// Get device IDs for detailed logging
-		var deviceIDs []string
-		rows, err := db.Query("SELECT deviceID FROM devices WHERE productID = $1", id)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var deviceID string
-				if err := rows.Scan(&deviceID); err == nil {
-					deviceIDs = append(deviceIDs, deviceID)
-				}
-			}
-		}
-
-		log.Printf("[PRODUCT DELETE] Deleting %d devices: %v", len(deviceIDs), deviceIDs)
-
-		// Delete all devices for this product
-		result, err := db.Exec("DELETE FROM devices WHERE productID = $1", id)
-		if err != nil {
-			log.Printf("[PRODUCT DELETE ERROR] Failed to delete devices for product %d: %v", id, err)
-			respondJSON(w, http.StatusInternalServerError, map[string]string{
-				"error":   "Failed to delete associated devices",
-				"message": fmt.Sprintf("Error deleting %d device(s) before product deletion", deviceCount),
-			})
-			return
-		}
-
-		deletedDevices, _ := result.RowsAffected()
-		log.Printf("[PRODUCT DELETE] Successfully deleted %d devices for product %d", deletedDevices, id)
-	}
-
-	// Now delete the product
-	result, err := db.Exec("DELETE FROM products WHERE productID = $1", id)
+	result, err := tx.Exec(`
+		UPDATE products
+		SET lifecycle_status = 'archived', website_visible = FALSE, updated_at = CURRENT_TIMESTAMP
+		WHERE productID = $1
+	`, id)
 	if err != nil {
-		log.Printf("[PRODUCT DELETE ERROR] Failed to delete product %d: %v", id, err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete product"})
+		log.Printf("[PRODUCT ARCHIVE] Failed to archive product %d: %v", id, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to archive product"})
 		return
 	}
 
@@ -893,19 +1147,62 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[PRODUCT DELETE] Successfully deleted product %d (%s)", id, productName)
-	websiteRevalidator.Revalidate("/products")
-
-	// Include device count in response
-	message := "Product deleted successfully"
-	if deviceCount > 0 {
-		message = fmt.Sprintf("Product deleted successfully along with %d device(s)", deviceCount)
+	if err := recordProductAudit(tx, r, "product.archive", id,
+		map[string]interface{}{"lifecycle_status": oldStatus},
+		map[string]interface{}{"lifecycle_status": "archived", "website_visible": false},
+	); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to archive product"})
+		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{
-		"message":         message,
-		"deleted_devices": fmt.Sprintf("%d", deviceCount),
+	log.Printf("[PRODUCT ARCHIVE] Archived product %d (%s); preserved %d device(s)", id, productName, deviceCount)
+	websiteRevalidator.Revalidate("/products")
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message":           "Product archived successfully",
+		"preserved_devices": deviceCount,
 	})
+}
+
+// RestoreProduct reactivates an archived product.
+func RestoreProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
+		return
+	}
+	tx, err := repository.GetSQLDB().Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to restore product"})
+		return
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE products SET lifecycle_status = 'active', updated_at = CURRENT_TIMESTAMP WHERE productid = $1`, id)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to restore product"})
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
+		return
+	}
+	if err := recordProductAudit(tx, r, "product.restore", id,
+		map[string]interface{}{"lifecycle_status": "archived"},
+		map[string]interface{}{"lifecycle_status": "active"},
+	); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to restore product"})
+		return
+	}
+	websiteRevalidator.Revalidate("/products")
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Product restored successfully"})
 }
 
 // CreateDevicesForProduct creates multiple devices for a product
@@ -946,12 +1243,13 @@ func CreateDevicesForProduct(w http.ResponseWriter, r *http.Request) {
 	var productName string
 	var abbreviation sql.NullString
 	var posInCategory sql.NullInt64
+	var trackingMode, lifecycleStatus string
 	err = db.QueryRow(`
-		SELECT p.name, s.abbreviation, p.pos_in_category
+		SELECT p.name, s.abbreviation, p.pos_in_category, p.tracking_mode, p.lifecycle_status
 		FROM products p
 		LEFT JOIN subcategories s ON p.subcategoryID = s.subcategoryID
 		WHERE p.productID = $1
-	`, req.ProductID).Scan(&productName, &abbreviation, &posInCategory)
+	`, req.ProductID).Scan(&productName, &abbreviation, &posInCategory, &trackingMode, &lifecycleStatus)
 
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
@@ -959,6 +1257,14 @@ func CreateDevicesForProduct(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		log.Printf("Failed to query product: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch product"})
+		return
+	}
+	if lifecycleStatus != "active" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Archived products cannot receive new devices"})
+		return
+	}
+	if trackingMode != "individual" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Only individually tracked products can receive devices"})
 		return
 	}
 
@@ -1194,8 +1500,9 @@ func GetLowStockAlerts(w http.ResponseWriter, r *http.Request) {
 			COALESCE(p.is_consumable, false) as is_consumable
 		FROM products p
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		WHERE (p.is_consumable = TRUE OR p.is_accessory = TRUE)
-		  AND p.min_stock_level IS NOT NULL
+			WHERE (p.is_consumable = TRUE OR p.is_accessory = TRUE)
+			  AND p.lifecycle_status = 'active'
+			  AND p.min_stock_level IS NOT NULL
 		  AND p.min_stock_level > 0
 		  AND COALESCE(p.stock_quantity, 0) < p.min_stock_level
 		ORDER BY (COALESCE(p.stock_quantity, 0) / p.min_stock_level) ASC
@@ -1255,6 +1562,17 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 		if err := repository.GetSQLDB().QueryRow("SELECT website_visible FROM products WHERE productID = $1", id).Scan(&websiteVisible); err != nil {
 			log.Printf("[WEBSITE] Failed to load current website visibility for product %d: %v", id, err)
 			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
+			return
+		}
+	}
+	if websiteVisible {
+		var lifecycleStatus string
+		if err := repository.GetSQLDB().QueryRow("SELECT lifecycle_status FROM products WHERE productid = $1", id).Scan(&lifecycleStatus); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
+			return
+		}
+		if lifecycleStatus != "active" {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Archived products cannot be published"})
 			return
 		}
 	}
@@ -1319,6 +1637,7 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
 		WHERE p.website_visible = TRUE
+		  AND p.lifecycle_status = 'active'
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM product_packages pp

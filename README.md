@@ -7,6 +7,8 @@
 ## Features
 
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
+- **Sichere Produktstammdaten** — Explizite Produkttypen und Trackingarten, serverseitige Plausibilitätsprüfungen, revisionssichere Archivierung statt kaskadierendem Löschen und Audit-Protokoll für Stammdatenänderungen
+- **Konsistente Mengenbestände** — Lagerzonen sind die führende Bestandsquelle; Produktsummen werden automatisch aus `product_locations` synchronisiert und verteilte Bestände ausschließlich über Lager- und Scanabläufe korrigiert
 - **Zonenmanagement** — Physische Lagerzonen mit Barcode-Kennzeichnung, Gerätezuweisung, Produktbestand und Lagerplatz-Optimierung
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
 - **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Kabel-, Case- und Zonenlabels mit direktem Verschieben/Skalieren über Ziehpunkte und einpassbarer 25–200-%-Vorschau. Dauerhaft gespeicherte PDF-Master, schneller PDF-Download/Browserdruck aus dem Cache und protokollierter Zebra-ZPL-Direktdruck über TCP
@@ -124,6 +126,18 @@ warehousecore:
 | `GET`    | `/api/v1/zones/:id/devices`       | Geräte in Zone (🔒)                       |
 | `POST`   | `/api/v1/zones/:id/devices`       | Geräte zu Zone zuweisen (🔒 Admin)        |
 | `GET`    | `/api/v1/zones/:id/products`      | Produkte in Zone (🔒)                     |
+
+### Produkte
+
+| Methode  | Pfad                                  | Beschreibung                                      |
+|----------|---------------------------------------|---------------------------------------------------|
+| `GET`    | `/api/v1/admin/products`              | Aktive Produkte auflisten; Statusfilter möglich (🔒) |
+| `POST`   | `/api/v1/admin/products`              | Typisiertes Produkt erstellen (🔒 Admin)          |
+| `PUT`    | `/api/v1/admin/products/:id`          | Produktstammdaten aktualisieren (🔒 Admin)         |
+| `DELETE` | `/api/v1/admin/products/:id`          | Produkt sicher archivieren (🔒 Admin)              |
+| `PUT`    | `/api/v1/admin/products/:id/restore`  | Archiviertes Produkt wiederherstellen (🔒 Admin)  |
+
+`GET /api/v1/admin/products` akzeptiert `lifecycle_status=active|archived|all`. Mengenbestände werden aus `product_locations` berechnet; bei auf Lagerzonen verteiltem Bestand erfolgen Korrekturen über Zonen- oder Scanabläufe.
 
 ### Produktpakete
 

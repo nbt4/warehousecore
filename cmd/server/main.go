@@ -158,6 +158,9 @@ func main() {
 	if err := handlers.EnsureCableInventorySchema(); err != nil {
 		log.Fatalf("Failed to initialize cable inventory schema: %v", err)
 	}
+	if err := handlers.EnsureProductManagementSchema(); err != nil {
+		log.Fatalf("Failed to initialize product management schema: %v", err)
+	}
 	if err := handlers.EnsureLabelStudioSchema(); err != nil {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
@@ -396,6 +399,7 @@ func main() {
 	admin.HandleFunc("/products", handlers.CreateProduct).Methods("POST")
 	admin.HandleFunc("/products/{id}", handlers.UpdateProduct).Methods("PUT")
 	admin.HandleFunc("/products/{id}", handlers.DeleteProduct).Methods("DELETE")
+	admin.HandleFunc("/products/{id}/restore", handlers.RestoreProduct).Methods("PUT")
 	admin.HandleFunc("/products/{id}/website", handlers.UpdateProductWebsite).Methods("PUT")
 	admin.HandleFunc("/products/{id}/pictures", handlers.UploadProductPictures).Methods("POST")
 	admin.HandleFunc("/products/{id}/pictures/{filename}", handlers.DeleteProductPicture).Methods("DELETE")

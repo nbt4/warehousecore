@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+	Archive,
   Cpu,
   Eye,
   GitBranch,
@@ -10,8 +11,8 @@ import {
   Pencil,
   Plus,
   RefreshCcw,
+  RotateCcw,
   Search,
-  Trash2,
   X,
 } from 'lucide-react';
 import { api, devicesApi, ledApi, type Device } from '../../lib/api';
@@ -59,6 +60,9 @@ interface Product {
   website_thumbnail?: string | null;
   website_images?: string[];
   device_count?: number;
+	product_type: 'equipment' | 'accessory' | 'consumable';
+	tracking_mode: 'individual' | 'quantity' | 'none';
+	lifecycle_status: 'active' | 'archived';
 }
 
 interface Category {
@@ -116,6 +120,8 @@ interface ProductFormData {
   min_stock_level?: number;
   generic_barcode?: string;
   price_per_unit?: number;
+	product_type: 'equipment' | 'accessory' | 'consumable';
+	tracking_mode: 'individual' | 'quantity' | 'none';
 }
 
 interface CountType {
@@ -128,6 +134,8 @@ interface CountType {
 const initialFormData: ProductFormData = {
   name: '',
   description: '',
+	product_type: 'equipment',
+	tracking_mode: 'individual',
 };
 
 const parseNumber = (value: string): number | undefined => {
@@ -190,10 +198,10 @@ export function ProductsTab() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<number | ''>('');
+	const [lifecycleFilter, setLifecycleFilter] = useState<'active' | 'archived' | 'all'>('active');
   const [refreshing, setRefreshing] = useState(false);
   // const scrollPosition = useRef(0);
   const [productDevices, setProductDevices] = useState<Device[]>([]);
-  const [devicesToDelete, setDevicesToDelete] = useState<Set<string>>(new Set());
   const [loadingDevices, setLoadingDevices] = useState(false);
 
   const debouncedSearch = useDebouncedValue(searchTerm, 300);
@@ -239,7 +247,7 @@ export function ProductsTab() {
   }, [modalOpen, viewProduct]);
 
   const fetchProducts = useCallback(
-    async (searchValue?: string, categoryId?: number | '') => {
+    async (searchValue?: string, categoryId?: number | '', lifecycle: 'active' | 'archived' | 'all' = 'active') => {
       setLoadingProducts(true);
       try {
         const params: Record<string, string> = {};
@@ -249,6 +257,7 @@ export function ProductsTab() {
         if (categoryId !== '' && typeof categoryId === 'number') {
           params.category_id = String(categoryId);
         }
+		params.lifecycle_status = lifecycle;
         const { data } = await api.get<Product[]>('/admin/products', { params });
         setProducts(data || []);
       } catch (error) {
@@ -292,8 +301,8 @@ export function ProductsTab() {
   }, [metadataLoaded, loadMetadata]);
 
   useEffect(() => {
-    fetchProducts(debouncedSearch, categoryFilter);
-  }, [fetchProducts, debouncedSearch, categoryFilter]);
+    fetchProducts(debouncedSearch, categoryFilter, lifecycleFilter);
+  }, [fetchProducts, debouncedSearch, categoryFilter, lifecycleFilter]);
 
   useEffect(() => {
     loadMetadata();
@@ -301,9 +310,9 @@ export function ProductsTab() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchProducts(searchTerm, categoryFilter);
+    await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
     setRefreshing(false);
-  }, [fetchProducts, searchTerm, categoryFilter]);
+  }, [fetchProducts, searchTerm, categoryFilter, lifecycleFilter]);
 
   const handleOpenDevicesModal = async (productId: number, productName: string) => {
     setDevicesModal({ productId, productName });
@@ -350,6 +359,7 @@ export function ProductsTab() {
   const clearFilters = () => {
     setSearchTerm('');
     setCategoryFilter('');
+	setLifecycleFilter('active');
   };
 
   const handleCategoryFilterChange = (value: string) => {
@@ -386,6 +396,8 @@ export function ProductsTab() {
       min_stock_level: product.min_stock_level ?? undefined,
       generic_barcode: product.generic_barcode ?? '',
       price_per_unit: product.price_per_unit ?? undefined,
+	  product_type: product.product_type ?? (product.is_consumable ? 'consumable' : product.is_accessory ? 'accessory' : 'equipment'),
+	  tracking_mode: product.tracking_mode ?? ((product.is_accessory || product.is_consumable) ? 'quantity' : 'individual'),
     }),
     []
   );
@@ -409,7 +421,6 @@ export function ProductsTab() {
     try {
       const { data } = await api.get<Device[]>(`/admin/products/${productId}/devices`);
       setProductDevices(data || []);
-      setDevicesToDelete(new Set());
     } catch (error) {
       toast.error('Failed to load product devices:' + " " + String(error));
       setProductDevices([]);
@@ -423,7 +434,6 @@ export function ProductsTab() {
     setEditingProduct(null);
     setFormData(initialFormData);
     setProductDevices([]);
-    setDevicesToDelete(new Set());
   }, []);
 
   const closeDetailModal = () => {
@@ -477,31 +487,29 @@ export function ProductsTab() {
     }
   };
 
-  const handleRemoveDevice = (deviceId: string) => {
-    setDevicesToDelete(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(deviceId)) {
-        newSet.delete(deviceId);
-      } else {
-        newSet.add(deviceId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleDelete = async (productId: number, name: string) => {
-    if (!window.confirm(`Produkt "${name}" wirklich löschen?`)) {
+  const handleArchive = async (product: Product) => {
+    if (!window.confirm(`Produkt "${product.name}" archivieren? Zugeordnete Geräte und historische Daten bleiben erhalten.`)) {
       return;
     }
 
     try {
-      await api.delete(`/admin/products/${productId}`);
-      await fetchProducts(searchTerm, categoryFilter);
+      await api.delete(`/admin/products/${product.product_id}`);
+	  toast.success('Produkt wurde archiviert.');
+      await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
     } catch (error) {
-      toast.error('Failed to delete product:' + " " + String(error));
-      window.alert('Fehler beim Löschen des Produkts.');
+      toast.error('Produkt konnte nicht archiviert werden: ' + String(error));
     }
   };
+
+	const handleRestore = async (product: Product) => {
+	  try {
+		await api.put(`/admin/products/${product.product_id}/restore`);
+		toast.success('Produkt wurde wiederhergestellt.');
+		await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
+	  } catch (error) {
+		toast.error('Produkt konnte nicht wiederhergestellt werden: ' + String(error));
+	  }
+	};
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -530,13 +538,15 @@ export function ProductsTab() {
       power_consumption: formData.power_consumption ?? null,
       pos_in_category: formData.pos_in_category ?? null,
       // Accessories & Consumables fields
-      is_accessory: formData.is_accessory ?? false,
-      is_consumable: formData.is_consumable ?? false,
+      is_accessory: formData.product_type === 'accessory',
+      is_consumable: formData.product_type === 'consumable',
       count_type_id: formData.count_type_id ?? null,
       stock_quantity: formData.stock_quantity ?? null,
       min_stock_level: formData.min_stock_level ?? null,
       generic_barcode: formData.generic_barcode?.trim() || null,
       price_per_unit: formData.price_per_unit ?? null,
+	  product_type: formData.product_type,
+	  tracking_mode: formData.tracking_mode,
     };
 
     try {
@@ -544,24 +554,11 @@ export function ProductsTab() {
 
       if (editingProduct) {
         await api.put(`/admin/products/${editingProduct}`, payload);
-
-        // Handle device deletions if editing
-        if (devicesToDelete.size > 0) {
-          const deletePromises = Array.from(devicesToDelete).map(deviceId =>
-            api.delete(`/admin/devices/${deviceId}`)
-          );
-          try {
-            await Promise.all(deletePromises);
-          } catch (deviceError) {
-            toast.error('Failed to delete some devices:' + " " + String(deviceError));
-            window.alert('Produkt gespeichert, aber einige Geräte konnten nicht gelöscht werden.');
-          }
-        }
       } else {
         const { data } = await api.post<Product>('/admin/products', payload);
         productId = data.product_id;
 
-        if (formData.device_quantity && formData.device_quantity > 0 && productId) {
+        if (formData.tracking_mode === 'individual' && formData.device_quantity && formData.device_quantity > 0 && productId) {
           try {
             await api.post(`/admin/products/${productId}/devices`, {
               product_id: productId,
@@ -574,7 +571,7 @@ export function ProductsTab() {
         }
       }
 
-      await fetchProducts(searchTerm, categoryFilter);
+      await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
       closeModal();
     } catch (error) {
       toast.error('Failed to save product:' + " " + String(error));
@@ -600,7 +597,7 @@ export function ProductsTab() {
     products,
   ]);
 
-  const hasActiveFilters = debouncedSearch.trim() !== '' || categoryFilter !== '';
+  const hasActiveFilters = debouncedSearch.trim() !== '' || categoryFilter !== '' || lifecycleFilter !== 'active';
 
   const categoryPath = (product: Product) =>
     [product.category_name, product.subcategory_name, product.subbiercategory_name]
@@ -646,11 +643,22 @@ export function ProductsTab() {
             >
               <option value="">Alle Kategorien</option>
               {categories.map(category => (
-                <option key={category.category_id} value={category.category_id}>
+                <option className="bg-gray-900 text-white" key={category.category_id} value={category.category_id}>
                   {category.name}
                 </option>
               ))}
             </select>
+
+			<select
+			  value={lifecycleFilter}
+			  onChange={event => setLifecycleFilter(event.target.value as 'active' | 'archived' | 'all')}
+			  className="rounded-lg bg-white/10 px-3 py-2 text-sm text-white outline-none transition focus:bg-white/15 focus:ring-1 focus:ring-accent-red"
+			  aria-label="Produktstatus filtern"
+			>
+			  <option className="bg-gray-900 text-white" value="active">Aktive Produkte</option>
+			  <option className="bg-gray-900 text-white" value="archived">Archivierte Produkte</option>
+			  <option className="bg-gray-900 text-white" value="all">Alle Produkte</option>
+			</select>
 
             {hasActiveFilters && (
               <button
@@ -768,6 +776,7 @@ export function ProductsTab() {
                   <th className="px-4 py-3 text-left font-semibold">Kategorie</th>
                   <th className="px-4 py-3 text-left font-semibold">Brand / Hersteller</th>
                   <th className="px-4 py-3 text-left font-semibold">Preis pro Tag</th>
+				  <th className="px-4 py-3 text-left font-semibold">Typ / Bestand</th>
                   <th className="px-4 py-3 text-left font-semibold">Geräte</th>
                   <th className="px-4 py-3 text-right font-semibold">Aktionen</th>
                 </tr>
@@ -805,6 +814,14 @@ export function ProductsTab() {
                     <td className="px-4 py-3 align-top text-sm text-gray-200">
                       {formatCurrency(product.item_cost_per_day)}
                     </td>
+					<td className="px-4 py-3 align-top text-sm text-gray-300">
+					  <div className="flex flex-col gap-1">
+						<span>{product.product_type === 'equipment' ? 'Gerät' : product.product_type === 'accessory' ? 'Zubehör' : 'Verbrauchsmaterial'}</span>
+						{product.tracking_mode === 'quantity' && (
+						  <span className="text-xs text-gray-500">{product.stock_quantity ?? 0} {product.count_type_abbr || ''} im Bestand</span>
+						)}
+					  </div>
+					</td>
                     <td className="px-4 py-3 align-top">
                       {(product.device_count ?? 0) > 0 ? (
                         <button
@@ -841,13 +858,15 @@ export function ProductsTab() {
                         >
                           <GitBranch className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleDelete(product.product_id, product.name)}
-                          className="rounded-lg bg-red-600/80 p-2 text-white transition hover:bg-red-600"
-                          title="Löschen"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+						{product.lifecycle_status === 'archived' ? (
+						  <button onClick={() => handleRestore(product)} className="rounded-lg bg-emerald-600/80 p-2 text-white transition hover:bg-emerald-600" title="Wiederherstellen">
+							<RotateCcw className="h-4 w-4" />
+						  </button>
+						) : (
+						  <button onClick={() => handleArchive(product)} className="rounded-lg bg-amber-600/80 p-2 text-white transition hover:bg-amber-600" title="Archivieren">
+							<Archive className="h-4 w-4" />
+						  </button>
+						)}
                       </div>
                     </td>
                   </tr>
@@ -869,6 +888,10 @@ export function ProductsTab() {
                     </span>
                   </div>
                   <p className="text-sm text-gray-400 break-words">{categoryPath(product)}</p>
+				  <p className="text-xs text-gray-500">
+					{product.product_type === 'equipment' ? 'Gerät' : product.product_type === 'accessory' ? 'Zubehör' : 'Verbrauchsmaterial'}
+					{' · '}{product.tracking_mode === 'individual' ? 'Einzelverfolgung' : product.tracking_mode === 'quantity' ? `${product.stock_quantity ?? 0} ${product.count_type_abbr || ''}` : 'Keine Bestandsverfolgung'}
+				  </p>
                   {(product.device_count ?? 0) > 0 ? (
                     <button
                       onClick={() => handleOpenDevicesModal(product.product_id, product.name)}
@@ -912,13 +935,15 @@ export function ProductsTab() {
                   >
                     <GitBranch className="h-4 w-4" />
                   </button>
-                  <button
-                    onClick={() => handleDelete(product.product_id, product.name)}
-                    className="rounded-lg bg-red-600/80 p-2 text-white transition hover:bg-red-600"
-                    title="Löschen"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+				  {product.lifecycle_status === 'archived' ? (
+					<button onClick={() => handleRestore(product)} className="rounded-lg bg-emerald-600/80 p-2 text-white transition hover:bg-emerald-600" title="Wiederherstellen">
+					  <RotateCcw className="h-4 w-4" />
+					</button>
+				  ) : (
+					<button onClick={() => handleArchive(product)} className="rounded-lg bg-amber-600/80 p-2 text-white transition hover:bg-amber-600" title="Archivieren">
+					  <Archive className="h-4 w-4" />
+					</button>
+				  )}
                 </div>
               </div>
             </div>
@@ -989,6 +1014,43 @@ export function ProductsTab() {
                     className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                   />
                 </div>
+
+				<div className="space-y-4 rounded-xl border border-white/10 p-4">
+				  <div>
+					<h3 className="text-sm font-semibold text-white">Produkttyp und Bestandsführung</h3>
+					<p className="mt-1 text-xs text-gray-400">Legt fest, ob konkrete Exemplare oder eine Menge verwaltet werden.</p>
+				  </div>
+				  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<div>
+					  <label className="mb-2 block text-sm font-semibold text-white">Produkttyp</label>
+					  <select
+						value={formData.product_type}
+						onChange={event => {
+						  const productType = event.target.value as ProductFormData['product_type'];
+						  const trackingMode = productType === 'equipment' ? 'individual' : 'quantity';
+						  setFormData({ ...formData, product_type: productType, tracking_mode: trackingMode, device_quantity: trackingMode === 'individual' ? formData.device_quantity : undefined });
+						}}
+						className="w-full rounded-lg border border-white/20 bg-gray-900 px-3 py-2 text-white outline-none transition focus:border-accent-red"
+					  >
+						<option className="bg-gray-900 text-white" value="equipment">Gerät / Equipment</option>
+						<option className="bg-gray-900 text-white" value="accessory">Zubehör</option>
+						<option className="bg-gray-900 text-white" value="consumable">Verbrauchsmaterial</option>
+					  </select>
+					</div>
+					<div>
+					  <label className="mb-2 block text-sm font-semibold text-white">Verfolgung</label>
+					  <select
+						value={formData.tracking_mode}
+						onChange={event => setFormData({ ...formData, tracking_mode: event.target.value as ProductFormData['tracking_mode'] })}
+						className="w-full rounded-lg border border-white/20 bg-gray-900 px-3 py-2 text-white outline-none transition focus:border-accent-red"
+					  >
+						{formData.product_type !== 'consumable' && <option className="bg-gray-900 text-white" value="individual">Einzelne Exemplare</option>}
+						{formData.product_type !== 'equipment' && <option className="bg-gray-900 text-white" value="quantity">Mengenbestand</option>}
+						{formData.product_type === 'equipment' && <option className="bg-gray-900 text-white" value="none">Keine Bestandsverfolgung</option>}
+					  </select>
+					</div>
+				  </div>
+				</div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
@@ -1229,40 +1291,13 @@ export function ProductsTab() {
                   </div>
                 </div>
 
-                <div className="space-y-4 rounded-xl border border-white/10 p-4">
-                  <h3 className="text-sm font-semibold text-white">Product Type & Inventory</h3>
-
-                  <div className="flex gap-4 mb-4">
-                    <label className="flex items-center gap-2 text-white cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.is_accessory || false}
-                        onChange={e => setFormData({ ...formData, is_accessory: e.target.checked })}
-                        className="h-5 w-5 rounded border-white/20 bg-gray-900 accent-accent-red focus:ring-accent-red"
-                      />
-                      <span>This is an Accessory</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 text-white cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.is_consumable || false}
-                        onChange={e => setFormData({ ...formData, is_consumable: e.target.checked })}
-                        className="h-5 w-5 rounded border-white/20 bg-gray-900 accent-accent-red focus:ring-accent-red"
-                      />
-                      <span>This is a Consumable</span>
-                    </label>
-                  </div>
-
-                  <p className="text-xs text-gray-400 mb-4">
-                    Accessories are optional items (cables, clamps). Consumables are used items (fog fluid, tape).
-                  </p>
-
-                  {(formData.is_accessory || formData.is_consumable) && (
+                {formData.tracking_mode === 'quantity' && (
+				<div className="space-y-4 rounded-xl border border-white/10 p-4">
+				  <h3 className="text-sm font-semibold text-white">Mengenbestand</h3>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-white">
-                          Measurement Unit <span className="text-accent-red">*</span>
+						  Mengeneinheit <span className="text-accent-red">*</span>
                         </label>
                         <select
                           value={formData.count_type_id || ''}
@@ -1270,12 +1305,12 @@ export function ProductsTab() {
                             ...formData,
                             count_type_id: e.target.value ? Number(e.target.value) : undefined
                           })}
-                          required={formData.is_accessory || formData.is_consumable}
-                          className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white outline-none transition focus:border-accent-red"
+						  required
+						  className="w-full rounded-lg border border-white/20 bg-gray-900 px-3 py-2 text-white outline-none transition focus:border-accent-red"
                         >
-                          <option value="">Select unit...</option>
+						  <option className="bg-gray-900 text-white" value="">Einheit auswählen …</option>
                           {countTypes.map(ct => (
-                            <option key={ct.count_type_id} value={ct.count_type_id}>
+							<option className="bg-gray-900 text-white" key={ct.count_type_id} value={ct.count_type_id}>
                               {ct.name} ({ct.abbreviation})
                             </option>
                           ))}
@@ -1284,21 +1319,21 @@ export function ProductsTab() {
 
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-white">
-                          Generic Barcode
+						  Gemeinsamer Barcode
                         </label>
                         <input
                           type="text"
                           value={formData.generic_barcode || ''}
                           onChange={e => setFormData({ ...formData, generic_barcode: e.target.value })}
-                          placeholder="e.g., ACC-SAFE40, CONS-FOG"
+						  placeholder="z. B. ACC-SAFE40"
                           className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                         />
-                        <p className="text-xs text-gray-400 mt-1">Single barcode for all units of this type</p>
+						<p className="text-xs text-gray-400 mt-1">Ein Barcode für alle Einheiten dieses Produkts</p>
                       </div>
 
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-white">
-                          Current Stock Quantity
+						  Aktueller Bestand
                         </label>
                         <input
                           type="number"
@@ -1312,11 +1347,12 @@ export function ProductsTab() {
                           placeholder="0"
                           className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                         />
+						{editingProduct && <p className="mt-1 text-xs text-gray-400">Verteilter Bestand wird über Lagerzonen und Scanvorgänge korrigiert.</p>}
                       </div>
 
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-white">
-                          Minimum Stock Level
+						  Mindestbestand
                         </label>
                         <input
                           type="number"
@@ -1327,14 +1363,14 @@ export function ProductsTab() {
                             ...formData,
                             min_stock_level: parseNumber(e.target.value)
                           })}
-                          placeholder="Low stock alert threshold"
+						  placeholder="Schwellwert für Bestandswarnungen"
                           className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                         />
                       </div>
 
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-white">
-                          Price per Unit (€)
+						  Preis pro Einheit (€)
                         </label>
                         <input
                           type="number"
@@ -1350,10 +1386,11 @@ export function ProductsTab() {
                         />
                       </div>
                     </div>
-                  )}
                 </div>
+				)}
 
-                <div className="space-y-4 rounded-xl border border-white/10 p-4">
+				{formData.tracking_mode === 'individual' && (
+				<div className="space-y-4 rounded-xl border border-white/10 p-4">
                   <h3 className="text-sm font-semibold text-white">
                     {editingProduct ? 'Geräte verwalten' : 'Geräte erstellen (optional)'}
                   </h3>
@@ -1374,10 +1411,7 @@ export function ProductsTab() {
                           {productDevices.map(device => (
                             <div
                               key={device.device_id}
-                              className={`flex items-center justify-between rounded-lg px-3 py-2 transition ${devicesToDelete.has(device.device_id)
-                                ? 'bg-red-500/20 border border-red-500/50'
-                                : 'bg-white/5 hover:bg-white/10'
-                                }`}
+							  className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2"
                             >
                               <div className="flex-1">
                                 <span className="text-sm font-medium text-white">
@@ -1387,26 +1421,12 @@ export function ProductsTab() {
                                   {device.status}
                                 </span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDevice(device.device_id)}
-                                className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${devicesToDelete.has(device.device_id)
-                                  ? 'bg-gray-600 text-white hover:bg-gray-700'
-                                  : 'bg-red-600/80 text-white hover:bg-red-600'
-                                  }`}
-                              >
-                                {devicesToDelete.has(device.device_id) ? 'Behalten' : 'Entfernen'}
-                              </button>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      {devicesToDelete.size > 0 && (
-                        <p className="text-xs text-red-400">
-                          {devicesToDelete.size} Gerät(e) werden beim Speichern gelöscht
-                        </p>
-                      )}
+					  <p className="text-xs text-gray-400">Geräte werden separat über die Geräteverwaltung bearbeitet oder ausgemustert.</p>
                     </div>
                   )}
 
@@ -1446,6 +1466,7 @@ export function ProductsTab() {
                     Präfix und Nummerierung werden automatisch aus der Subkategorie generiert (z. B. LGT3001).
                   </p>
                 </div>
+				)}
 
                 <div className="flex gap-3 pt-4">
                   <button
