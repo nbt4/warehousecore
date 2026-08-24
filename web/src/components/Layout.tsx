@@ -62,47 +62,6 @@ export function Layout({ children }: LayoutProps) {
     navigate('/login');
   };
 
-  // Get cross-navigation domain from environment variable injected by backend
-  // If not set, auto-detect based on current hostname
-  const getRentalCoreURL = () => {
-    const rentalDomain = (window as any).__APP_CONFIG__?.rentalCoreDomain;
-    const protocol = window.location.protocol; // Use same protocol as current page (http/https)
-
-    if (rentalDomain && rentalDomain !== '') {
-      // Use configured domain from environment (no port, handled by reverse proxy)
-      return `${protocol}//${rentalDomain}`;
-    }
-
-    // Auto-detect based on current hostname
-    const hostname = window.location.hostname;
-    const port = window.location.port;
-
-    // Check if we're on a subdomain setup (e.g., warehouse.server-nt.de)
-    if (hostname.startsWith('warehouse.')) {
-      // Replace 'warehouse' with 'rent'
-      const rentalHost = hostname.replace(/^warehouse\./, 'rent.');
-      return `${protocol}//${rentalHost}`;
-    } else if (port === '8082') {
-      // Running on port 8082 -> go to 8081 on same host
-      return `${protocol}//${hostname}:8081`;
-    } else if (port === '') {
-      // No port specified (reverse proxy) - assume different subdomain
-      // This handles cases like warehouse.example.com -> rent.example.com
-      if (hostname.includes('.')) {
-        // Try to replace warehouse with rent in hostname
-        const rentalHost = hostname.replace(/warehouse/i, 'rent');
-        return `${protocol}//${rentalHost}`;
-      }
-      // Fallback if no subdomain detected
-      return `${protocol}//${hostname}:8081`;
-    } else {
-      // Default fallback - try :8081 on same host
-      return `${protocol}//${hostname}:8081`;
-    }
-  };
-
-  const rentalCoreURL = getRentalCoreURL();
-
   const getCoresDashboardURL = () => {
     const { hostname, port, protocol } = window.location;
     if (port === '8082') return `${protocol}//${hostname}:8080`;
@@ -199,7 +158,7 @@ export function Layout({ children }: LayoutProps) {
       >
         {/* Sidebar header (mobile + desktop) */}
         <div
-          className="flex items-center justify-between px-4 py-4"
+          className="h-20 flex items-center justify-center px-2 overflow-hidden"
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
         >
           <img
@@ -207,12 +166,12 @@ export function Layout({ children }: LayoutProps) {
               ? branding.assets.horizontalOnDark
               : branding.assets.markOnDark}
             alt={branding.productName}
-            className={sidebarOpen || isMobile ? 'h-12 max-w-full object-contain' : 'h-10 w-10 mx-auto object-contain'}
+            className={sidebarOpen || isMobile ? 'h-12 w-44 flex-shrink-0 object-contain' : 'h-10 w-10 flex-shrink-0 object-contain'}
           />
           {isMobile && (
             <button
               onClick={closeSidebar}
-              className="p-2 rounded-lg cursor-pointer"
+              className="absolute right-2 p-2 rounded-lg cursor-pointer"
               style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
               aria-label="Close menu"
             >
@@ -233,28 +192,6 @@ export function Layout({ children }: LayoutProps) {
             <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
             {(sidebarOpen || isMobile) && <span>← Cores</span>}
           </a>
-
-          {/* Cross-nav to RentalCore */}
-          <a
-            href={rentalCoreURL}
-            className={`flex items-center rounded-lg transition-all ${
-              sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
-            }`}
-            style={{
-              background: 'rgba(var(--accent-red-rgb), 0.08)',
-              color: 'var(--accent-red)',
-              border: '1px solid rgba(var(--accent-red-rgb), 0.15)',
-              textDecoration: 'none',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-            }}
-            title="Switch to RentalCore"
-          >
-            <Briefcase className="w-4 h-4 flex-shrink-0" />
-            {(sidebarOpen || isMobile) && <span>RentalCore</span>}
-          </a>
-
-          <div style={{ height: '4px' }} />
 
           {/* Main nav items */}
           {['dashboard', 'scan'].map((key) => {

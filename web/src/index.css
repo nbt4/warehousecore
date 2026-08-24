@@ -109,7 +109,7 @@ body {
   min-height: 100dvh;
   margin: 0;
   overflow-x: hidden;
-  overscroll-behavior-y: none;
+  overscroll-behavior-y: auto;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
 }
