@@ -42,13 +42,12 @@ export function Login() {
 
         <div className="text-center mb-8 flex flex-col items-center gap-2">
           <img
-            src={branding.loginLogo}
-            alt={companyName}
-            className="h-24"
-            style={{ height: `${96 * branding.logoSizeLogin / 100}px` }}
+            src={branding.assets.stackedOnDark}
+            alt={branding.productName}
+            className="h-32 max-w-72 object-contain"
           />
-          {companyName && (
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{companyName}</p>
+          {(branding.brandName || companyName !== branding.productName) && (
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>by {branding.brandName || companyName}</p>
           )}
         </div>
 

@@ -72,7 +72,7 @@ COPY --from=backend-builder /app/internal/services/label_template.html ./interna
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
 # Create .env placeholder
-RUN touch .env
+RUN touch .env && mkdir -p /var/lib/branding/logos
 
 EXPOSE 8082
 

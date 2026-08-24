@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 
+	commonbranding "github.com/nbt4/cores-common/pkg/branding"
 	commonhealth "github.com/nbt4/cores-common/pkg/health"
 	"warehousecore/config"
 	"warehousecore/internal/handlers"
@@ -39,6 +40,15 @@ func spaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/manifest.webmanifest" {
 		w.Header().Set("Content-Type", "application/manifest+json")
+		w.Header().Set("Cache-Control", "no-cache")
+		if brandingSvc != nil {
+			_ = json.NewEncoder(w).Encode(commonbranding.Manifest(brandingSvc.GetConfig(), commonbranding.ManifestOptions{
+				Name: "WarehouseCore", StartURL: "/", Scope: "/",
+				FallbackIcon192: "/app-icons/icon-192.png", FallbackIcon512: "/app-icons/icon-512.png",
+				FallbackMaskable: "/app-icons/icon-maskable-512.png",
+			}))
+			return
+		}
 	}
 
 	// Build file path
@@ -211,7 +221,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.54")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.55")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")

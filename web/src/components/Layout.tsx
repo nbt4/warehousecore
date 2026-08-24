@@ -20,9 +20,6 @@ export function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
 	const branding = useBranding();
 	const companyName = branding.companyName;
-	const sidebarLogo = branding.sidebarLogo;
-	const sidebarIcon = '/logos/warehousecore_white_icon.svg';
-	const logoSize = branding.logoSizeSidebar;
 
   useEffect(() => {
     const checkMobile = () => {
@@ -207,11 +204,10 @@ export function Layout({ children }: LayoutProps) {
         >
           <img
             src={sidebarOpen || isMobile
-              ? sidebarLogo
-              : sidebarIcon}
-            alt={companyName}
-            className={sidebarOpen || isMobile ? 'h-12' : 'h-14 mx-auto'}
-            style={{ height: `${48 * logoSize / 100}px` }}
+              ? branding.assets.horizontalOnDark
+              : branding.assets.markOnDark}
+            alt={branding.productName}
+            className={sidebarOpen || isMobile ? 'h-12 max-w-full object-contain' : 'h-10 w-10 mx-auto object-contain'}
           />
           {isMobile && (
             <button

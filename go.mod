@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
-	github.com/nbt4/cores-common v0.0.0-20260615221321-b29c7ed5ed26
+	github.com/nbt4/cores-common v1.1.0
 	github.com/pdfcpu/pdfcpu v0.12.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
