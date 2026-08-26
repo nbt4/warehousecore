@@ -139,6 +139,9 @@ func (s *ScanService) processIntake(tx *sql.Tx, device *models.Device, zoneID *i
 	if zoneID == nil {
 		return nil, nil, fmt.Errorf("für die Einlagerung muss ein Lagerplatz gescannt werden")
 	}
+	if err := ValidateStorageDestination(tx, *zoneID, 1); err != nil {
+		return nil, nil, err
+	}
 	previousStatus := device.Status
 	var fromJobID *int64
 	if device.CurrentJobID.Valid {
@@ -376,6 +379,9 @@ func (s *ScanService) processCheck(tx *sql.Tx, device *models.Device) (*models.S
 func (s *ScanService) processTransfer(tx *sql.Tx, device *models.Device, toZoneID *int64) (*models.ScanResponse, *models.DeviceMovement, error) {
 	if toZoneID == nil {
 		return nil, nil, fmt.Errorf("für das Verschieben muss ein Lagerplatz gescannt werden")
+	}
+	if err := ValidateStorageDestination(tx, *toZoneID, 1); err != nil {
+		return nil, nil, err
 	}
 	if device.Status == "on_job" || device.Status == "rented" || device.Status == "return_pending" {
 		return nil, nil, fmt.Errorf("Gerät muss zuerst eingelagert werden, bevor es verschoben werden kann")
@@ -653,6 +659,11 @@ func (s *ScanService) processConsumableIntake(tx *sql.Tx, product *ConsumablePro
 	}
 
 	quantity, _ := requestedQuantity(quantityInput)
+	if err := ValidateStorageDestination(tx, *zoneID, quantity); err != nil {
+		s.logScanEvent(tx, scanCode, productIDStr, "intake", nil, zoneID, userID, false, err.Error(), ipAddr, userAgent)
+		tx.Commit()
+		return &models.ScanResponse{Success: false, Message: err.Error(), Action: "intake"}, nil
+	}
 
 	// Update or insert stock in product_locations (single source of truth)
 	_, err := tx.Exec(`

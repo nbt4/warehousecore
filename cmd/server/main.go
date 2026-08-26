@@ -171,6 +171,9 @@ func main() {
 	if err := handlers.EnsureProductManagementSchema(); err != nil {
 		log.Fatalf("Failed to initialize product management schema: %v", err)
 	}
+	if err := handlers.EnsureWarehouseOperationsSchema(); err != nil {
+		log.Fatalf("Failed to initialize warehouse operations schema: %v", err)
+	}
 	if err := handlers.EnsureDeviceStatusSchema(); err != nil {
 		log.Fatalf("Failed to initialize device status schema: %v", err)
 	}
@@ -221,7 +224,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.56")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.57")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -262,6 +265,24 @@ func main() {
 	api.HandleFunc("/zones/{id}", handlers.DeleteZone).Methods("DELETE")
 	api.HandleFunc("/zone-types", handlers.GetZoneTypes).Methods("GET")
 
+	// Professional warehouse locations, work queue and inventory controls.
+	api.HandleFunc("/warehouse/locations", handlers.GetWarehouseLocations).Methods("GET")
+	api.HandleFunc("/warehouse/locations", handlers.CreateWarehouseLocation).Methods("POST")
+	api.HandleFunc("/warehouse/locations/{id}", handlers.GetWarehouseLocation).Methods("GET")
+	api.HandleFunc("/warehouse/locations/{id}", handlers.UpdateWarehouseLocation).Methods("PUT")
+	api.HandleFunc("/warehouse/locations/{id}/archive", handlers.ArchiveWarehouseLocation).Methods("POST")
+	api.HandleFunc("/warehouse/overview", handlers.GetWarehouseOverview).Methods("GET")
+	api.HandleFunc("/warehouse/tasks", handlers.GetWarehouseTasks).Methods("GET")
+	api.HandleFunc("/warehouse/tasks", handlers.CreateWarehouseTask).Methods("POST")
+	api.HandleFunc("/warehouse/tasks/{id}/status", handlers.UpdateWarehouseTaskStatus).Methods("PATCH")
+	api.HandleFunc("/warehouse/counts", handlers.ListInventoryCounts).Methods("GET")
+	api.HandleFunc("/warehouse/counts", handlers.CreateInventoryCount).Methods("POST")
+	api.HandleFunc("/warehouse/counts/{id}", handlers.GetInventoryCount).Methods("GET")
+	api.HandleFunc("/warehouse/counts/{id}/scan", handlers.ScanInventoryCount).Methods("POST")
+	api.HandleFunc("/warehouse/counts/{id}/complete", handlers.CompleteInventoryCount).Methods("POST")
+	api.HandleFunc("/warehouse/counts/{id}/approve", handlers.ApproveInventoryCount).Methods("POST")
+	api.HandleFunc("/warehouse/counts/{id}/cancel", handlers.CancelInventoryCount).Methods("POST")
+
 	// Job endpoints
 	api.HandleFunc("/jobs", handlers.GetJobs).Methods("GET")
 	api.HandleFunc("/jobs/scan", handlers.GetJobByScan).Methods("GET")
@@ -288,6 +309,28 @@ func main() {
 	api.HandleFunc("/cases/{id}/contents", handlers.GetCaseContents).Methods("GET")
 	api.HandleFunc("/cases/{id}/devices", handlers.AddDevicesToCase).Methods("POST")
 	api.HandleFunc("/cases/{id}/devices/{device_id}", handlers.RemoveDeviceFromCase).Methods("DELETE")
+
+	// Handling units extend legacy cases with dynamic quantity content, packing
+	// templates, nesting, sealing, dispatch and controlled return/unpacking.
+	api.HandleFunc("/handling-units", handlers.ListHandlingUnits).Methods("GET")
+	api.HandleFunc("/handling-units", handlers.CreateHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/scan", handlers.FindHandlingUnitByScan).Methods("GET")
+	api.HandleFunc("/handling-units/{id}", handlers.GetHandlingUnit).Methods("GET")
+	api.HandleFunc("/handling-units/{id}", handlers.UpdateHandlingUnit).Methods("PUT")
+	api.HandleFunc("/handling-units/{id}", handlers.DeleteHandlingUnit).Methods("DELETE")
+	api.HandleFunc("/handling-units/{id}/inventory", handlers.GetHandlingUnitInventory).Methods("GET")
+	api.HandleFunc("/handling-units/{id}/inventory/scan", handlers.PackHandlingUnitScan).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/inventory/devices/{device_id}", handlers.RemoveHandlingUnitDevice).Methods("DELETE")
+	api.HandleFunc("/handling-units/{id}/inventory/products/{product_id}", handlers.RemoveHandlingUnitProduct).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/inventory/cases/{child_id}", handlers.RemoveHandlingUnitChild).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/template", handlers.UpsertHandlingUnitTemplate).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/template/{product_id}", handlers.DeleteHandlingUnitTemplate).Methods("DELETE")
+	api.HandleFunc("/handling-units/{id}/seal", handlers.SealHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/unseal", handlers.UnsealHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/dispatch", handlers.DispatchHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/return", handlers.ReturnHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/unpack", handlers.UnpackHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/events", handlers.GetHandlingUnitEvents).Methods("GET")
 
 	// Maintenance endpoints
 	api.HandleFunc("/defects", handlers.GetDefects).Methods("GET")

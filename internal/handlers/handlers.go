@@ -344,7 +344,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 }
 
 // HealthCheck returns server health status
-var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.54")
+var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.57")
 
 // HandleScan processes barcode/QR scan requests
 func HandleScan(w http.ResponseWriter, r *http.Request) {
@@ -1303,9 +1303,29 @@ func DeleteZone(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	db := repository.GetSQLDB()
-	_, err := db.Exec(`UPDATE storage_zones SET is_active = FALSE WHERE zone_id = $1`, id)
+	zoneID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid zone"})
+		return
+	}
+	usage, err := getWarehouseLocationUsage(db, zoneID)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if !usage.Empty() {
+		respondJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Zone is not empty", "children": usage.Children, "devices": usage.Devices, "cases": usage.Cases, "product_quantity": usage.Products,
+		})
+		return
+	}
+	result, err := db.Exec(`UPDATE storage_zones SET is_active = FALSE, operational_status = 'archived' WHERE zone_id = $1`, id)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Zone not found"})
 		return
 	}
 
@@ -3173,11 +3193,13 @@ func AssignDevicesToZone(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 
-	// Verify zone exists
-	var exists bool
-	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM storage_zones WHERE zone_id = $1)", zoneID).Scan(&exists)
-	if err != nil || !exists {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Zone not found"})
+	parsedZoneID, err := strconv.ParseInt(zoneID, 10, 64)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid zone"})
+		return
+	}
+	if err := services.ValidateStorageDestination(db, parsedZoneID, float64(len(input.DeviceIDs))); err != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 

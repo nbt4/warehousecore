@@ -112,6 +112,60 @@ export interface CaseSummary {
 
 export interface CaseDetail extends CaseSummary {}
 
+export type HandlingUnitType = 'dynamic' | 'fixed' | 'hybrid';
+export type HandlingUnitStatus = 'empty' | 'packing' | 'complete' | 'sealed' | 'staged' | 'on_job' | 'return_check' | 'maintenance';
+
+export interface HandlingUnit {
+  case_id: number;
+  name: string;
+  description?: string;
+  status: string;
+  case_type: HandlingUnitType;
+  workflow_status: HandlingUnitStatus;
+  width?: number;
+  height?: number;
+  depth?: number;
+  weight?: number;
+  max_weight_kg?: number;
+  zone_id?: number;
+  zone_name?: string;
+  zone_code?: string;
+  home_zone_id?: number;
+  current_job_id?: number;
+  barcode?: string;
+  rfid_tag?: string;
+  sealed_at?: string;
+  device_count: number;
+  product_line_count: number;
+  product_quantity: number;
+  child_case_count: number;
+  expected_lines: number;
+  complete: boolean;
+}
+
+export interface HandlingUnitInventory {
+  devices: Array<{ device_id: string; product_id?: number; product_name: string; status: string; serial_number?: string; barcode?: string }>;
+  products: Array<{ product_id: number; product_name: string; quantity: number; unit: string; source_zone_id?: number }>;
+  template: Array<{ product_id: number; product_name: string; expected_quantity: number; actual_quantity: number; complete: boolean }>;
+  child_cases: Array<{ case_id: number; name: string; barcode?: string; workflow_status: string }>;
+  complete: boolean;
+}
+
+export interface HandlingUnitInput {
+  name: string;
+  description?: string;
+  case_type: HandlingUnitType;
+  width?: number;
+  height?: number;
+  depth?: number;
+  weight?: number;
+  max_weight_kg?: number;
+  zone_id?: number;
+  home_zone_id?: number;
+  barcode?: string;
+  rfid_tag?: string;
+}
+
 export interface CaseDevice {
   device_id: string;
   status: string;
@@ -139,6 +193,86 @@ export interface Zone {
   parent_zone_id?: number | null;
   capacity?: number | null;
   is_active: boolean;
+}
+
+export type LocationStatus = 'available' | 'blocked' | 'counting' | 'maintenance' | 'archived';
+
+export interface WarehouseLocation extends Zone {
+  barcode?: string;
+  location_kind: string;
+  process_role: string;
+  operational_status: LocationStatus;
+  capacity_mode: string;
+  is_storable: boolean;
+  pick_sequence?: number;
+  max_weight_kg?: number;
+  max_volume_m3?: number;
+  inventory_frequency_days?: number;
+  last_counted_at?: string;
+  next_count_at?: string;
+  device_count: number;
+  case_count: number;
+  product_quantity: number;
+  child_count: number;
+  occupancy: number;
+  utilization_percent?: number;
+}
+
+export interface WarehouseOverview {
+  active_locations: number;
+  blocked_locations: number;
+  unplaced_devices: number;
+  unplaced_cases: number;
+  unplaced_product_quantity: number;
+  open_tasks: number;
+  counts_due: number;
+}
+
+export interface WarehouseTask {
+  task_id: number;
+  task_type: string;
+  status: string;
+  priority: number;
+  from_zone_id?: number;
+  to_zone_id?: number;
+  case_id?: number;
+  device_id?: string;
+  product_id?: number;
+  quantity?: number;
+  job_id?: number;
+  due_at?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface InventoryCount {
+  count_id: number;
+  zone_id: number;
+  zone_code: string;
+  zone_name: string;
+  status: 'open' | 'counting' | 'review' | 'approved' | 'cancelled';
+  blind_count: boolean;
+  line_count: number;
+  counted_lines: number;
+  variance_lines: number;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface InventoryCountLine {
+  line_id: number;
+  item_type: 'device' | 'product' | 'case';
+  item_key: string;
+  item_name: string;
+  expected_quantity?: number;
+  counted_quantity?: number;
+  variance?: number;
+}
+
+export interface InventoryCountDetail {
+  count: InventoryCount;
+  lines: InventoryCountLine[];
 }
 
 export interface ZoneTypeDefinition {
@@ -322,6 +456,36 @@ export const casesApi = {
     api.delete<{ message: string }>(`/cases/${caseId}/devices/${deviceId}`),
 };
 
+export const handlingUnitsApi = {
+  list: (params?: { search?: string; workflow_status?: string }) =>
+    api.get<{ cases: HandlingUnit[]; meta: { count: number } }>('/handling-units', { params }),
+  get: (id: number) => api.get<HandlingUnit>(`/handling-units/${id}`),
+  findByScan: (scanCode: string) => api.get<HandlingUnit>('/handling-units/scan', { params: { scan_code: scanCode } }),
+  create: (data: HandlingUnitInput) => api.post<{ case_id: number; message: string }>('/handling-units', data),
+  update: (id: number, data: HandlingUnitInput) => api.put<{ message: string }>(`/handling-units/${id}`, data),
+  delete: (id: number) => api.delete<{ message: string }>(`/handling-units/${id}`),
+  inventory: (id: number) => api.get<HandlingUnitInventory>(`/handling-units/${id}/inventory`),
+  packScan: (id: number, data: { scan_code: string; quantity?: number; source_zone_id?: number }) =>
+    api.post<{ message: string; item_type: string; duplicate?: boolean }>(`/handling-units/${id}/inventory/scan`, data),
+  removeDevice: (id: number, deviceId: string) => api.delete(`/handling-units/${id}/inventory/devices/${encodeURIComponent(deviceId)}`),
+  removeProduct: (id: number, productId: number, data: { quantity: number; destination_zone_id: number }) =>
+    api.post(`/handling-units/${id}/inventory/products/${productId}`, data),
+  removeChild: (id: number, childId: number, destinationZoneId: number) =>
+    api.post(`/handling-units/${id}/inventory/cases/${childId}`, { destination_zone_id: destinationZoneId }),
+  setTemplate: (id: number, productId: number, expectedQuantity: number) =>
+    api.post(`/handling-units/${id}/template`, { product_id: productId, expected_quantity: expectedQuantity }),
+  setTemplateByScan: (id: number, scanCode: string, expectedQuantity: number) =>
+    api.post(`/handling-units/${id}/template`, { scan_code: scanCode, expected_quantity: expectedQuantity }),
+  removeTemplate: (id: number, productId: number) => api.delete(`/handling-units/${id}/template/${productId}`),
+  seal: (id: number, force = false) => api.post(`/handling-units/${id}/seal`, { force }),
+  unseal: (id: number) => api.post(`/handling-units/${id}/unseal`),
+  dispatch: (id: number, jobId: number, force = false) => api.post(`/handling-units/${id}/dispatch`, { job_id: jobId, force }),
+  returnCase: (id: number, destinationZoneId: number, mode: 'sealed' | 'inspect') =>
+    api.post(`/handling-units/${id}/return`, { destination_zone_id: destinationZoneId, mode }),
+  unpack: (id: number, destinationZoneId: number) => api.post(`/handling-units/${id}/unpack`, { destination_zone_id: destinationZoneId }),
+  events: (id: number) => api.get<Array<Record<string, unknown>>>(`/handling-units/${id}/events`),
+};
+
 export interface ProductInZone {
   product_id: number;
   product_name: string;
@@ -339,6 +503,25 @@ export const zonesApi = {
   create: (data: Partial<Zone>) => api.post<Zone>('/zones', data),
   update: (id: number, data: Partial<Zone>) => api.put(`/zones/${id}`, data),
   delete: (id: number) => api.delete(`/zones/${id}`),
+};
+
+export const warehouseApi = {
+  locations: (includeArchived = true) => api.get<WarehouseLocation[]>('/warehouse/locations', { params: { include_archived: includeArchived } }),
+  location: (id: number) => api.get<WarehouseLocation>(`/warehouse/locations/${id}`),
+  createLocation: (data: Partial<WarehouseLocation>) => api.post<{ zone_id: number; message: string }>('/warehouse/locations', data),
+  updateLocation: (id: number, data: Partial<WarehouseLocation>) => api.put<{ message: string }>(`/warehouse/locations/${id}`, data),
+  archiveLocation: (id: number) => api.post<{ message: string }>(`/warehouse/locations/${id}/archive`),
+  overview: () => api.get<WarehouseOverview>('/warehouse/overview'),
+  tasks: (status?: string) => api.get<WarehouseTask[]>('/warehouse/tasks', { params: status ? { status } : undefined }),
+  createTask: (data: Partial<WarehouseTask>) => api.post<{ task_id: number; message: string }>('/warehouse/tasks', data),
+  updateTaskStatus: (id: number, status: string) => api.patch(`/warehouse/tasks/${id}/status`, { status }),
+  counts: () => api.get<InventoryCount[]>('/warehouse/counts'),
+  createCount: (zoneId: number, blindCount: boolean) => api.post<{ count_id: number; message: string }>('/warehouse/counts', { zone_id: zoneId, blind_count: blindCount }),
+  count: (id: number) => api.get<InventoryCountDetail>(`/warehouse/counts/${id}`),
+  scanCount: (id: number, scanCode: string, quantity = 1) => api.post(`/warehouse/counts/${id}/scan`, { scan_code: scanCode, quantity }),
+  completeCount: (id: number) => api.post(`/warehouse/counts/${id}/complete`),
+  approveCount: (id: number) => api.post(`/warehouse/counts/${id}/approve`),
+  cancelCount: (id: number) => api.post(`/warehouse/counts/${id}/cancel`),
 };
 
 export const zoneTypesApi = {

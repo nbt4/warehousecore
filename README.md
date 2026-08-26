@@ -9,14 +9,15 @@
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Sichere Produktstammdaten** — Explizite Produkttypen und Trackingarten, serverseitige Plausibilitätsprüfungen, revisionssichere Archivierung statt kaskadierendem Löschen und Audit-Protokoll für Stammdatenänderungen
 - **Konsistente Mengenbestände** — Lagerzonen sind die führende Bestandsquelle; Produktsummen werden automatisch aus `product_locations` synchronisiert und verteilte Bestände ausschließlich über Lager- und Scanabläufe korrigiert
-- **Zonenmanagement** — Physische Lagerzonen mit Barcode-Kennzeichnung, Gerätezuweisung, Produktbestand und Lagerplatz-Optimierung
+- **Professionelle Lagersteuerung** — Hierarchische Standorte, Bereiche, Gänge, Regale, Ebenen und Fächer mit getrennter Bauart/Prozessfunktion, Sperrstatus, Pick-Reihenfolge, Kapazität, Arbeitsvorrat und sicherem Archivieren nur leerer Orte
+- **Scannerbasierte Zählinventur** — Offene oder verdeckte Sollmengen, automatische Platzsperre, Zählung von Geräten, Mengenartikeln und Cases, Abweichungsprüfung und kontrollierte Bestandsfreigabe
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
 - **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Kabel-, Case- und Zonenlabels mit direktem Verschieben/Skalieren über Ziehpunkte und einpassbarer 25–200-%-Vorschau. Dauerhaft gespeicherte PDF-Master, schneller PDF-Download/Browserdruck aus dem Cache und protokollierter Zebra-ZPL-Direktdruck über TCP
 - **Geführtes Barcode-Scanning** — Klare Abläufe „Job → Artikel“ für Ausgaben und „Artikel → Lagerplatz“ für Einlagerungen, ein echtes Mengenfeld für Zubehör/Verbrauchsmaterial sowie nachvollziehbare Bewegungs- und Scanprotokolle
 - **Eindeutige Gerätestatus** — `on_job` bezeichnet nur aktive Ausgaben. Nach Jobabschluss bleibt ein nicht eingebuchtes Gerät als „Rückgabe offen“ sichtbar; alte Datensätze ohne Job oder Lagerplatz werden als „Standort ungeklärt“ ausgewiesen.
 - **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
-- **Case-Management** — Transportkisten-Verwaltung mit Inhaltsverfolgung, QR/Barcode-Labels und Gerätezuweisung
+- **Dynamische Handling Units** — Leere Euroboxen und Flightcases je Job frei befüllen, feste oder hybride Soll-Inhalte pflegen, Geräte/Mengenartikel/Untercases scannen, versiegeln, komplett ausgeben, im Rücklauf prüfen und gesammelt zurücklagern
 - **Wartungsmanagement** — Defekt-Tracking, Inspektionshistorie und Wartungsstatistiken
 - **Öffentliche Produktseite** — Ungeschützte API für getrennte Produkt- und Paketlisten, jeweils mit Website-Freigabe und Bildern
 - **Produktpakete** — Pakete unabhängig von normalen Produkten verwalten, Produkte mit Mengen zuweisen und eigene Paketbilder pflegen
@@ -132,6 +133,27 @@ warehousecore:
 | `POST`   | `/api/v1/zones/:id/devices`       | Geräte zu Zone zuweisen (🔒 Admin)        |
 | `GET`    | `/api/v1/zones/:id/products`      | Produkte in Zone (🔒)                     |
 
+Die Lagersteuerung unter `/zones` verwendet die erweiterten Endpunkte. Bauart (`location_kind`) und Prozessfunktion (`process_role`) sind bewusst getrennt: Ein physischer Bereich kann beispielsweise Wareneingang, Rücklauf, Prüfung, Quarantäne, Reparatur, Kommissionierung oder Job-Bereitstellung sein. Nur aktive, verfügbare und direkt belegbare Orte akzeptieren Einlagerungen. Kapazitätsgrenzen und gesperrte Elternbereiche werden serverseitig geprüft; belegte Orte können nicht archiviert werden.
+
+### Lagersteuerung & Inventur
+
+| Methode | Pfad                                      | Beschreibung |
+|---------|-------------------------------------------|--------------|
+| `GET`   | `/api/v1/warehouse/overview`              | Kennzahlen, ungeklärte Bestände und fällige Inventuren |
+| `GET`   | `/api/v1/warehouse/locations`             | Vollständige professionelle Lagerstruktur |
+| `POST`  | `/api/v1/warehouse/locations`             | Lagerort anlegen |
+| `PUT`   | `/api/v1/warehouse/locations/:id`         | Lagerort, Rolle, Kapazität und Zählintervall ändern |
+| `POST`  | `/api/v1/warehouse/locations/:id/archive` | Leeren Lagerort sicher archivieren |
+| `GET`   | `/api/v1/warehouse/tasks`                 | Putaway-, Move-, Pick-, Replenish-, Pack- und Prüfaufgaben |
+| `POST`  | `/api/v1/warehouse/tasks`                 | Lageraufgabe anlegen |
+| `PATCH` | `/api/v1/warehouse/tasks/:id/status`      | Arbeitsstatus ändern |
+| `GET`   | `/api/v1/warehouse/counts`                | Zählinventuren und Historie |
+| `POST`  | `/api/v1/warehouse/counts`                | Platz sperren und Zählinventur starten |
+| `POST`  | `/api/v1/warehouse/counts/:id/scan`       | Gerät, Mengenartikel oder Case zählen |
+| `POST`  | `/api/v1/warehouse/counts/:id/complete`   | Zählung abschließen und Differenzen anzeigen |
+| `POST`  | `/api/v1/warehouse/counts/:id/approve`    | Geprüfte Werte freigeben und Bestand abgleichen |
+| `POST`  | `/api/v1/warehouse/counts/:id/cancel`     | Inventur verwerfen und Platz freigeben |
+
 ### Produkte
 
 | Methode  | Pfad                                  | Beschreibung                                      |
@@ -189,6 +211,24 @@ Vorhandene Einträge aus der bisherigen `cables`-Tabelle werden beim ersten Star
 | `POST`   | `/api/v1/cases/:id/devices`                 | Geräte in Kiste (🔒)                      |
 | `DELETE` | `/api/v1/cases/:id/devices/:device_id`      | Gerät aus Kiste entfernen (🔒)            |
 
+### Cases & Handling Units
+
+Die bisherigen `/cases`-Endpunkte bleiben kompatibel. Die UI verwendet zusätzlich `/handling-units`, um Euroboxen, Flightcases und Kits als echte Handling Units abzubilden.
+
+| Methode | Pfad                                                        | Beschreibung |
+|---------|-------------------------------------------------------------|--------------|
+| `GET`   | `/api/v1/handling-units`                                    | Cases mit Typ, Workflow, Ort und Inhaltskennzahlen |
+| `POST`  | `/api/v1/handling-units`                                    | Dynamisches, festes oder hybrides Case erstellen |
+| `GET`   | `/api/v1/handling-units/scan?scan_code=…`                   | Case über Barcode, RFID oder Case-ID finden |
+| `GET`   | `/api/v1/handling-units/:id/inventory`                      | Ist-Inhalt, Soll-Inhalt und Untercases |
+| `POST`  | `/api/v1/handling-units/:id/inventory/scan`                 | Gerät, Mengenartikel oder Untercase einpacken |
+| `POST`  | `/api/v1/handling-units/:id/template`                       | Soll-Inhalt eines festen/hybriden Cases setzen |
+| `POST`  | `/api/v1/handling-units/:id/seal`                           | Vollständigkeit prüfen und Case versiegeln |
+| `POST`  | `/api/v1/handling-units/:id/dispatch`                       | Case samt verschachteltem Inhalt an Job ausgeben |
+| `POST`  | `/api/v1/handling-units/:id/return`                         | Case in Rücklauf/Prüfung übernehmen |
+| `POST`  | `/api/v1/handling-units/:id/unpack`                         | Gesamten Inhalt kontrolliert auf Lagerplatz zurückbuchen |
+| `GET`   | `/api/v1/handling-units/:id/events`                         | Audit-Verlauf der Case-Bewegungen |
+
 ### LED-Steuerung
 
 | Methode | Pfad                                | Beschreibung                              |
@@ -231,6 +271,8 @@ Das Label Studio verwendet für Geräte, Kabel, Cases und Lagerzonen jeweils get
 Die Migration `034_label_studio_and_direct_print.sql` ergänzt Templates um Zieltyp und Revision und legt `label_assets`, `label_printers` sowie `label_print_jobs` an. `035_cable_labels_and_pdf_export.sql` benennt das Standardtemplate konsistent für Kabel. `036_pdf_label_cache.sql` verwirft alte PNG-Cachepfade; die Dateien werden beim Start gezielt aus dem Label-Cache entfernt und bei Bedarf als PDF neu erzeugt. Die Migrationen werden beim WarehouseCore-Start idempotent angewendet.
 
 Die Migration `038_device_status_lifecycle.sql` trennt Jobabschluss und physische Rückgabe. Ausgegebene Geräte abgeschlossener oder stornierter Jobs wechseln zu `return_pending`, bis ein Einlagerungsscan Lagerplatz und Rückgabe bestätigt. Nicht belegbare alte `on_job`-Werte werden je nach bekanntem Lagerkontext zu `in_storage` oder `location_unknown` normalisiert.
+
+Die Migration `039_warehouse_operations_and_handling_units.sql` erweitert Lagerorte um Prozessrollen, Betriebszustände, Kapazitäts- und Inventursteuerung. Sie ergänzt dynamische/feste/hybride Handling Units, Mengen- und Untercase-Inhalte, Ereignisprotokolle, Lageraufgaben und scannerbasierte Zählinventuren. Die Migration verändert keine bestehenden Geräte-Lagerplatzzuordnungen automatisch.
 
 🔒 = Authentifizierung via `session_id` Cookie erforderlich
 
