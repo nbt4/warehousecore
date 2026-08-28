@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Package } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from '../lib/toast';
 
 interface LowStockAlert {
@@ -19,135 +20,104 @@ interface LowStockResponse {
 }
 
 export function LowStockAlertsWidget() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState<LowStockAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadLowStockAlerts();
-    // Refresh alerts every 5 minutes
-    const interval = setInterval(loadLowStockAlerts, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadLowStockAlerts = async () => {
+  const loadLowStockAlerts = useCallback(async (notify = false) => {
     try {
       setLoading(true);
       const response = await fetch('/api/v1/inventory/low-stock');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data: LowStockResponse = await response.json();
       setAlerts(data.alerts || []);
       setError(null);
     } catch (err) {
-      toast.error('Failed to load low stock alerts:' + " " + String(err));
-      setError('Failed to load alerts');
+      if (notify) toast.error(`Mindestbestände konnten nicht geladen werden: ${String(err)}`);
+      setError('Mindestbestände konnten nicht geladen werden.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadLowStockAlerts();
+    const interval = window.setInterval(() => void loadLowStockAlerts(), 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [loadLowStockAlerts]);
 
   if (loading && alerts.length === 0) {
     return (
-      <div className="glass rounded-xl p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-500" />
-          <h3 className="text-lg font-semibold text-white">Low Stock Alerts</h3>
-        </div>
-        <p className="text-sm text-gray-400">Loading...</p>
+      <div className="card p-4 sm:p-5">
+        <WidgetTitle icon={RefreshCw} title="Mindestbestände" spinning />
+        <p className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>Bestände werden geprüft…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="glass rounded-xl p-4 border border-red-500/30">
-        <div className="flex items-center gap-3 mb-3">
-          <AlertTriangle className="w-5 h-5 text-red-500" />
-          <h3 className="text-lg font-semibold text-white">Low Stock Alerts</h3>
-        </div>
-        <p className="text-sm text-red-400">{error}</p>
+      <div className="card p-4 sm:p-5" style={{ borderColor: 'rgba(var(--color-error-rgb),0.35)' }}>
+        <WidgetTitle icon={AlertTriangle} title="Mindestbestände" color="var(--color-error)" />
+        <p className="mt-3 text-sm" style={{ color: 'var(--color-error)' }}>{error}</p>
+        <button type="button" onClick={() => void loadLowStockAlerts(true)} className="mt-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+          <RefreshCw className="h-3.5 w-3.5" /> Erneut versuchen
+        </button>
       </div>
     );
   }
 
   if (alerts.length === 0) {
     return (
-      <div className="glass rounded-xl p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <Package className="w-5 h-5 text-green-500" />
-          <h3 className="text-lg font-semibold text-white">Low Stock Alerts</h3>
-        </div>
-        <p className="text-sm text-gray-400">All items are adequately stocked ✓</p>
+      <div className="card p-4 sm:p-5">
+        <WidgetTitle icon={CheckCircle2} title="Mindestbestände" color="var(--color-success)" />
+        <p className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>Alle überwachten Artikel liegen über ihrem Mindestbestand.</p>
       </div>
     );
   }
 
   return (
-    <div className="glass rounded-xl p-4 border border-yellow-500/30">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-500" />
-          <h3 className="text-lg font-semibold text-white">Low Stock Alerts</h3>
+    <div className="card p-4 sm:p-5" style={{ borderColor: 'rgba(var(--color-warning-rgb),0.35)' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <WidgetTitle icon={AlertTriangle} title="Mindestbestände" color="var(--color-warning)" />
+          <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>Nachbestellung oder Bestandsprüfung erforderlich</p>
         </div>
-        <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 text-xs font-semibold rounded-full">
-          {alerts.length}
-        </span>
+        <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: 'rgba(var(--color-warning-rgb),0.14)', color: 'var(--color-warning)' }}>{alerts.length}</span>
       </div>
 
-      <div className="space-y-2 max-h-64 overflow-y-auto">
-        {alerts.map((alert) => (
-          <div
-            key={alert.product_id}
-            className="bg-white/5 rounded-lg p-3 border border-yellow-500/20 hover:bg-white/10 transition-colors"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="text-sm font-semibold text-white truncate">
-                    {alert.name}
-                  </h4>
-                  <span className={`px-2 py-0.5 text-xs rounded ${
-                    alert.is_accessory
-                      ? 'bg-blue-500/20 text-blue-300'
-                      : 'bg-purple-500/20 text-purple-300'
-                  }`}>
-                    {alert.is_accessory ? 'Accessory' : 'Consumable'}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mb-1">
-                  Barcode: {alert.generic_barcode}
-                </p>
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-yellow-400 font-semibold">
-                    {alert.stock_quantity.toFixed(2)} {alert.count_type_abbr}
-                  </span>
-                  <span className="text-gray-500">•</span>
-                  <span className="text-gray-400">
-                    Min: {alert.min_stock_level.toFixed(2)} {alert.count_type_abbr}
-                  </span>
-                </div>
-              </div>
-              <div className="flex-shrink-0">
-                <div className="text-right">
-                  <div className="text-xs font-semibold text-yellow-500">
-                    {Math.round((alert.stock_quantity / alert.min_stock_level) * 100)}%
+      <div className="mt-4 max-h-64 space-y-2 overflow-y-auto pr-1">
+        {alerts.map((alert) => {
+          const percentage = alert.min_stock_level > 0
+            ? Math.round((alert.stock_quantity / alert.min_stock_level) * 100)
+            : 0;
+          return (
+            <button key={alert.product_id} type="button" onClick={() => navigate('/products')} className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-white/[0.04]" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{alert.name}</h4>
+                    <span className="rounded px-2 py-0.5 text-[10px]" style={{ background: alert.is_accessory ? 'rgba(var(--color-info-rgb),0.14)' : 'rgba(var(--color-warning-rgb),0.14)', color: alert.is_accessory ? 'var(--color-info)' : 'var(--color-warning)' }}>{alert.is_accessory ? 'Zubehör' : 'Verbrauch'}</span>
                   </div>
-                  <div className="text-xs text-gray-500">of min</div>
+                  <p className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{alert.generic_barcode || 'Ohne Barcode'}</p>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}><strong style={{ color: 'var(--color-warning)' }}>{alert.stock_quantity.toFixed(2)} {alert.count_type_abbr}</strong> · Minimum {alert.min_stock_level.toFixed(2)} {alert.count_type_abbr}</p>
                 </div>
+                <span className="text-xs font-bold" style={{ color: 'var(--color-warning)' }}>{percentage}%</span>
               </div>
-            </div>
-          </div>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
-      <button
-        onClick={loadLowStockAlerts}
-        className="mt-3 w-full py-2 text-xs font-semibold text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-      >
-        Refresh
-      </button>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => void loadLowStockAlerts(true)} disabled={loading} className="flex items-center justify-center gap-2 rounded-lg border py-2 text-xs font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Aktualisieren</button>
+        <button type="button" onClick={() => navigate('/products')} className="rounded-lg py-2 text-xs font-semibold" style={{ background: 'var(--accent-red)', color: 'var(--text-primary)' }}>Artikel öffnen</button>
+      </div>
     </div>
   );
+}
+
+function WidgetTitle({ icon: Icon, title, color = 'var(--text-secondary)', spinning = false }: { icon: typeof AlertTriangle; title: string; color?: string; spinning?: boolean }) {
+  return <div className="flex items-center gap-3"><Icon className={`h-5 w-5 ${spinning ? 'animate-spin' : ''}`} style={{ color }} /><h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>{title}</h3></div>;
 }

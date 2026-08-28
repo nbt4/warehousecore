@@ -333,6 +333,19 @@ export interface DashboardStats {
   maintenance: number;
   retired: number;
   total: number;
+  ready_for_dispatch: number;
+  unavailable: number;
+  movements_today: number;
+  intakes_today: number;
+  outtakes_today: number;
+  transfers_today: number;
+  active_jobs: number;
+  cases_total: number;
+  cases_on_job: number;
+  cases_return_check: number;
+  cases_packing: number;
+  open_defects: number;
+  overdue_inspections: number;
 }
 
 export interface Movement {

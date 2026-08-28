@@ -344,7 +344,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 }
 
 // HealthCheck returns server health status
-var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.58")
+var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.59")
 
 // HandleScan processes barcode/QR scan requests
 func HandleScan(w http.ResponseWriter, r *http.Request) {
@@ -2743,6 +2743,8 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
 	var inStorage, onJob, returnPending, locationUnknown, available, blocked, defective, maintenance, retired, total int
+	var readyForDispatch, unavailable, movementsToday, intakesToday, outtakesToday, transfersToday int
+	var activeJobs, casesTotal, casesOnJob, casesReturnCheck, casesPacking, openDefects, overdueInspections int
 	err := db.QueryRow(`
 		SELECT
 			COUNT(*) FILTER (WHERE status = 'in_storage'),
@@ -2761,18 +2763,59 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load device statistics"})
 		return
 	}
+	err = db.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM devices WHERE status='in_storage' AND condition_status='available'),
+		(SELECT COUNT(*) FROM devices WHERE condition_status<>'available'),
+		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE),
+		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type='intake'),
+		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type='outtake'),
+		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type IN ('transfer','move','assignment')),
+		(SELECT COUNT(*) FROM jobs j LEFT JOIN status s ON s.statusid=j.statusid
+		 WHERE j.deleted_at IS NULL AND LOWER(TRIM(COALESCE(s.status,''))) NOT IN
+		 ('abgeschlossen','abgerechnet','storniert','completed','paid','canceled','cancelled')),
+		(SELECT COUNT(*) FROM cases),
+		(SELECT COUNT(*) FROM cases WHERE workflow_status='on_job'),
+		(SELECT COUNT(*) FROM cases WHERE workflow_status='return_check'),
+		(SELECT COUNT(*) FROM cases WHERE workflow_status IN ('packing','complete','sealed','staged')),
+		(SELECT COUNT(*) FROM defect_reports WHERE status IN ('open','in_progress'))
+	`).Scan(&readyForDispatch, &unavailable, &movementsToday, &intakesToday, &outtakesToday, &transfersToday,
+		&activeJobs, &casesTotal, &casesOnJob, &casesReturnCheck, &casesPacking, &openDefects)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load operational dashboard statistics"})
+		return
+	}
+	// Inspection schedules are an optional legacy feature and are not present in
+	// every installation. Keep the operational dashboard available without them.
+	var inspectionSchedulesExist bool
+	if err := db.QueryRow(`SELECT to_regclass('public.inspection_schedules') IS NOT NULL`).Scan(&inspectionSchedulesExist); err == nil && inspectionSchedulesExist {
+		_ = db.QueryRow(`SELECT COUNT(*) FROM inspection_schedules
+			WHERE is_active=TRUE AND next_inspection<CURRENT_TIMESTAMP`).Scan(&overdueInspections)
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"in_storage":       inStorage,
-		"on_job":           onJob,
-		"return_pending":   returnPending,
-		"location_unknown": locationUnknown,
-		"available":        available,
-		"blocked":          blocked,
-		"defective":        defective,
-		"maintenance":      maintenance,
-		"retired":          retired,
-		"total":            total,
+		"in_storage":          inStorage,
+		"on_job":              onJob,
+		"return_pending":      returnPending,
+		"location_unknown":    locationUnknown,
+		"available":           available,
+		"blocked":             blocked,
+		"defective":           defective,
+		"maintenance":         maintenance,
+		"retired":             retired,
+		"total":               total,
+		"ready_for_dispatch":  readyForDispatch,
+		"unavailable":         unavailable,
+		"movements_today":     movementsToday,
+		"intakes_today":       intakesToday,
+		"outtakes_today":      outtakesToday,
+		"transfers_today":     transfersToday,
+		"active_jobs":         activeJobs,
+		"cases_total":         casesTotal,
+		"cases_on_job":        casesOnJob,
+		"cases_return_check":  casesReturnCheck,
+		"cases_packing":       casesPacking,
+		"open_defects":        openDefects,
+		"overdue_inspections": overdueInspections,
 	})
 }
 
