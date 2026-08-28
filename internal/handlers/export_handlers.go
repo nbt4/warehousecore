@@ -240,9 +240,9 @@ func exportProductsWithDeviceCount() ([]byte, error) {
 			p.name,
 			c.name as category_name,
 			COUNT(d.deviceID) as device_count,
-			SUM(CASE WHEN d.status = 'available' THEN 1 ELSE 0 END) as available_count,
-			SUM(CASE WHEN d.status = 'in_use' THEN 1 ELSE 0 END) as in_use_count,
-			SUM(CASE WHEN d.status = 'defect' THEN 1 ELSE 0 END) as defect_count
+			SUM(CASE WHEN d.status = 'in_storage' AND d.condition_status = 'available' THEN 1 ELSE 0 END) as available_count,
+			SUM(CASE WHEN d.status = 'on_job' THEN 1 ELSE 0 END) as in_use_count,
+			SUM(CASE WHEN d.condition_status IN ('defective','blocked','maintenance') THEN 1 ELSE 0 END) as defect_count
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryid
 		LEFT JOIN devices d ON p.productID = d.productID

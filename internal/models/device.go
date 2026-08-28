@@ -11,12 +11,20 @@ type DeviceStatus string
 const (
 	StatusInStorage       DeviceStatus = "in_storage"
 	StatusOnJob           DeviceStatus = "on_job"
-	StatusDefective       DeviceStatus = "defective"
-	StatusRepair          DeviceStatus = "repair"
-	StatusFree            DeviceStatus = "free"
-	StatusRented          DeviceStatus = "rented"
 	StatusReturnPending   DeviceStatus = "return_pending"
 	StatusLocationUnknown DeviceStatus = "location_unknown"
+)
+
+// DeviceCondition describes whether a device may be used. It is deliberately
+// independent from DeviceStatus, which only describes the physical flow.
+type DeviceCondition string
+
+const (
+	ConditionAvailable   DeviceCondition = "available"
+	ConditionBlocked     DeviceCondition = "blocked"
+	ConditionDefective   DeviceCondition = "defective"
+	ConditionMaintenance DeviceCondition = "maintenance"
+	ConditionRetired     DeviceCondition = "retired"
 )
 
 // Device represents a physical device in the warehouse
@@ -28,6 +36,7 @@ type Device struct {
 	Barcode           sql.NullString `json:"barcode" db:"barcode"`
 	QRCode            sql.NullString `json:"qr_code" db:"qr_code"`
 	Status            string         `json:"status" db:"status"`
+	ConditionStatus   string         `json:"condition_status" db:"condition_status"`
 	CurrentLocation   sql.NullString `json:"current_location" db:"current_location"`
 	ZoneID            sql.NullInt64  `json:"zone_id,omitempty" db:"zone_id"`
 	CaseID            sql.NullInt64  `json:"case_id,omitempty" db:"case_id"`

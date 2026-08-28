@@ -11,7 +11,11 @@ export function Dashboard() {
     on_job: 0,
     return_pending: 0,
     location_unknown: 0,
+    available: 0,
+    blocked: 0,
     defective: 0,
+    maintenance: 0,
+    retired: 0,
     total: 0,
   });
   const [recentActivity, setRecentActivity] = useState<Movement[]>([]);
@@ -161,12 +165,44 @@ export function Dashboard() {
       valueColor: 'var(--color-warning)',
     },
     {
+      title: 'Einsatzbereit',
+      value: stats.available,
+      icon: Warehouse,
+      iconColor: 'var(--color-success)',
+      iconBg: 'rgba(var(--color-success-rgb), 0.1)',
+      valueColor: 'var(--color-success)',
+    },
+    {
+      title: 'Gesperrt',
+      value: stats.blocked,
+      icon: AlertTriangle,
+      iconColor: 'var(--color-warning)',
+      iconBg: 'rgba(var(--color-warning-rgb), 0.1)',
+      valueColor: 'var(--color-warning)',
+    },
+    {
       title: 'Defekt',
       value: stats.defective,
       icon: AlertTriangle,
       iconColor: 'var(--color-warning)',
       iconBg: 'rgba(var(--color-warning-rgb), 0.1)',
       valueColor: 'var(--color-warning)',
+    },
+    {
+      title: 'In Wartung',
+      value: stats.maintenance,
+      icon: Clock3,
+      iconColor: 'var(--accent-red-light)',
+      iconBg: 'rgba(var(--accent-red-rgb), 0.1)',
+      valueColor: 'var(--accent-red-light)',
+    },
+    {
+      title: 'Ausgemustert',
+      value: stats.retired,
+      icon: Package,
+      iconColor: 'var(--text-muted)',
+      iconBg: 'var(--bg-hover)',
+      valueColor: 'var(--text-secondary)',
     },
     {
       title: 'Gesamt',
@@ -196,7 +232,7 @@ export function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (

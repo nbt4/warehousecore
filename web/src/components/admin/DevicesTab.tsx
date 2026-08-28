@@ -13,8 +13,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { api, devicesAdminApi, labelsApi } from '../../lib/api';
-import type { Device, DeviceCreateInput, DeviceUpdateInput, LabelTemplate } from '../../lib/api';
+import { api, devicesAdminApi, devicesApi, labelsApi } from '../../lib/api';
+import type { Device, DeviceCreateInput, DeviceStatusHistory, DeviceUpdateInput, LabelTemplate } from '../../lib/api';
 import { useBlockBodyScroll } from '../../hooks/useBlockBodyScroll';
 import { toast } from '../../lib/toast';
 import { formatStatus, getStatusColor } from '../../lib/utils';
@@ -35,6 +35,7 @@ interface Zone {
 interface DeviceFormData {
   product_id?: number;
   status: string;
+  condition_status: string;
   serial_number: string;
   barcode: string;
   qr_code: string;
@@ -56,7 +57,8 @@ interface DeviceFormData {
 }
 
 const initialFormData: DeviceFormData = {
-  status: 'free',
+  status: 'location_unknown',
+  condition_status: 'available',
   serial_number: '',
   barcode: '',
   qr_code: '',
@@ -89,6 +91,7 @@ export function DevicesTab() {
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewDevice, setViewDevice] = useState<Device | null>(null);
+  const [statusHistory, setStatusHistory] = useState<DeviceStatusHistory[]>([]);
   const [editingDevice, setEditingDevice] = useState<string | null>(null);
   const [formData, setFormData] = useState<DeviceFormData>(initialFormData);
   const [products, setProducts] = useState<Product[]>([]);
@@ -98,6 +101,7 @@ export function DevicesTab() {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [conditionFilter, setConditionFilter] = useState<string>('');
   const [productFilter, setProductFilter] = useState<number | ''>('');
   const [zoneFilter, setZoneFilter] = useState<number | ''>('');
   const [refreshing, setRefreshing] = useState(false);
@@ -150,6 +154,7 @@ export function DevicesTab() {
   const clearFilters = () => {
     setSearchTerm('');
     setStatusFilter('');
+    setConditionFilter('');
     setProductFilter('');
     setZoneFilter('');
   };
@@ -165,11 +170,12 @@ export function DevicesTab() {
       device.notes?.toLowerCase().includes(debouncedSearch.toLowerCase());
 
     const matchesStatus = !statusFilter || device.status === statusFilter;
+    const matchesCondition = !conditionFilter || (device.condition_status || 'available') === conditionFilter;
     const matchesProduct =
       productFilter === '' || device.product_id === productFilter;
     const matchesZone = zoneFilter === '' || device.zone_id === zoneFilter;
 
-    return matchesSearch && matchesStatus && matchesProduct && matchesZone;
+    return matchesSearch && matchesStatus && matchesCondition && matchesProduct && matchesZone;
   });
 
   const openCreateModal = () => {
@@ -182,7 +188,8 @@ export function DevicesTab() {
     setEditingDevice(device.device_id);
     setFormData({
       product_id: device.product_id,
-      status: device.status || 'free',
+      status: device.status || 'location_unknown',
+      condition_status: device.condition_status || 'available',
       serial_number: device.serial_number || '',
       barcode: device.barcode || '',
       qr_code: device.qr_code || '',
@@ -228,12 +235,11 @@ export function DevicesTab() {
         // Update existing device
         const updateData: DeviceUpdateInput = {
           product_id: formData.product_id,
-          status: formData.status,
+          condition_status: formData.condition_status,
           serial_number: formData.serial_number || undefined,
           barcode: formData.barcode || undefined,
           qr_code: formData.qr_code || undefined,
-          current_location: formData.current_location || undefined,
-          zone_id: formData.zone_id,
+          zone_id: formData.zone_id ?? null,
           condition_rating: formData.condition_rating,
           usage_hours: formData.usage_hours,
           notes: formData.notes || undefined,
@@ -257,11 +263,10 @@ export function DevicesTab() {
         // Create new device(s)
         const createData: DeviceCreateInput = {
           product_id: formData.product_id!,
-          status: formData.status,
+          condition_status: formData.condition_status,
           serial_number: formData.serial_number || undefined,
           barcode: formData.barcode || undefined,
           qr_code: formData.qr_code || undefined,
-          current_location: formData.current_location || undefined,
           zone_id: formData.zone_id,
           condition_rating: formData.condition_rating,
           usage_hours: formData.usage_hours,
@@ -298,11 +303,13 @@ export function DevicesTab() {
 
   const handleViewDevice = async (device: Device) => {
     try {
-      const { data } = await devicesAdminApi.getById(device.device_id);
-      setViewDevice(data);
+      const [detail, history] = await Promise.all([devicesAdminApi.getById(device.device_id),devicesApi.getStatusHistory(device.device_id)]);
+      setViewDevice(detail.data);
+      setStatusHistory(history.data || []);
     } catch (error) {
       toast.error('Failed to load device details:' + " " + String(error));
       setViewDevice(device);
+      setStatusHistory([]);
     }
   };
 
@@ -340,7 +347,7 @@ export function DevicesTab() {
 
       {/* Filters */}
       <div className="glass-dark rounded-xl p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
           {/* Search */}
           <div className="relative lg:col-span-2">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -360,14 +367,16 @@ export function DevicesTab() {
             className="input-field"
           >
             <option value="">Alle Status</option>
-            <option value="free">Frei</option>
             <option value="in_storage">Im Lager</option>
             <option value="on_job">Ausgegeben</option>
             <option value="return_pending">Rückgabe offen</option>
             <option value="location_unknown">Standort ungeklärt</option>
-            <option value="defective">Defekt</option>
-            <option value="maintenance">Wartung</option>
-            <option value="retired">Ausgemustert</option>
+          </select>
+
+          <select value={conditionFilter} onChange={(e) => setConditionFilter(e.target.value)} className="input-field">
+            <option value="">Alle Betriebszustände</option>
+            <option value="available">Einsatzbereit</option><option value="blocked">Gesperrt</option>
+            <option value="defective">Defekt</option><option value="maintenance">Wartung</option><option value="retired">Ausgemustert</option>
           </select>
 
           {/* Product Filter */}
@@ -446,7 +455,7 @@ export function DevicesTab() {
         <div className="text-center py-12 text-gray-400">Lädt Geräte...</div>
       ) : filteredDevices.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          {debouncedSearch || statusFilter || productFilter || zoneFilter
+          {debouncedSearch || statusFilter || conditionFilter || productFilter || zoneFilter
             ? 'Keine Geräte gefunden mit den aktuellen Filtern'
             : 'Noch keine Geräte vorhanden'}
         </div>
@@ -461,7 +470,7 @@ export function DevicesTab() {
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Serial</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Status</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Zone</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Zustand</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Betriebszustand</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-300">Aktionen</th>
                 </tr>
               </thead>
@@ -489,7 +498,7 @@ export function DevicesTab() {
                       {device.zone_code ? `${device.zone_code} - ${device.zone_name}` : '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-300">
-                      {device.condition_rating ? `${device.condition_rating}/10` : '-'}
+                      <span className={`rounded-full bg-white/10 px-2 py-1 text-xs font-semibold ${getStatusColor(device.condition_status || 'available')}`}>{formatStatus(device.condition_status || 'available')}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
@@ -554,6 +563,8 @@ export function DevicesTab() {
                   {formatStatus(device.status)}
                 </span>
               </div>
+
+              <div className={`text-xs font-semibold ${getStatusColor(device.condition_status || 'available')}`}>Betriebszustand: {formatStatus(device.condition_status || 'available')}</div>
 
               <div className="space-y-1 text-sm">
                 {device.serial_number && (
@@ -703,27 +714,14 @@ export function DevicesTab() {
                 </div>
               )}
 
-              {/* Status */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Physical status is derived from the actual locator/workflow. */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Status *
+                    Lagerstatus
                   </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="input-field w-full"
-                    required
-                  >
-                    <option value="free">Frei</option>
-                    <option value="in_storage">Im Lager</option>
-                    <option value="on_job" disabled>Ausgegeben (nur Scanner)</option>
-                    <option value="return_pending" disabled>Rückgabe offen (nur Scanner)</option>
-                    <option value="location_unknown">Standort ungeklärt</option>
-                    <option value="defective">Defekt</option>
-                    <option value="maintenance">Wartung</option>
-                    <option value="retired">Ausgemustert</option>
-                  </select>
+                  <div className="input-field w-full opacity-80">{formatStatus(formData.zone_id ? 'in_storage' : formData.status)}</div>
+                  <p className="mt-1 text-xs text-gray-500">Automatisch aus Lagerplatz, Case, Ausgabe und Rücklauf.</p>
                 </div>
 
                 <div>
@@ -732,9 +730,7 @@ export function DevicesTab() {
                   </label>
                   <select
                     value={formData.zone_id || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, zone_id: e.target.value ? Number(e.target.value) : undefined })
-                    }
+                    onChange={(e) => { const zoneId=e.target.value?Number(e.target.value):undefined; setFormData({ ...formData, zone_id:zoneId, status:zoneId?'in_storage':'location_unknown' }); }}
                     className="input-field w-full"
                   >
                     <option value="">Keine Zone</option>
@@ -745,6 +741,7 @@ export function DevicesTab() {
                     ))}
                   </select>
                 </div>
+                <div><label className="block text-sm font-medium text-gray-300 mb-2">Betriebszustand *</label><select value={formData.condition_status} onChange={(e)=>setFormData({...formData,condition_status:e.target.value})} className="input-field w-full" required><option value="available">Einsatzbereit</option><option value="blocked">Gesperrt</option><option value="defective">Defekt</option><option value="maintenance">In Wartung</option><option value="retired">Ausgemustert</option></select><p className="mt-1 text-xs text-gray-500">Bleibt bei Umlagerungen und Case-Vorgängen erhalten.</p></div>
               </div>
 
               {/* Serial, Barcode, QR */}
@@ -784,20 +781,7 @@ export function DevicesTab() {
                 </div>
               </div>
 
-              {/* Location and Condition */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Aktueller Standort
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.current_location}
-                    onChange={(e) => setFormData({ ...formData, current_location: e.target.value })}
-                    className="input-field w-full"
-                  />
-                </div>
-                <div>
+              <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Zustand (1-10)
                   </label>
@@ -815,7 +799,6 @@ export function DevicesTab() {
                     }
                     className="input-field w-full"
                   />
-              </div>
               </div>
 
               {/* Dates */}
@@ -1008,7 +991,11 @@ export function DevicesTab() {
                 )}
                 <div>
                   <p className="text-sm text-gray-400">Status</p>
-                  <p className="text-white font-semibold">{viewDevice.status}</p>
+                  <p className="text-white font-semibold">{formatStatus(viewDevice.status)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400">Betriebszustand</p>
+                  <p className="text-white font-semibold">{formatStatus(viewDevice.condition_status || 'available')}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-400">Seriennummer</p>
@@ -1088,6 +1075,11 @@ export function DevicesTab() {
                   <p className="whitespace-pre-line">{viewDevice.notes}</p>
                 </div>
               )}
+
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <p className="mb-3 font-semibold text-white">Statusverlauf</p>
+                {statusHistory.length === 0 ? <p className="text-sm text-gray-500">Noch keine Änderung seit Einführung der Statushistorie.</p> : <div className="max-h-56 space-y-2 overflow-y-auto">{statusHistory.map((entry)=><div key={entry.history_id} className="rounded-lg border border-white/5 bg-black/20 p-2 text-xs"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold text-gray-200">{formatStatus(entry.new_status)} · {formatStatus(entry.new_condition)}</span><span className="text-gray-500">{new Date(entry.changed_at).toLocaleString('de-DE')}</span></div><div className="mt-1 text-gray-400">{entry.change_source.replaceAll('_',' ')}{entry.new_location?` · ${entry.new_location}`:''}</div></div>)}</div>}
+              </div>
 
               <div className="flex flex-wrap gap-3 pt-4">
                 <button

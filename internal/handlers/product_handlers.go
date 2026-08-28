@@ -1314,7 +1314,7 @@ func CreateDevicesForProduct(w http.ResponseWriter, r *http.Request) {
 	// Create devices one by one and track failures
 	failedCount := 0
 	for i := 0; i < req.Quantity; i++ {
-		if _, err := db.Exec("INSERT INTO devices (productID, status) VALUES ($1, 'free')", req.ProductID); err != nil {
+		if _, err := db.Exec("INSERT INTO devices (productID, status, current_location) VALUES ($1, 'location_unknown', 'location_unknown')", req.ProductID); err != nil {
 			log.Printf("[DEVICE CREATE ERROR] Failed to create device %d/%d for product %d: %v", i+1, req.Quantity, req.ProductID, err)
 			failedCount++
 		}

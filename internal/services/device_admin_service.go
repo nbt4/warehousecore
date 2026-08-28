@@ -44,9 +44,22 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 		input.Quantity = 1
 	}
 
-	status := strings.TrimSpace(input.Status)
-	if status == "" {
-		status = "free"
+	status := "location_unknown"
+	currentLocation := "location_unknown"
+	if input.ZoneID != nil {
+		status = "in_storage"
+		currentLocation = "warehouse"
+	}
+	requestedStatus := strings.TrimSpace(input.Status)
+	if requestedStatus != "" && requestedStatus != status {
+		return nil, fmt.Errorf("Lagerstatus wird aus Lagerplatz, Case und Ausgabe automatisch ermittelt")
+	}
+	conditionStatus := strings.TrimSpace(input.ConditionStatus)
+	if conditionStatus == "" {
+		conditionStatus = "available"
+	}
+	if !validDeviceCondition(conditionStatus) {
+		return nil, fmt.Errorf("ungültiger Betriebszustand %q", conditionStatus)
 	}
 
 	autoGenerateLabel := true
@@ -66,6 +79,11 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if input.ZoneID != nil {
+		if err := ValidateStorageDestination(tx, int64(*input.ZoneID), float64(input.Quantity)); err != nil {
+			return nil, err
+		}
+	}
 
 	createdIDs := make([]string, 0, input.Quantity)
 	providedBarcode := input.Barcode != nil && strings.TrimSpace(*input.Barcode) != ""
@@ -76,16 +94,17 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO devices (
-				productID, serialnumber, status, current_location, zone_id,
+				productID, serialnumber, status, condition_status, current_location, zone_id,
 				condition_rating, usage_hours, purchaseDate, lastmaintenance, nextmaintenance,
 				notes, barcode, qr_code
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		`,
 			input.ProductID,
 			nullableString(serialValue),
 			status,
-			nullableString(trimPtr(input.CurrentLocation)),
+			conditionStatus,
+			currentLocation,
 			nullableInt(input.ZoneID),
 			nullableFloat(input.ConditionRating),
 			nullableFloat(input.UsageHours),
@@ -164,9 +183,23 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	if input.ZoneID.Set && input.ZoneID.Valid {
+		if err := ValidateStorageDestination(tx, int64(input.ZoneID.Value), 1); err != nil {
+			return nil, err
+		}
+	}
 
 	setClauses := make([]string, 0, 12)
 	args := make([]interface{}, 0, 12)
+	var currentStatus string
+	var currentZone sql.NullInt64
+	var caseID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT d.status,d.zone_id,dc.caseID FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID WHERE d.deviceID=$1 FOR UPDATE OF d`, deviceID).
+		Scan(&currentStatus, &currentZone, &caseID); errors.Is(err, sql.ErrNoRows) {
+		return nil, repository.ErrNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to load device state: %w", err)
+	}
 
 	if input.ProductID.Set {
 		setClauses = append(setClauses, fmt.Sprintf("productID = $%d", len(args)+1))
@@ -178,12 +211,44 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	}
 
 	if input.Status.Set {
-		setClauses = append(setClauses, fmt.Sprintf("status = $%d", len(args)+1))
-		if input.Status.Valid {
-			args = append(args, strings.TrimSpace(input.Status.Value))
-		} else {
-			args = append(args, nil)
+		if !input.Status.Valid {
+			return nil, errors.New("Lagerstatus darf nicht leer sein")
 		}
+		requested := strings.TrimSpace(input.Status.Value)
+		if requested == "on_job" || requested == "return_pending" {
+			return nil, errors.New("Ausgabe und Rücklauf werden ausschließlich über Scanner- und Jobprozesse gesetzt")
+		}
+		if requested != "in_storage" && requested != "location_unknown" {
+			return nil, fmt.Errorf("ungültiger Lagerstatus %q", requested)
+		}
+		if requested == "in_storage" {
+			zoneKnown := (input.ZoneID.Set && input.ZoneID.Valid) || (!input.ZoneID.Set && currentZone.Valid)
+			if !zoneKnown && !caseID.Valid {
+				return nil, errors.New("Im Lager erfordert einen Lagerplatz oder ein Case")
+			}
+		} else if currentStatus == "on_job" || currentStatus == "return_pending" {
+			return nil, errors.New("Lagerstatus eines ausgegebenen Geräts kann nicht administrativ überschrieben werden")
+		}
+		if input.ZoneID.Set {
+			expected := "location_unknown"
+			if input.ZoneID.Valid || caseID.Valid {
+				expected = "in_storage"
+			}
+			if requested != expected {
+				return nil, errors.New("Lagerstatus passt nicht zum gewählten Lagerplatz bzw. Case")
+			}
+		} else {
+			setClauses = append(setClauses, fmt.Sprintf("status = $%d", len(args)+1))
+			args = append(args, requested)
+		}
+	}
+
+	if input.ConditionStatus.Set {
+		if !input.ConditionStatus.Valid || !validDeviceCondition(strings.TrimSpace(input.ConditionStatus.Value)) {
+			return nil, errors.New("ungültiger Betriebszustand")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("condition_status = $%d", len(args)+1))
+		args = append(args, strings.TrimSpace(input.ConditionStatus.Value))
 	}
 
 	if input.SerialNumber.Set {
@@ -213,15 +278,6 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 		}
 	}
 
-	if input.CurrentLocation.Set {
-		setClauses = append(setClauses, fmt.Sprintf("current_location = $%d", len(args)+1))
-		if input.CurrentLocation.Valid {
-			args = append(args, nullableStringPtr(&input.CurrentLocation.Value))
-		} else {
-			args = append(args, nil)
-		}
-	}
-
 	if input.ZoneID.Set {
 		setClauses = append(setClauses, fmt.Sprintf("zone_id = $%d", len(args)+1))
 		if input.ZoneID.Valid {
@@ -229,6 +285,22 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 			args = append(args, &id)
 		} else {
 			args = append(args, nil)
+		}
+		if currentStatus != "on_job" && currentStatus != "return_pending" {
+			setClauses = append(setClauses, fmt.Sprintf("status = $%d", len(args)+1))
+			if input.ZoneID.Valid || caseID.Valid {
+				args = append(args, "in_storage")
+			} else {
+				args = append(args, "location_unknown")
+			}
+			setClauses = append(setClauses, fmt.Sprintf("current_location = $%d", len(args)+1))
+			if input.ZoneID.Valid {
+				args = append(args, "warehouse")
+			} else if caseID.Valid {
+				args = append(args, fmt.Sprintf("case:%d", caseID.Int64))
+			} else {
+				args = append(args, "location_unknown")
+			}
 		}
 	}
 
@@ -386,7 +458,7 @@ func (s *DeviceAdminService) RegenerateLabel(deviceID string, templateID *int) e
 func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (*models.DeviceWithDetails, error) {
 	var device models.DeviceWithDetails
 	err := s.db.QueryRowContext(ctx, `
-		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status,
+		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
 		       d.current_location, d.zone_id,
 		       d.condition_rating, d.usage_hours, d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
@@ -415,6 +487,7 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 		&device.Barcode,
 		&device.QRCode,
 		&device.Status,
+		&device.ConditionStatus,
 		&device.CurrentLocation,
 		&device.ZoneID,
 		&device.ConditionRating,
@@ -585,4 +658,13 @@ func trimPtr(value *string) *string {
 	}
 	trimmed := strings.TrimSpace(*value)
 	return &trimmed
+}
+
+func validDeviceCondition(value string) bool {
+	switch value {
+	case "available", "blocked", "defective", "maintenance", "retired":
+		return true
+	default:
+		return false
+	}
 }

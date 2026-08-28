@@ -20,6 +20,7 @@ export interface Device {
   qr_code?: string;
   serial_number?: string;
   status: string;
+  condition_status?: string;
   current_location?: string;
   zone_id?: number;
   zone_name?: string;
@@ -43,11 +44,20 @@ export interface Device {
   notes?: string;
 }
 
+export interface DeviceStatusHistory {
+  history_id: number; previous_status?: string; new_status: string;
+  previous_condition?: string; new_condition: string;
+  previous_zone_id?: number; new_zone_id?: number;
+  previous_location?: string; new_location?: string;
+  change_source: string; changed_at: string;
+}
+
 export interface DeviceTreeDevice {
   device_id: string;
   product_id?: number;
   product_name: string;
   status: string;
+  condition_status?: string;
   barcode?: string;
   qr_code?: string;
   serial_number?: string;
@@ -317,7 +327,11 @@ export interface DashboardStats {
   on_job: number;
   return_pending: number;
   location_unknown: number;
+  available: number;
+  blocked: number;
   defective: number;
+  maintenance: number;
+  retired: number;
   total: number;
 }
 
@@ -387,6 +401,7 @@ export const devicesApi = {
     api.get<Device[]>('/devices', { params }),
   getById: (id: string) => api.get<Device>(`/devices/${id}`),
   getMovements: (id: string) => api.get(`/devices/${id}/movements`),
+  getStatusHistory: (id: string) => api.get<DeviceStatusHistory[]>(`/devices/${id}/status-history`),
   getTree: () => api.get<DeviceTreeResponse>('/devices/tree'),
 };
 
@@ -394,6 +409,7 @@ export const devicesApi = {
 export interface DeviceCreateInput {
   product_id: number;
   status?: string;
+  condition_status?: string;
   serial_number?: string;
   barcode?: string;
   qr_code?: string;
@@ -417,11 +433,12 @@ export interface DeviceCreateInput {
 export interface DeviceUpdateInput {
   product_id?: number;
   status?: string;
+  condition_status?: string;
   serial_number?: string;
   barcode?: string;
   qr_code?: string;
   current_location?: string;
-  zone_id?: number;
+  zone_id?: number | null;
   condition_rating?: number;
   usage_hours?: number;
   purchase_date?: string;

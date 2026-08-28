@@ -28,6 +28,12 @@ func isClosedJobStatus(status string) bool {
 }
 
 func validateDeviceForOuttake(device *models.Device, requestedJobID int64) error {
+	if device.ConditionStatus != "" && device.ConditionStatus != "available" {
+		return fmt.Errorf("%s kann mit Betriebszustand %s nicht ausgegeben werden", device.DeviceID, deviceConditionLabel(device.ConditionStatus))
+	}
+	if device.CaseID.Valid {
+		return fmt.Errorf("%s befindet sich in Case %d; bitte das Case ausgeben oder das Gerät zuerst auspacken", device.DeviceID, device.CaseID.Int64)
+	}
 	jobLabel := device.CurrentJobCode
 	if jobLabel == "" && device.CurrentJobID.Valid {
 		jobLabel = fmt.Sprintf("Job %d", device.CurrentJobID.Int64)
@@ -47,14 +53,32 @@ func validateDeviceForOuttake(device *models.Device, requestedJobID int64) error
 		return fmt.Errorf("%s wartet auf Rückgabe; bitte zuerst einlagern", device.DeviceID)
 	case "location_unknown":
 		return fmt.Errorf("Standort von %s ist ungeklärt; bitte zuerst einlagern", device.DeviceID)
-	case "defective", "repair", "maintenance", "blocked", "retired":
-		return fmt.Errorf("%s kann mit Status %s nicht ausgegeben werden", device.DeviceID, deviceStatusLabel(device.Status))
-	case "on_job", "rented":
+	case "on_job":
 		if !device.CurrentJobID.Valid {
 			return fmt.Errorf("%s ist als ausgegeben markiert, hat aber keinen gültigen Job; bitte zuerst einlagern", device.DeviceID)
 		}
 	}
+	if device.Status != "in_storage" {
+		return fmt.Errorf("%s ist nicht als physisch eingelagert bestätigt", device.DeviceID)
+	}
 	return nil
+}
+
+func deviceConditionLabel(status string) string {
+	switch status {
+	case "available":
+		return "Einsatzbereit"
+	case "blocked":
+		return "Gesperrt"
+	case "defective":
+		return "Defekt"
+	case "maintenance":
+		return "In Wartung"
+	case "retired":
+		return "Ausgemustert"
+	default:
+		return "Unbekannt"
+	}
 }
 
 func deviceStatusLabel(status string) string {
@@ -111,6 +135,14 @@ func decorateDeviceStatus(device *models.DeviceWithDetails) {
 			device.StatusDetail = "Lagerplatz: " + device.ZoneName
 		} else {
 			device.StatusDetail = "Im Lager, aber ohne erfassten Lagerplatz"
+		}
+	}
+	if device.ConditionStatus != "" && device.ConditionStatus != "available" {
+		condition := "Betriebszustand: " + deviceConditionLabel(device.ConditionStatus)
+		if device.StatusDetail == "" {
+			device.StatusDetail = condition
+		} else {
+			device.StatusDetail += " · " + condition
 		}
 	}
 }

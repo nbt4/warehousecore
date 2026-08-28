@@ -344,7 +344,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 }
 
 // HealthCheck returns server health status
-var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.57")
+var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.58")
 
 // HandleScan processes barcode/QR scan requests
 func HandleScan(w http.ResponseWriter, r *http.Request) {
@@ -655,7 +655,7 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	qb := NewQueryBuilder()
 	query := `
-		SELECT d.deviceID, d.productID, d.serialnumber, d.status, d.barcode, d.qr_code,
+		SELECT d.deviceID, d.productID, d.serialnumber, d.status, d.condition_status, d.barcode, d.qr_code,
 		       d.zone_id, d.condition_rating, d.usage_hours, d.label_path,
 		       COALESCE(p.name, '') as product_name,
 		       COALESCE(z.name, '') as zone_name,
@@ -699,6 +699,7 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 		Barcode         *string `json:"barcode,omitempty"`
 		QRCode          *string `json:"qr_code,omitempty"`
 		Status          string  `json:"status"`
+		ConditionStatus string  `json:"condition_status"`
 		ZoneID          *int64  `json:"zone_id,omitempty"`
 		ZoneName        string  `json:"zone_name,omitempty"`
 		ZoneCode        string  `json:"zone_code,omitempty"`
@@ -713,7 +714,7 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var d models.DeviceWithDetails
 		var caseName, jobNumber string
-		if err := rows.Scan(&d.DeviceID, &d.ProductID, &d.SerialNumber, &d.Status, &d.Barcode, &d.QRCode,
+		if err := rows.Scan(&d.DeviceID, &d.ProductID, &d.SerialNumber, &d.Status, &d.ConditionStatus, &d.Barcode, &d.QRCode,
 			&d.ZoneID, &d.ConditionRating, &d.UsageHours, &d.LabelPath, &d.ProductName, &d.ZoneName, &d.ZoneCode,
 			&caseName, &jobNumber); err != nil {
 			log.Printf("Error scanning device row: %v", err)
@@ -725,6 +726,7 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 			DeviceID:        d.DeviceID,
 			ProductName:     d.ProductName,
 			Status:          d.Status,
+			ConditionStatus: d.ConditionStatus,
 			ZoneName:        d.ZoneName,
 			ZoneCode:        d.ZoneCode,
 			CaseName:        caseName,
@@ -774,6 +776,7 @@ func GetDevice(w http.ResponseWriter, r *http.Request) {
 		Barcode         *string `json:"barcode,omitempty"`
 		QRCode          *string `json:"qr_code,omitempty"`
 		Status          string  `json:"status"`
+		ConditionStatus string  `json:"condition_status"`
 		ZoneID          *int64  `json:"zone_id,omitempty"`
 		ZoneName        string  `json:"zone_name,omitempty"`
 		ZoneCode        string  `json:"zone_code,omitempty"`
@@ -787,7 +790,7 @@ func GetDevice(w http.ResponseWriter, r *http.Request) {
 	var device models.DeviceWithDetails
 	var caseName, jobNumber string
 	err := db.QueryRow(`
-		SELECT d.deviceID, d.productID, d.serialnumber, d.status, d.barcode, d.qr_code,
+		SELECT d.deviceID, d.productID, d.serialnumber, d.status, d.condition_status, d.barcode, d.qr_code,
 		       d.zone_id, d.condition_rating, d.usage_hours, d.label_path,
 		       COALESCE(p.name, '') as product_name,
 		       COALESCE(z.name, '') as zone_name,
@@ -801,7 +804,7 @@ func GetDevice(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN cases c ON dc.caseID = c.caseID
 		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID AND jd.pack_status IN ('packed', 'issued')
 		WHERE d.deviceID = $1
-	`, deviceID).Scan(&device.DeviceID, &device.ProductID, &device.SerialNumber, &device.Status,
+	`, deviceID).Scan(&device.DeviceID, &device.ProductID, &device.SerialNumber, &device.Status, &device.ConditionStatus,
 		&device.Barcode, &device.QRCode, &device.ZoneID, &device.ConditionRating, &device.UsageHours, &device.LabelPath,
 		&device.ProductName, &device.ZoneName, &device.ZoneCode, &caseName, &jobNumber)
 
@@ -819,6 +822,7 @@ func GetDevice(w http.ResponseWriter, r *http.Request) {
 		DeviceID:        device.DeviceID,
 		ProductName:     device.ProductName,
 		Status:          device.Status,
+		ConditionStatus: device.ConditionStatus,
 		ZoneName:        device.ZoneName,
 		ZoneCode:        device.ZoneCode,
 		CaseName:        caseName,
@@ -855,21 +859,112 @@ func UpdateDeviceStatus(w http.ResponseWriter, r *http.Request) {
 	deviceID := vars["id"]
 
 	var req struct {
-		Status string `json:"status"`
+		Status          string `json:"status"`
+		ConditionStatus string `json:"condition_status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 		return
 	}
 
+	if req.Status == "on_job" || req.Status == "return_pending" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Ausgabe und Rücklauf werden ausschließlich durch Lagerprozesse gesetzt"})
+		return
+	}
+	if req.Status != "" && req.Status != "in_storage" && req.Status != "location_unknown" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiger Lagerstatus"})
+		return
+	}
+	validCondition := map[string]bool{"available": true, "blocked": true, "defective": true, "maintenance": true, "retired": true}
+	if req.ConditionStatus != "" && !validCondition[req.ConditionStatus] {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiger Betriebszustand"})
+		return
+	}
 	db := repository.GetSQLDB()
-	_, err := db.Exec(`UPDATE devices SET status = $1 WHERE deviceID = $2`, req.Status, deviceID)
+	var currentStatus string
+	var hasLocator bool
+	err := db.QueryRow(`SELECT d.status,(d.zone_id IS NOT NULL OR EXISTS(SELECT 1 FROM devicescases dc WHERE dc.deviceID=d.deviceID)) FROM devices d WHERE d.deviceID=$1`, deviceID).Scan(&currentStatus, &hasLocator)
+	if err == sql.ErrNoRows {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Gerät nicht gefunden"})
+		return
+	}
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Status != "" && (currentStatus == "on_job" || currentStatus == "return_pending") {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Aktiven Ausgabe-/Rücklaufstatus zuerst über den Scanner abschließen"})
+		return
+	}
+	if req.Status == "in_storage" && !hasLocator {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Im Lager erfordert einen Lagerplatz oder ein Case"})
+		return
+	}
+	_, err = db.Exec(`UPDATE devices SET
+		status=CASE WHEN $1='' THEN status ELSE $1 END,
+		condition_status=CASE WHEN $2='' THEN condition_status ELSE $2 END,
+		zone_id=CASE WHEN $1='location_unknown' THEN NULL ELSE zone_id END,
+		current_location=CASE WHEN $1='location_unknown' THEN 'location_unknown' ELSE current_location END
+		WHERE deviceID=$3`, req.Status, req.ConditionStatus, deviceID)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Status updated"})
+}
+
+// GetDeviceStatusHistory returns the automatic audit trail for physical status,
+// operational condition and direct location changes.
+func GetDeviceStatusHistory(w http.ResponseWriter, r *http.Request) {
+	deviceID := mux.Vars(r)["id"]
+	rows, err := repository.GetSQLDB().Query(`SELECT history_id,previous_status,new_status,previous_condition,new_condition,
+		previous_zone_id,new_zone_id,COALESCE(previous_location,''),COALESCE(new_location,''),change_source,changed_at
+		FROM device_status_history WHERE device_id=$1 ORDER BY changed_at DESC,history_id DESC LIMIT 100`, deviceID)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	type historyEntry struct {
+		HistoryID         int64     `json:"history_id"`
+		PreviousStatus    string    `json:"previous_status"`
+		NewStatus         string    `json:"new_status"`
+		PreviousCondition string    `json:"previous_condition"`
+		NewCondition      string    `json:"new_condition"`
+		PreviousZoneID    *int64    `json:"previous_zone_id,omitempty"`
+		NewZoneID         *int64    `json:"new_zone_id,omitempty"`
+		PreviousLocation  string    `json:"previous_location,omitempty"`
+		NewLocation       string    `json:"new_location,omitempty"`
+		ChangeSource      string    `json:"change_source"`
+		ChangedAt         time.Time `json:"changed_at"`
+	}
+	items := []historyEntry{}
+	for rows.Next() {
+		var item historyEntry
+		var previousStatus, previousCondition sql.NullString
+		var previousZone, newZone sql.NullInt64
+		if err := rows.Scan(&item.HistoryID, &previousStatus, &item.NewStatus, &previousCondition, &item.NewCondition, &previousZone, &newZone, &item.PreviousLocation, &item.NewLocation, &item.ChangeSource, &item.ChangedAt); err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if previousStatus.Valid {
+			item.PreviousStatus = previousStatus.String
+		}
+		if previousCondition.Valid {
+			item.PreviousCondition = previousCondition.String
+		}
+		if previousZone.Valid {
+			value := previousZone.Int64
+			item.PreviousZoneID = &value
+		}
+		if newZone.Valid {
+			value := newZone.Int64
+			item.NewZoneID = &value
+		}
+		items = append(items, item)
+	}
+	respondJSON(w, http.StatusOK, items)
 }
 
 // GetDeviceMovements returns movement history for a device
@@ -2240,10 +2335,15 @@ func AddDevicesToCase(w http.ResponseWriter, r *http.Request) {
 
 	for _, deviceID := range req.DeviceIDs {
 		// Check if device exists
-		var deviceExists int
-		err = db.QueryRow("SELECT COUNT(*) FROM devices WHERE deviceID = $1", deviceID).Scan(&deviceExists)
-		if err != nil || deviceExists == 0 {
+		var physicalStatus, conditionStatus string
+		err = db.QueryRow("SELECT status,condition_status FROM devices WHERE deviceID=$1", deviceID).Scan(&physicalStatus, &conditionStatus)
+		if err != nil {
 			errors = append(errors, fmt.Sprintf("Device %s not found", deviceID))
+			skippedCount++
+			continue
+		}
+		if physicalStatus == "on_job" || physicalStatus == "return_pending" || conditionStatus != "available" {
+			errors = append(errors, fmt.Sprintf("Device %s is not packable (%s/%s)", deviceID, physicalStatus, conditionStatus))
 			skippedCount++
 			continue
 		}
@@ -2272,6 +2372,7 @@ func AddDevicesToCase(w http.ResponseWriter, r *http.Request) {
 			skippedCount++
 			continue
 		}
+		_, _ = db.Exec("UPDATE devices SET status='in_storage',zone_id=NULL,current_location=$2 WHERE deviceID=$1", deviceID, fmt.Sprintf("case:%d", caseID))
 
 		successCount++
 	}
@@ -2329,6 +2430,7 @@ func RemoveDeviceFromCase(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to remove device from case"})
 		return
 	}
+	_, _ = db.Exec("UPDATE devices SET status='location_unknown',zone_id=NULL,current_location='location_unknown' WHERE deviceID=$1", deviceID)
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Device removed from case successfully"})
 }
@@ -2443,8 +2545,8 @@ func CreateDefect(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 
-	// Set device status to defective
-	_, err := db.Exec(`UPDATE devices SET status = 'defective' WHERE deviceID = $1`, input.DeviceID)
+	// A defect blocks availability without destroying the physical location.
+	_, err := db.Exec(`UPDATE devices SET condition_status = 'defective' WHERE deviceID = $1`, input.DeviceID)
 	if err != nil {
 		log.Printf("Error updating device status: %v", err)
 	}
@@ -2535,12 +2637,12 @@ func UpdateDefect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If status is repaired or closed, update device status
+	// Repair completion changes usability, never the physical location.
 	if input.Status != nil && (*input.Status == "repaired" || *input.Status == "closed") {
 		var deviceID string
 		db.QueryRow(`SELECT device_id FROM defect_reports WHERE defect_id = $1`, defectID).Scan(&deviceID)
 		if deviceID != "" {
-			db.Exec(`UPDATE devices SET status = 'in_storage' WHERE deviceID = $1`, deviceID)
+			db.Exec(`UPDATE devices SET condition_status = 'available' WHERE deviceID = $1`, deviceID)
 		}
 	}
 
@@ -2640,17 +2742,21 @@ func GetInspections(w http.ResponseWriter, r *http.Request) {
 func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
-	var inStorage, onJob, returnPending, locationUnknown, defective, total int
+	var inStorage, onJob, returnPending, locationUnknown, available, blocked, defective, maintenance, retired, total int
 	err := db.QueryRow(`
 		SELECT
 			COUNT(*) FILTER (WHERE status = 'in_storage'),
-			COUNT(*) FILTER (WHERE status IN ('on_job', 'rented')),
+			COUNT(*) FILTER (WHERE status = 'on_job'),
 			COUNT(*) FILTER (WHERE status = 'return_pending'),
 			COUNT(*) FILTER (WHERE status = 'location_unknown'),
-			COUNT(*) FILTER (WHERE status = 'defective'),
+			COUNT(*) FILTER (WHERE condition_status = 'available'),
+			COUNT(*) FILTER (WHERE condition_status = 'blocked'),
+			COUNT(*) FILTER (WHERE condition_status = 'defective'),
+			COUNT(*) FILTER (WHERE condition_status = 'maintenance'),
+			COUNT(*) FILTER (WHERE condition_status = 'retired'),
 			COUNT(*)
 		FROM devices
-	`).Scan(&inStorage, &onJob, &returnPending, &locationUnknown, &defective, &total)
+	`).Scan(&inStorage, &onJob, &returnPending, &locationUnknown, &available, &blocked, &defective, &maintenance, &retired, &total)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load device statistics"})
 		return
@@ -2661,7 +2767,11 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		"on_job":           onJob,
 		"return_pending":   returnPending,
 		"location_unknown": locationUnknown,
+		"available":        available,
+		"blocked":          blocked,
 		"defective":        defective,
+		"maintenance":      maintenance,
+		"retired":          retired,
 		"total":            total,
 	})
 }
@@ -3210,12 +3320,9 @@ func AssignDevicesToZone(w http.ResponseWriter, r *http.Request) {
 	for _, deviceID := range input.DeviceIDs {
 		result, err := db.Exec(`
 			UPDATE devices
-			SET zone_id = $1,
-			    status = CASE
-			        WHEN status = 'on_job' OR status = 'rented' THEN status
-			        ELSE 'in_storage'
-			    END
-			WHERE deviceID = $2
+			SET zone_id=$1,status='in_storage',current_location='warehouse'
+			WHERE deviceID=$2 AND status NOT IN ('on_job','return_pending')
+			  AND NOT EXISTS(SELECT 1 FROM devicescases dc WHERE dc.deviceID=devices.deviceID)
 		`, zoneID, deviceID)
 
 		if err != nil {

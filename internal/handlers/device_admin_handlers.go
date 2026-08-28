@@ -24,6 +24,7 @@ type DeviceAdminResponse struct {
 	Barcode         *string `json:"barcode,omitempty"`
 	QRCode          *string `json:"qr_code,omitempty"`
 	Status          string  `json:"status"`
+	ConditionStatus string  `json:"condition_status"`
 	CurrentLocation *string `json:"current_location,omitempty"`
 	ZoneID          *int    `json:"zone_id,omitempty"`
 	ZoneName        string  `json:"zone_name,omitempty"`
@@ -71,6 +72,7 @@ func toDeviceAdminResponse(device *models.DeviceWithDetails) DeviceAdminResponse
 		Barcode:         ptrString(device.Barcode),
 		QRCode:          ptrString(device.QRCode),
 		Status:          device.Status,
+		ConditionStatus: device.ConditionStatus,
 		CurrentLocation: ptrString(device.CurrentLocation),
 		ZoneID:          nullIntToPtr(device.ZoneID),
 		ZoneName:        device.ZoneName,
@@ -98,7 +100,7 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
 	query := `
-		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status,
+		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
 		       d.current_location, d.zone_id,
 		       d.condition_rating, d.usage_hours, d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
@@ -139,6 +141,7 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 			&device.Barcode,
 			&device.QRCode,
 			&device.Status,
+			&device.ConditionStatus,
 			&device.CurrentLocation,
 			&device.ZoneID,
 			&device.ConditionRating,

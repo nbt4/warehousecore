@@ -8,6 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 export function getStatusColor(status: string): string {
   switch (status.toLowerCase()) {
     case 'in_storage':
+    case 'available':
       return 'text-green-500';
     case 'on_job':
     case 'rented':
@@ -17,9 +18,13 @@ export function getStatusColor(status: string): string {
     case 'location_unknown':
       return 'text-orange-400';
     case 'defective':
+	case 'blocked':
       return 'text-yellow-500';
     case 'repair':
+	case 'maintenance':
       return 'text-accent-red';
+	case 'retired':
+		return 'text-gray-500';
     case 'free':
       return 'text-green-500';
     default:
@@ -30,6 +35,7 @@ export function getStatusColor(status: string): string {
 export function formatStatus(status: string): string {
   const labels: Record<string, string> = {
     free: 'Frei',
+	available: 'Einsatzbereit',
     in_storage: 'Im Lager',
     on_job: 'Ausgegeben',
     rented: 'Vermietet',

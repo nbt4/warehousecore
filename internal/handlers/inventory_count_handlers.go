@@ -331,7 +331,7 @@ func ApproveInventoryCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	statements := []string{
-		`UPDATE devices d SET zone_id=NULL WHERE d.zone_id=$2 AND EXISTS(SELECT 1 FROM inventory_count_lines l WHERE l.count_id=$1 AND l.item_type='device' AND l.item_key=d.deviceID AND l.counted_quantity=0)`,
+		`UPDATE devices d SET zone_id=NULL,status='location_unknown',current_location='location_unknown' WHERE d.zone_id=$2 AND EXISTS(SELECT 1 FROM inventory_count_lines l WHERE l.count_id=$1 AND l.item_type='device' AND l.item_key=d.deviceID AND l.counted_quantity=0)`,
 		`UPDATE devices d SET zone_id=$2,status='in_storage',current_location='warehouse' FROM inventory_count_lines l WHERE l.count_id=$1 AND l.item_type='device' AND l.counted_quantity>0 AND d.deviceID=l.item_key`,
 		`UPDATE cases c SET zone_id=NULL WHERE c.zone_id=$2 AND EXISTS(SELECT 1 FROM inventory_count_lines l WHERE l.count_id=$1 AND l.item_type='case' AND l.item_key=c.caseID::text AND l.counted_quantity=0)`,
 		`UPDATE cases c SET zone_id=$2 FROM inventory_count_lines l WHERE l.count_id=$1 AND l.item_type='case' AND l.counted_quantity>0 AND c.caseID::text=l.item_key`,

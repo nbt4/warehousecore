@@ -136,6 +136,9 @@ func (s *ScanService) ProcessScan(req models.ScanRequest, userID *int64, ipAddr,
 
 // processIntake handles device intake from job back to warehouse
 func (s *ScanService) processIntake(tx *sql.Tx, device *models.Device, zoneID *int64) (*models.ScanResponse, *models.DeviceMovement, error) {
+	if device.CaseID.Valid {
+		return nil, nil, fmt.Errorf("%s befindet sich in Case %d; bitte den Case-Rücklauf verwenden", device.DeviceID, device.CaseID.Int64)
+	}
 	if zoneID == nil {
 		return nil, nil, fmt.Errorf("für die Einlagerung muss ein Lagerplatz gescannt werden")
 	}
@@ -377,6 +380,9 @@ func (s *ScanService) processCheck(tx *sql.Tx, device *models.Device) (*models.S
 
 // processTransfer moves device between zones
 func (s *ScanService) processTransfer(tx *sql.Tx, device *models.Device, toZoneID *int64) (*models.ScanResponse, *models.DeviceMovement, error) {
+	if device.CaseID.Valid {
+		return nil, nil, fmt.Errorf("%s befindet sich in Case %d und kann nicht einzeln verschoben werden", device.DeviceID, device.CaseID.Int64)
+	}
 	if toZoneID == nil {
 		return nil, nil, fmt.Errorf("für das Verschieben muss ein Lagerplatz gescannt werden")
 	}
@@ -431,17 +437,17 @@ func (s *ScanService) processTransfer(tx *sql.Tx, device *models.Device, toZoneI
 func (s *ScanService) findDeviceByScan(scanCode string) (*models.Device, error) {
 	var device models.Device
 	err := s.db.QueryRow(`
-		SELECT deviceID, productID, serialnumber, barcode, qr_code, status,
-		       current_location, zone_id, condition_rating, usage_hours
-		FROM devices
-		WHERE UPPER(COALESCE(barcode, '')) = UPPER($1)
-		   OR UPPER(COALESCE(qr_code, '')) = UPPER($1)
-		   OR UPPER(deviceID) = UPPER($1)
+		SELECT d.deviceID,d.productID,d.serialnumber,d.barcode,d.qr_code,d.status,d.condition_status,
+		       d.current_location,d.zone_id,dc.caseID,d.condition_rating,d.usage_hours
+		FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID
+		WHERE UPPER(COALESCE(d.barcode, '')) = UPPER($1)
+		   OR UPPER(COALESCE(d.qr_code, '')) = UPPER($1)
+		   OR UPPER(d.deviceID) = UPPER($1)
 		LIMIT 1
 	`, scanCode).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
-		&device.Barcode, &device.QRCode, &device.Status,
-		&device.CurrentLocation, &device.ZoneID, &device.ConditionRating, &device.UsageHours,
+		&device.Barcode, &device.QRCode, &device.Status, &device.ConditionStatus,
+		&device.CurrentLocation, &device.ZoneID, &device.CaseID, &device.ConditionRating, &device.UsageHours,
 	)
 	if err != nil {
 		return nil, err
@@ -474,7 +480,7 @@ func (s *ScanService) findDeviceByScan(scanCode string) (*models.Device, error) 
 func (s *ScanService) getDeviceWithDetails(deviceID string) *models.DeviceWithDetails {
 	var device models.DeviceWithDetails
 	err := s.db.QueryRow(`
-		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status,
+		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
 		       d.current_location, d.zone_id, d.condition_rating, d.usage_hours,
 		       COALESCE(p.name, '') as product_name,
 		       COALESCE(z.name, '') as zone_name,
@@ -500,7 +506,7 @@ func (s *ScanService) getDeviceWithDetails(deviceID string) *models.DeviceWithDe
 		WHERE d.deviceID = $1
 	`, deviceID).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
-		&device.Barcode, &device.QRCode, &device.Status,
+		&device.Barcode, &device.QRCode, &device.Status, &device.ConditionStatus,
 		&device.CurrentLocation, &device.ZoneID, &device.ConditionRating, &device.UsageHours,
 		&device.ProductName, &device.ZoneName, &device.CaseName,
 		&device.CurrentJobID, &device.JobNumber, &device.CurrentJobStatus, &device.CurrentPackStatus,

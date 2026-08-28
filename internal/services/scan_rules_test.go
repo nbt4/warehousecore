@@ -48,3 +48,27 @@ func TestReturnPendingDeviceCannotBeIssuedAgain(t *testing.T) {
 		t.Fatalf("expected return guidance, got %v", err)
 	}
 }
+
+func TestOnlyAvailableStoredStandaloneDeviceCanBeIssued(t *testing.T) {
+	tests := []struct {
+		name   string
+		device models.Device
+		want   string
+	}{
+		{name: "available stored", device: models.Device{DeviceID: "DEV-1", Status: "in_storage", ConditionStatus: "available"}},
+		{name: "blocked", device: models.Device{DeviceID: "DEV-2", Status: "in_storage", ConditionStatus: "blocked"}, want: "Gesperrt"},
+		{name: "unknown location", device: models.Device{DeviceID: "DEV-3", Status: "location_unknown", ConditionStatus: "available"}, want: "ungeklärt"},
+		{name: "inside case", device: models.Device{DeviceID: "DEV-4", Status: "in_storage", ConditionStatus: "available", CaseID: sql.NullInt64{Int64: 7, Valid: true}}, want: "Case 7"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDeviceForOuttake(&test.device, 42)
+			if test.want == "" && err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+			if test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)) {
+				t.Fatalf("expected %q guidance, got %v", test.want, err)
+			}
+		})
+	}
+}

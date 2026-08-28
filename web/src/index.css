@@ -61,6 +61,8 @@
   --border-strong: rgba(255, 255, 255, 0.14);
 
   --bg-subtle: rgba(255, 255, 255, 0.04);
+  --bg-card: var(--surface-2);
+  --bg-primary: var(--color-dark);
   --bg-hover: rgba(255, 255, 255, 0.08);
   --bg-overlay: rgba(0, 0, 0, 0.7);
 
@@ -84,6 +86,9 @@
   --color-error: #f87171;
   --color-error-light: #f87171;
   --color-info: #60a5fa;
+  --color-accent-blue: #60a5fa;
+  --color-accent-cyan: #22d3ee;
+  --text-muted: var(--text-tertiary);
   --color-accent-red-dark: #dc2626;
 
   --transition-normal: 0.2s cubic-bezier(0.4, 0, 0.2, 1);

@@ -435,8 +435,17 @@ func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
 	code := strings.TrimSpace(input.ScanCode)
 	var deviceID string
 	var productID sql.NullInt64
-	err = tx.QueryRow(`SELECT deviceID,productID FROM devices WHERE UPPER(deviceID)=UPPER($1) OR UPPER(COALESCE(barcode,''))=UPPER($1) OR UPPER(COALESCE(qr_code,''))=UPPER($1) LIMIT 1`, code).Scan(&deviceID, &productID)
+	var deviceStatus, conditionStatus string
+	err = tx.QueryRow(`SELECT deviceID,productID,status,condition_status FROM devices WHERE UPPER(deviceID)=UPPER($1) OR UPPER(COALESCE(barcode,''))=UPPER($1) OR UPPER(COALESCE(qr_code,''))=UPPER($1) LIMIT 1`, code).Scan(&deviceID, &productID, &deviceStatus, &conditionStatus)
 	if err == nil {
+		if deviceStatus == "on_job" || deviceStatus == "return_pending" {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Ausgegebenes Gerät bzw. offener Rücklauf kann nicht gepackt werden"})
+			return
+		}
+		if conditionStatus != "available" {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Nur einsatzbereite Geräte können gepackt werden; Betriebszustand: " + conditionStatus})
+			return
+		}
 		var other sql.NullInt64
 		checkErr := tx.QueryRow(`SELECT caseID FROM devicescases WHERE deviceID=$1`, deviceID).Scan(&other)
 		if checkErr != nil && checkErr != sql.ErrNoRows {
@@ -455,7 +464,7 @@ func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
 			respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
-		_, _ = tx.Exec(`UPDATE devices SET zone_id=NULL WHERE deviceID=$1`, deviceID)
+		_, _ = tx.Exec(`UPDATE devices SET status='in_storage',zone_id=NULL,current_location=$2 WHERE deviceID=$1`, deviceID, fmt.Sprintf("case:%d", caseID))
 		_, _ = tx.Exec(`INSERT INTO case_events(case_id,event_type,device_id) VALUES($1,'pack_device',$2)`, caseID, deviceID)
 		_, _ = tx.Exec(`UPDATE cases SET workflow_status='packing' WHERE caseID=$1 AND workflow_status='empty'`, caseID)
 		if err = tx.Commit(); err != nil {
@@ -546,7 +555,14 @@ func RemoveHandlingUnitDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deviceID := mux.Vars(r)["device_id"]
-	result, err := repository.GetSQLDB().Exec(`DELETE FROM devicescases WHERE caseID=$1 AND deviceID=$2`, caseID, deviceID)
+	db := repository.GetSQLDB()
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM devicescases WHERE caseID=$1 AND deviceID=$2`, caseID, deviceID)
 	if err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -555,7 +571,12 @@ func RemoveHandlingUnitDevice(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Gerät nicht im Case"})
 		return
 	}
-	_, _ = repository.GetSQLDB().Exec(`INSERT INTO case_events(case_id,event_type,device_id) VALUES($1,'remove_device',$2)`, caseID, deviceID)
+	_, _ = tx.Exec(`UPDATE devices SET status='location_unknown',zone_id=NULL,current_location='location_unknown' WHERE deviceID=$1`, deviceID)
+	_, _ = tx.Exec(`INSERT INTO case_events(case_id,event_type,device_id) VALUES($1,'remove_device',$2)`, caseID, deviceID)
+	if err = tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Gerät entfernt; Lagerplatz ist jetzt unbekannt"})
 }
 
@@ -766,6 +787,16 @@ func DispatchHandlingUnit(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": "Case muss vor der Ausgabe versiegelt werden"})
 		return
 	}
+	var unavailable int
+	if err = tx.QueryRow(`WITH RECURSIVE tree AS (SELECT $1::int AS case_id UNION ALL SELECT cc.child_case_id FROM case_child_contents cc JOIN tree t ON cc.parent_case_id=t.case_id)
+		SELECT COUNT(*) FROM devicescases dc JOIN tree t ON t.case_id=dc.caseID JOIN devices d ON d.deviceID=dc.deviceID WHERE d.condition_status<>'available' OR d.status<>'in_storage'`, caseID).Scan(&unavailable); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if unavailable > 0 {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%d Gerät(e) im Case sind nicht einsatzbereit oder nicht eingelagert", unavailable)})
+		return
+	}
 	var jobCode, jobStatus string
 	err = tx.QueryRow(`SELECT j.job_code,COALESCE(s.status,'') FROM jobs j LEFT JOIN status s ON s.statusid=j.statusid WHERE j.jobid=$1 AND j.deleted_at IS NULL`, input.JobID).Scan(&jobCode, &jobStatus)
 	if err != nil {
@@ -856,6 +887,14 @@ func ReturnHandlingUnit(w http.ResponseWriter, r *http.Request) {
 	UPDATE devices d SET status=CASE WHEN $2::text='sealed' THEN 'in_storage' ELSE 'return_pending' END,
 		zone_id=NULL,current_location=CASE WHEN $2::text='sealed' THEN 'case:sealed' ELSE 'case:return' END
 	FROM packed WHERE d.deviceID=packed.deviceID`, caseID, input.Mode)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	_, err = tx.Exec(`WITH RECURSIVE tree AS (
+		SELECT $1::int AS case_id UNION ALL SELECT cc.child_case_id FROM case_child_contents cc JOIN tree t ON cc.parent_case_id=t.case_id
+	), packed AS (SELECT dc.deviceID FROM devicescases dc JOIN tree t ON t.case_id=dc.caseID)
+	UPDATE job_devices jd SET pack_status='returned',pack_ts=CURRENT_TIMESTAMP FROM packed WHERE jd.deviceID=packed.deviceID AND jd.pack_status='issued'`, caseID)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

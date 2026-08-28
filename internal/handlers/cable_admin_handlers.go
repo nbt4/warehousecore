@@ -171,7 +171,7 @@ func cableSelectQuery() string {
 		JOIN cable_types ct ON ct.cable_typesid = cp.cable_type_id
 		LEFT JOIN LATERAL (
 			SELECT COUNT(*) AS total_count,
-			       COUNT(*) FILTER (WHERE d.status IN ('free', 'in_storage')) AS available_count
+			       COUNT(*) FILTER (WHERE d.status='in_storage' AND d.condition_status='available') AS available_count
 			FROM devices d
 			WHERE d.productid = cp.product_id
 		) device_totals ON TRUE
@@ -867,8 +867,8 @@ func createCableUnits(tx *sql.Tx, productID, quantity int, zoneID *int) error {
 	if err != nil {
 		return err
 	}
-	status := "free"
-	currentLocation := interface{}(nil)
+	status := "location_unknown"
+	currentLocation := interface{}("location_unknown")
 	if zoneID != nil {
 		status = "in_storage"
 		currentLocation = "warehouse"

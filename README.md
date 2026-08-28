@@ -135,6 +135,10 @@ warehousecore:
 
 Die Lagersteuerung unter `/zones` verwendet die erweiterten Endpunkte. Bauart (`location_kind`) und Prozessfunktion (`process_role`) sind bewusst getrennt: Ein physischer Bereich kann beispielsweise Wareneingang, Rücklauf, Prüfung, Quarantäne, Reparatur, Kommissionierung oder Job-Bereitstellung sein. Nur aktive, verfügbare und direkt belegbare Orte akzeptieren Einlagerungen. Kapazitätsgrenzen und gesperrte Elternbereiche werden serverseitig geprüft; belegte Orte können nicht archiviert werden.
 
+Die Kennzahl „Nicht zugeordnet“ zählt alle Geräte ohne Lagerplatz, die weder ausgegeben noch in einem Case enthalten sind, sowie alle nicht ausgegebenen, nicht verschachtelten Cases ohne Lagerplatz. Case-Inhalte werden dadurch nicht doppelt gezählt; Mengenbestände ohne Ort erscheinen separat.
+
+Geräte verwenden zwei voneinander unabhängige Statusdimensionen. Der Lagerstatus wird ausschließlich von den physischen Workflows gesetzt: `location_unknown` bei Neuanlage oder Verlust der Zuordnung, `in_storage` durch Einlagerung, Lagerplatzzuweisung, Inventurbestätigung oder Packen in ein Case, `on_job` durch Einzel- oder Case-Ausgabe und `return_pending` beim Jobabschluss bzw. prüfpflichtigen Rücklauf. Der Betriebszustand (`available`, `blocked`, `defective`, `maintenance`, `retired`) wird administrativ oder über Defekt-/Reparaturvorgänge gepflegt und bleibt bei Ortsbewegungen erhalten. Geräte sind nur mit `in_storage` plus `available` ausgabefähig. Änderungen an Status, Zustand und Ort werden in `device_status_history` protokolliert.
+
 ### Lagersteuerung & Inventur
 
 | Methode | Pfad                                      | Beschreibung |

@@ -412,8 +412,14 @@ func GetWarehouseOverview(w http.ResponseWriter, r *http.Request) {
 	err := db.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM storage_zones WHERE is_active),
 		(SELECT COUNT(*) FROM storage_zones WHERE is_active AND operational_status <> 'available'),
-		(SELECT COUNT(*) FROM devices WHERE status='in_storage' AND zone_id IS NULL AND NOT EXISTS (SELECT 1 FROM devicescases dc WHERE dc.deviceID=devices.deviceID)),
-		(SELECT COUNT(*) FROM cases WHERE zone_id IS NULL AND workflow_status NOT IN ('on_job')),
+		(SELECT COUNT(*) FROM devices
+		 WHERE zone_id IS NULL
+		   AND COALESCE(status,'') NOT IN ('on_job','rented')
+		   AND NOT EXISTS (SELECT 1 FROM devicescases dc WHERE dc.deviceID=devices.deviceID)),
+		(SELECT COUNT(*) FROM cases
+		 WHERE zone_id IS NULL
+		   AND workflow_status <> 'on_job'
+		   AND NOT EXISTS (SELECT 1 FROM case_child_contents cc WHERE cc.child_case_id=cases.caseID)),
 		COALESCE((SELECT SUM(quantity) FROM product_locations WHERE zone_id IS NULL),0),
 		(SELECT COUNT(*) FROM warehouse_tasks WHERE status IN ('open','in_progress')),
 		(SELECT COUNT(*) FROM storage_zones WHERE is_active AND next_count_at IS NOT NULL AND next_count_at <= CURRENT_TIMESTAMP)
