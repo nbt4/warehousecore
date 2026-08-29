@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, Package, Building2, Tag, Layers, Cable, Briefcase, FileText, TrendingUp } from 'lucide-react';
 import { toast } from '../../lib/toast';
+import { appPath } from '../../lib/app-paths';
 
 type ExportType = {
   id: string;
@@ -79,7 +80,7 @@ export function ExportTab() {
     setLoading(exportType);
 
     try {
-      const response = await fetch(`/api/v1/admin/export/${exportType}`, {
+      const response = await fetch(appPath(`/api/v1/admin/export/${exportType}`), {
         method: 'GET',
         credentials: 'include',
       });

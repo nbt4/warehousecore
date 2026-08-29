@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,26 +34,50 @@ import (
 
 var brandingSvc *services.BrandingService
 
+const warehouseMountPath = "/warehousecore"
+
+func requestMountPath(r *http.Request) string {
+	if strings.TrimSuffix(r.Header.Get("X-Forwarded-Prefix"), "/") == warehouseMountPath {
+		return warehouseMountPath
+	}
+	return ""
+}
+
+func mountedPath(mountPath, path string) string {
+	if mountPath == "" {
+		return path
+	}
+	return mountPath + path
+}
+
 // spaHandler serves the SPA and falls back to index.html for client-side routes
 func spaHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/sw.js" {
+	normalizedPath := r.URL.Path
+	if normalizedPath == warehouseMountPath {
+		normalizedPath = "/"
+	} else if strings.HasPrefix(normalizedPath, warehouseMountPath+"/") {
+		normalizedPath = strings.TrimPrefix(normalizedPath, warehouseMountPath)
+	}
+
+	if normalizedPath == "/sw.js" {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
-	if r.URL.Path == "/manifest.webmanifest" {
+	if normalizedPath == "/manifest.webmanifest" {
 		w.Header().Set("Content-Type", "application/manifest+json")
 		w.Header().Set("Cache-Control", "no-cache")
 		if brandingSvc != nil {
+			mountPath := requestMountPath(r)
 			_ = json.NewEncoder(w).Encode(commonbranding.Manifest(brandingSvc.GetConfig(), commonbranding.ManifestOptions{
-				Name: "WarehouseCore", StartURL: "/", Scope: "/",
-				FallbackIcon192: "/app-icons/icon-192.png", FallbackIcon512: "/app-icons/icon-512.png",
-				FallbackMaskable: "/app-icons/icon-maskable-512.png",
+				Name: "WarehouseCore", StartURL: mountedPath(mountPath, "/"), Scope: mountedPath(mountPath, "/"),
+				FallbackIcon192: mountedPath(mountPath, "/app-icons/icon-192.png"), FallbackIcon512: mountedPath(mountPath, "/app-icons/icon-512.png"),
+				FallbackMaskable: mountedPath(mountPath, "/app-icons/icon-maskable-512.png"),
 			}))
 			return
 		}
 	}
 
 	// Build file path
-	path := "./web/dist" + r.URL.Path
+	path := "./web/dist" + normalizedPath
 
 	// Check if file exists
 	fileInfo, err := os.Stat(path)
@@ -69,7 +94,9 @@ func spaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// File exists and is not a directory - serve it
-	http.FileServer(http.Dir("./web/dist")).ServeHTTP(w, r)
+	request := r.Clone(r.Context())
+	request.URL.Path = normalizedPath
+	http.FileServer(http.Dir("./web/dist")).ServeHTTP(w, request)
 }
 
 // brandingLogoHandler prefers centrally managed branding files and falls back
@@ -224,7 +251,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.60")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.61")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -521,6 +548,7 @@ func main() {
 
 	// Serve central branding logos with a fallback to bundled app logos.
 	router.PathPrefix("/logos/").HandlerFunc(brandingLogoHandler)
+	router.PathPrefix(warehouseMountPath + "/logos/").HandlerFunc(brandingLogoHandler)
 
 	// Public branding config endpoint (for live polling by SPA)
 	router.HandleFunc("/api/v1/branding", func(w http.ResponseWriter, r *http.Request) {

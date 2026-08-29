@@ -3,6 +3,7 @@ import { ChevronDown, Eye, Image as ImageIcon, Pencil, Plus, RefreshCcw, Search,
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { ModalPortal } from '../ModalPortal';
+import { appPath } from '../../lib/app-paths';
 
 interface ProductPackage {
   package_id: number;
@@ -535,7 +536,7 @@ export function ProductPackagesTab() {
             <div className="glass-dark max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 p-6 shadow-2xl">
               <div className="mb-5 flex items-start justify-between"><div><h3 className="text-2xl font-bold text-white">{viewPackage.name}</h3><p className="font-mono text-sm text-gray-400">{viewPackage.package_code}</p></div><button onClick={() => setViewPackage(null)} className={iconButtonClass}><X className="h-6 w-6" /></button></div>
               <div className="space-y-5">
-                {viewPackage.website_images && viewPackage.website_images.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{viewPackage.website_images.map((image) => <img key={image} src={`/api/v1/admin/product-packages/${viewPackage.package_id}/pictures/${encodeURIComponent(image)}?variant=preview`} alt={image} className="h-40 w-full rounded-lg object-cover" />)}</div>}
+                {viewPackage.website_images && viewPackage.website_images.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{viewPackage.website_images.map((image) => <img key={image} src={appPath(`/api/v1/admin/product-packages/${viewPackage.package_id}/pictures/${encodeURIComponent(image)}?variant=preview`)} alt={image} className="h-40 w-full rounded-lg object-cover" />)}</div>}
                 <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-gray-800 p-3"><p className="text-xs text-gray-400">Preis</p><p className="font-semibold text-white">{formatPrice(viewPackage.price)}</p></div><div className="rounded-lg bg-gray-800 p-3"><p className="text-xs text-gray-400">Artikel</p><p className="font-semibold text-white">{viewPackage.total_items}</p></div><div className="rounded-lg bg-gray-800 p-3"><p className="text-xs text-gray-400">Website</p><p className="font-semibold text-white">{viewPackage.website_visible ? 'Sichtbar' : 'Ausgeblendet'}</p></div></div>
                 {viewPackage.description && <div><h4 className="mb-1 text-sm font-semibold text-gray-400">Beschreibung</h4><p className="whitespace-pre-wrap text-white">{viewPackage.description}</p></div>}
                 <div><h4 className="mb-2 text-lg font-semibold text-white">Enthaltene Produkte</h4><div className="space-y-2">{viewPackage.items.map((item) => <div key={item.package_item_id || item.product_id} className="flex justify-between rounded-lg bg-gray-800 p-3"><span className="text-white">{productName(item)}</span><span className="font-semibold text-white">× {item.quantity}</span></div>)}</div></div>

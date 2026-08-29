@@ -7,6 +7,7 @@ import { DeviceDetailModal } from '../components/DeviceDetailModal';
 import type { Device } from '../lib/api';
 import { useZoneTypes } from '../lib/useZoneTypes';
 import { toast } from '../lib/toast';
+import { appPath } from '../lib/app-paths';
 
 interface ZoneDetails {
   zone_id: number;
@@ -126,7 +127,7 @@ export function ZoneDetailPage() {
 
   const loadDevices = async () => {
     try {
-      const response = await fetch(`/api/v1/zones/${id}/devices`);
+      const response = await fetch(appPath(`/api/v1/zones/${id}/devices`));
       const data = await response.json();
       setDevices(data);
     } catch (error) {
@@ -237,7 +238,7 @@ export function ZoneDetailPage() {
     if (!id || deviceIds.length === 0) return;
 
     try {
-      const response = await fetch(`/api/v1/zones/${id}/devices`, {
+      const response = await fetch(appPath(`/api/v1/zones/${id}/devices`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

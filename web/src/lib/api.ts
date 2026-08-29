@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { appPath } from './app-paths';
 
 // Use relative path so it works on any host/platform
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || appPath('/api/v1');
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -468,8 +469,8 @@ export const devicesAdminApi = {
   update: (id: string, data: DeviceUpdateInput) => api.put<Device>(`/admin/devices/${id}`, data),
   delete: (id: string) => api.delete<{ message: string }>(`/admin/devices/${id}`),
   getById: (id: string) => api.get<Device>(`/admin/devices/${id}`),
-  downloadQR: (id: string) => `/api/v1/admin/devices/${id}/qr`,
-  downloadBarcode: (id: string) => `/api/v1/admin/devices/${id}/barcode`,
+  downloadQR: (id: string) => appPath(`/api/v1/admin/devices/${id}/qr`),
+  downloadBarcode: (id: string) => appPath(`/api/v1/admin/devices/${id}/barcode`),
 };
 
 export const casesApi = {

@@ -1,6 +1,7 @@
 // Auth API Service
 import { toast } from '../lib/toast';
-const API_BASE = '/api/v1';
+import { appPath } from '../lib/app-paths';
+const API_BASE = appPath('/api/v1');
 
 export interface Role {
   id: number;

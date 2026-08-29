@@ -29,7 +29,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 - **Öffentliche Produktseite** — Ungeschützte API für getrennte Produkt- und Paketlisten, jeweils mit Website-Freigabe und Bildern
 - **Produktpakete** — Pakete unabhängig von normalen Produkten verwalten, Produkte mit Mengen zuweisen und eigene Paketbilder pflegen
 - **Role-Based Access** — Feingranulares Rollensystem mit Admin-Bereich für Benutzer-, Kategorie- und LED-Konfiguration
-- **Installierbare Mobile-App (PWA)** — Standalone-Modus mit WarehouseCore-App-Icon, Safe-Area-Unterstützung, großen Touch-Zielen, App-Tabbar und Drawer-Navigation; auf iPhone/iPad über Safari → Teilen → „Zum Home-Bildschirm“ installieren
+- **Installierbare Mobile-App (PWA)** — Standalone-Modus mit WarehouseCore-App-Icon, Safe-Area-Unterstützung, großen Touch-Zielen, App-Tabbar und Drawer-Navigation; dasselbe Image läuft auf der eigenen Domain unter `/` oder im globalen Suite-Pfadmodus unter `/warehousecore/`
 - **Zentrales Branding** — Live geladene Varianten für Bildmarke, Sidebar, Login, Browser-Tab und dynamisches PWA-Manifest über `/api/v1/branding`
 - **Einheitliche Navigation** — Ein-/ausklappbare Sidebar mit normierter Logo-/Symbolfläche, logofreier App-Header und zentralem Cores-Link ohne direkten RentalCore-Umschalter
 

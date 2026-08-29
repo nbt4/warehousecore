@@ -4,6 +4,7 @@ import './index.css'
 import './cores-theme.css'
 import './i18n' // Initialize i18n
 import App from './App'
+import { appBasePath, appPath } from './lib/app-paths'
 
 document.addEventListener('wheel', (event) => {
   const target = event.target
@@ -18,7 +19,7 @@ document.documentElement.classList.toggle('app-standalone', isStandalone)
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js?v=3', { scope: '/', updateViaCache: 'none' }).catch((error: unknown) => {
+    void navigator.serviceWorker.register(appPath('/sw.js?v=3'), { scope: `${appBasePath || ''}/`, updateViaCache: 'none' }).catch((error: unknown) => {
       console.error('WarehouseCore service worker registration failed:', error)
     })
   })

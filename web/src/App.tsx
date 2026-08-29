@@ -17,10 +17,11 @@ import { CablesPage } from './pages/CablesPage';
 import LabelDesignerPage from './pages/LabelDesignerPage';
 import { JobPicklistPage } from './pages/JobPicklistPage';
 import ToastContainer from './components/ToastContainer';
+import { appBasePath } from './lib/app-paths';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={appBasePath || undefined}>
       <AuthProvider>
         <ToastContainer />
         <Routes>
