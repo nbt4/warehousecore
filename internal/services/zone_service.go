@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"warehousecore/internal/repository"
@@ -38,20 +39,26 @@ func (s *ZoneService) GenerateZoneCode(zoneName, zoneType string, parentZoneID *
 
 		// Get next number for this type under this parent
 		typePrefix := getTypePrefix(zoneType)
-		pattern := fmt.Sprintf("%s-%s-%%", parentCode, typePrefix)
+		codePrefix := fmt.Sprintf("%s-%s-", parentCode, typePrefix)
+		rows, err := s.db.Query(`SELECT code FROM storage_zones WHERE parent_zone_id = $1`, *parentZoneID)
+		if err != nil {
+			return "", err
+		}
+		defer rows.Close()
 
-		var maxNum int
-		err = s.db.QueryRow(`
-			SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED)), 0)
-			FROM storage_zones
-			WHERE code LIKE $1 AND parent_zone_id = $2
-		`, pattern, *parentZoneID).Scan(&maxNum)
-
-		if err != nil && err != sql.ErrNoRows {
+		codes := make([]string, 0)
+		for rows.Next() {
+			var code string
+			if err := rows.Scan(&code); err != nil {
+				return "", err
+			}
+			codes = append(codes, code)
+		}
+		if err := rows.Err(); err != nil {
 			return "", err
 		}
 
-		return fmt.Sprintf("%s-%s-%02d", parentCode, typePrefix, maxNum+1), nil
+		return fmt.Sprintf("%s%02d", codePrefix, nextZoneSequence(codes, codePrefix)), nil
 	}
 
 	// Root level zone (warehouse)
@@ -72,6 +79,20 @@ func (s *ZoneService) GenerateZoneCode(zoneName, zoneType string, parentZoneID *
 	}
 
 	return fmt.Sprintf("%s-%02d", prefix, count+1), nil
+}
+
+func nextZoneSequence(codes []string, prefix string) int {
+	maxSequence := 0
+	for _, code := range codes {
+		if !strings.HasPrefix(code, prefix) {
+			continue
+		}
+		sequence, err := strconv.Atoi(strings.TrimPrefix(code, prefix))
+		if err == nil && sequence > maxSequence {
+			maxSequence = sequence
+		}
+	}
+	return maxSequence + 1
 }
 
 // generatePrefix creates a 3-letter prefix from a zone name

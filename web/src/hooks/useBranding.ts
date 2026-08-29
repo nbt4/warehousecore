@@ -14,17 +14,22 @@ export interface BrandingConfig {
   sidebarLogo: string; loginLogo: string; faviconPath: string;
 }
 
+function mountedAssets(assets: Partial<BrandingAssets>): Partial<BrandingAssets> {
+  return Object.fromEntries(Object.entries(assets)
+    .map(([key, value]) => [key, appAssetPath(String(value))])) as Partial<BrandingAssets>;
+}
+
 const defaults: BrandingConfig = {
   productName: 'WarehouseCore', companyName: 'Cores', brandName: '',
-  assets: {
+  assets: mountedAssets({
     markOnDark: '/logos/warehousecore_white_icon.svg', markOnLight: '/logos/warehousecore_black_icon.svg',
     horizontalOnDark: '/logos/warehousecore_white_side.svg', horizontalOnLight: '/logos/warehousecore_black_side.svg',
     stackedOnDark: '/logos/warehousecore_white_full.svg', stackedOnLight: '/logos/warehousecore_black_full.svg',
     favicon: '/logos/warehousecore_black_icon.svg', appIcon: '/app-icons/icon-512.png',
     maskableIcon: '/app-icons/icon-maskable-512.png', print: '/logos/warehousecore_black_side.svg',
-  },
-  companyAssets: {}, sidebarLogo: '/logos/warehousecore_white_side.svg',
-  loginLogo: '/logos/warehousecore_white_full.svg', faviconPath: '/logos/warehousecore_black_icon.svg',
+  }) as BrandingAssets,
+  companyAssets: {}, sidebarLogo: appAssetPath('/logos/warehousecore_white_side.svg'),
+  loginLogo: appAssetPath('/logos/warehousecore_white_full.svg'), faviconPath: appAssetPath('/logos/warehousecore_black_icon.svg'),
 };
 
 let cached = defaults;
@@ -48,11 +53,10 @@ async function refresh() {
     const response = await fetch(appPath('/api/v1/branding'), { cache: 'no-store' });
     if (!response.ok) return;
     const raw = await response.json();
-    const assets = Object.fromEntries(Object.entries({ ...defaults.assets, ...(raw.assets || {}) })
-      .map(([key, value]) => [key, appAssetPath(String(value))])) as unknown as BrandingAssets;
+    const assets = mountedAssets({ ...defaults.assets, ...(raw.assets || {}) }) as BrandingAssets;
     cached = {
       productName: raw.productName || defaults.productName, companyName: raw.companyName || defaults.companyName,
-      brandName: raw.brandName || '', assets, companyAssets: raw.companyAssets || {},
+      brandName: raw.brandName || '', assets, companyAssets: mountedAssets(raw.companyAssets || {}),
       sidebarLogo: assets.horizontalOnDark, loginLogo: assets.stackedOnDark || assets.horizontalOnDark,
       faviconPath: assets.favicon,
     };

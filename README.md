@@ -15,7 +15,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Sichere Produktstammdaten** — Explizite Produkttypen und Trackingarten, serverseitige Plausibilitätsprüfungen, revisionssichere Archivierung statt kaskadierendem Löschen und Audit-Protokoll für Stammdatenänderungen
 - **Konsistente Mengenbestände** — Lagerzonen sind die führende Bestandsquelle; Produktsummen werden automatisch aus `product_locations` synchronisiert und verteilte Bestände ausschließlich über Lager- und Scanabläufe korrigiert
-- **Professionelle Lagersteuerung** — Hierarchische Standorte, Bereiche, Gänge, Regale, Ebenen und Fächer mit getrennter Bauart/Prozessfunktion, Sperrstatus, Pick-Reihenfolge, Kapazität, Arbeitsvorrat und sicherem Archivieren nur leerer Orte
+- **Professionelle Lagersteuerung** — Hierarchische Standorte, Bereiche, Gänge, Regale, Ebenen und Fächer mit PostgreSQL-kompatibler automatischer Code- und Barcode-Erzeugung, optionaler Übernahme bestehender Fremdetiketten, getrennter Bauart/Prozessfunktion, Sperrstatus, Pick-Reihenfolge, Kapazität, Arbeitsvorrat und sicherem Archivieren nur leerer Orte
 - **Live-Lagercockpit** — Handlungsorientiertes Dashboard mit priorisierten Aufgaben, Einsatzbereitschaft, Materialfluss, Tagesbewegungen, aktiven Jobs, Case-Prozessen, technischen Risiken und direktem Einstieg in Scanner und Lageraktionen
 - **Scannerbasierte Zählinventur** — Offene oder verdeckte Sollmengen, automatische Platzsperre, Zählung von Geräten, Mengenartikeln und Cases, Abweichungsprüfung und kontrollierte Bestandsfreigabe
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
@@ -30,7 +30,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 - **Produktpakete** — Pakete unabhängig von normalen Produkten verwalten, Produkte mit Mengen zuweisen und eigene Paketbilder pflegen
 - **Role-Based Access** — Feingranulares Rollensystem mit Admin-Bereich für Benutzer-, Kategorie- und LED-Konfiguration
 - **Installierbare Mobile-App (PWA)** — Standalone-Modus mit WarehouseCore-App-Icon, Safe-Area-Unterstützung, großen Touch-Zielen, App-Tabbar und Drawer-Navigation; dasselbe Image läuft auf der eigenen Domain unter `/` oder im globalen Suite-Pfadmodus unter `/warehousecore/`
-- **Zentrales Branding** — Live geladene Varianten für Bildmarke, Sidebar, Login, Browser-Tab und dynamisches PWA-Manifest über `/api/v1/branding`
+- **Zentrales Branding** — Live geladene Varianten für Bildmarke, Sidebar, Login, Browser-Tab und dynamisches PWA-Manifest über `/api/v1/branding`; auch die Branding-Defaults sind im Suite-Pfadmodus mount-sicher
 - **Einheitliche Navigation** — Ein-/ausklappbare Sidebar mit normierter Logo-/Symbolfläche, logofreier App-Header und zentralem Cores-Link ohne direkten RentalCore-Umschalter
 
 ---

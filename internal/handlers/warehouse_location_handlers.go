@@ -219,6 +219,16 @@ func validateWarehouseLocationInput(input *warehouseLocationInput) error {
 	return nil
 }
 
+func normalizeWarehouseLocationBarcode(barcode *string, code string) *string {
+	if barcode != nil {
+		if value := strings.TrimSpace(*barcode); value != "" {
+			return &value
+		}
+	}
+	value := "LOC-" + strings.ToUpper(strings.TrimSpace(code))
+	return &value
+}
+
 func validateWarehouseParent(db *sql.DB, locationID int64, parentID *int64) error {
 	if parentID == nil {
 		return nil
@@ -278,6 +288,7 @@ func CreateWarehouseLocation(w http.ResponseWriter, r *http.Request) {
 		}
 		input.Code = code
 	}
+	input.Barcode = normalizeWarehouseLocationBarcode(input.Barcode, input.Code)
 	var id int64
 	err := db.QueryRow(`
 		INSERT INTO storage_zones
@@ -317,6 +328,7 @@ func UpdateWarehouseLocation(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Code ist erforderlich"})
 		return
 	}
+	input.Barcode = normalizeWarehouseLocationBarcode(input.Barcode, input.Code)
 	db := repository.GetSQLDB()
 	if err := validateWarehouseParent(db, id, input.ParentZoneID); err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})

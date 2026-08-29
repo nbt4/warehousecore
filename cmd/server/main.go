@@ -201,6 +201,9 @@ func main() {
 	if err := handlers.EnsureWarehouseOperationsSchema(); err != nil {
 		log.Fatalf("Failed to initialize warehouse operations schema: %v", err)
 	}
+	if err := handlers.EnsureWarehouseLocationBarcodeSchema(); err != nil {
+		log.Fatalf("Failed to initialize warehouse location barcodes: %v", err)
+	}
 	if err := handlers.EnsureDeviceStatusSchema(); err != nil {
 		log.Fatalf("Failed to initialize device status schema: %v", err)
 	}
@@ -251,7 +254,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.61")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.62")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
