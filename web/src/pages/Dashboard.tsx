@@ -9,6 +9,8 @@ import { dashboardApi, warehouseApi } from '../lib/api';
 import type { DashboardStats, Movement, WarehouseOverview } from '../lib/api';
 import { LowStockAlertsWidget } from '../components/LowStockAlertsWidget';
 import { toast } from '../lib/toast';
+import { useAuth } from '../contexts/AuthContext';
+import { suiteGreeting } from '../lib/cores-design';
 
 const emptyStats: DashboardStats = {
   in_storage: 0, on_job: 0, return_pending: 0, location_unknown: 0,
@@ -46,6 +48,7 @@ function movementText(item: Movement) {
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [overview, setOverview] = useState<WarehouseOverview | null>(null);
   const [activity, setActivity] = useState<Movement[]>([]);
@@ -100,20 +103,20 @@ export function Dashboard() {
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-5 pb-3 sm:space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--accent-red-light)' }}><span className="h-2 w-2 animate-pulse rounded-full" style={{ background: 'var(--color-success)' }} />Live-Lagerbetrieb</div>
-          <h1 className="text-2xl font-bold sm:text-3xl" style={{ color: 'var(--text-primary)' }}>Guten Überblick.</h1>
-          <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>Prioritäten, Materialfluss und Einsatzbereitschaft auf einen Blick.</p>
+    <div className="suite-dashboard">
+      <header className="suite-dashboard-header">
+        <div className="suite-dashboard-heading">
+          <div className="suite-dashboard-eyebrow" style={{ color: 'var(--color-success)' }}><span className="suite-dashboard-eyebrow-dot animate-pulse" />Live-Lagerbetrieb</div>
+          <h1 className="suite-dashboard-title">{suiteGreeting(user)}</h1>
+          <p className="suite-dashboard-subtitle">Prioritäten, Materialfluss und Einsatzbereitschaft auf einen Blick.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="hidden text-xs sm:block" style={{ color: 'var(--text-muted)' }}>{lastUpdated ? `Aktualisiert ${lastUpdated.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
-          <button type="button" onClick={() => void loadData(true)} disabled={refreshing} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />Aktualisieren</button>
+        <div className="suite-dashboard-actions">
+          <span className="suite-dashboard-timestamp">{lastUpdated ? `Aktualisiert ${lastUpdated.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <button type="button" onClick={() => void loadData(true)} disabled={refreshing} className="suite-button"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />Aktualisieren</button>
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="suite-kpi-grid">
         <KpiCard icon={PackageCheck} label="Einsatzbereit im Lager" value={stats.ready_for_dispatch} detail={`${readiness}% aller Geräte`} color="var(--color-success)" progress={readiness} onClick={() => navigate('/scan')} />
         <KpiCard icon={BriefcaseBusiness} label="Aktive Jobs" value={stats.active_jobs} detail={`${stats.on_job} Geräte · ${stats.cases_on_job} Cases draußen`} color="var(--color-info)" onClick={() => navigate('/jobs')} />
         <KpiCard icon={MapPinOff} label="Nicht zugeordnet" value={unassigned} detail={`${overview?.unplaced_product_quantity || 0} Mengeneinheiten zusätzlich`} color={unassigned ? 'var(--color-error)' : 'var(--color-success)'} onClick={() => navigate('/zones')} />
@@ -146,7 +149,7 @@ export function Dashboard() {
             <Condition label="Einsatzbereit" value={stats.available} color="var(--color-success)" />
             <Condition label="Gesperrt" value={stats.blocked} color="var(--color-warning)" />
             <Condition label="Defekt" value={stats.defective} color="var(--color-error)" />
-            <Condition label="Wartung" value={stats.maintenance} color="var(--accent-red-light)" />
+            <Condition label="Wartung" value={stats.maintenance} color="var(--color-warning)" />
             <Condition label="Ausgemustert" value={stats.retired} color="var(--text-muted)" />
           </div>
         </div>
@@ -155,7 +158,7 @@ export function Dashboard() {
           <div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold" style={{ color: 'var(--text-primary)' }}>Heute bewegt</h2><p className="mt-0.5 text-xs" style={{ color: 'var(--text-secondary)' }}>Seit 00:00 Uhr</p></div><span className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{stats.movements_today}</span></div>
           <div className="grid grid-cols-3 gap-2">
             <DailyFlow icon={ArrowDownToLine} label="Einlagerung" value={stats.intakes_today} color="var(--color-success)" />
-            <DailyFlow icon={ArrowUpFromLine} label="Ausgabe" value={stats.outtakes_today} color="var(--accent-red-light)" />
+            <DailyFlow icon={ArrowUpFromLine} label="Ausgabe" value={stats.outtakes_today} color="var(--color-info)" />
             <DailyFlow icon={MoveRight} label="Umlagerung" value={stats.transfers_today} color="var(--color-info)" />
           </div>
           <button type="button" onClick={() => navigate('/scan')} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-semibold" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}><ScanLine className="h-4 w-4" />Scanner öffnen</button>

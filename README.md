@@ -1,5 +1,11 @@
 # WarehouseCore
 
+## Einheitliches Cores Designsystem
+
+WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://github.com/nbt4/cores/blob/main/docs/DESIGN_SYSTEM.md). Inter-Typografie, Graphitpalette, roter Akzent, 256/80-px-Sidebar, Tabellen, Formulare, Selects, Dropdowns, Scrollbars und Dashboard-Aufbau sind suite-weit identisch; Lagerstatusfarben bleiben ausschließlich semantisch.
+
+`web/src/cores-theme.css` und `web/src/lib/cores-design.ts` sind generierte Umbrella-Artefakte und dürfen nicht direkt geändert werden. Vor Releases sind die Design-Sync-/Check-Skripte im Umbrella sowie Frontend-Build und Go-Tests auszuführen.
+
 **Lagerverwaltung und Inventarmanagement im Cores-Ökosystem — Geräte-Tracking, Zonenverwaltung, LED-Bin-Highlighting, Etikettendruck und Barcode-Scanning.**
 
 ---

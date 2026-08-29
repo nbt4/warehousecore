@@ -4,6 +4,7 @@ import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, Us
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useBranding } from '../hooks/useBranding';
+import { suiteGreetingName } from '../lib/cores-design';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 
@@ -107,10 +108,8 @@ export function Layout({ children }: LayoutProps) {
     <div className="mobile-app-shell min-h-screen bg-dark">
       {/* Header */}
       <header
-        className={`mobile-app-header fixed top-0 right-0 z-50 glass-dark transition-all duration-300 ${
-          !isMobile && sidebarOpen ? 'left-64' : !isMobile ? 'left-20' : 'left-0'
-        }`}
-        style={{ height: '60px', borderBottom: '1px solid var(--border-subtle)' }}
+        className="mobile-app-header md:hidden fixed top-0 right-0 left-0 z-50 glass-dark"
+        style={{ height: 'var(--app-header-height)', borderBottom: '1px solid var(--border-subtle)' }}
       >
         <div className="flex items-center justify-between px-4 sm:px-6 h-full">
           <div className="flex items-center gap-3">
@@ -156,6 +155,16 @@ export function Layout({ children }: LayoutProps) {
         } ${isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'}`}
         style={{ borderRight: '1px solid var(--border-subtle)' }}
       >
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((open) => !open)}
+          className="hidden md:flex absolute -right-3 top-[68px] z-10 h-6 w-6 items-center justify-center rounded-full"
+          style={{ background: 'var(--surface-3)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
+          aria-label={sidebarOpen ? 'Sidebar zuklappen' : 'Sidebar aufklappen'}
+          aria-expanded={sidebarOpen}
+        >
+          {sidebarOpen ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </button>
         {/* Sidebar header (mobile + desktop) */}
         <div
           className="h-20 flex items-center justify-center px-2 overflow-hidden"
@@ -330,7 +339,7 @@ export function Layout({ children }: LayoutProps) {
               style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
             >
               <User className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-red)' }} />
-              <span className="text-sm font-medium truncate">{user.username}</span>
+              <span className="text-sm font-medium truncate">{suiteGreetingName(user)}</span>
             </div>
           )}
           {user && !sidebarOpen && !isMobile && (
@@ -358,9 +367,9 @@ export function Layout({ children }: LayoutProps) {
       {/* Main Content */}
       <main
         className={`mobile-app-main transition-all duration-300 ${isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'}`}
-        style={{ paddingTop: '60px' }}
+        style={{ paddingTop: isMobile ? 'var(--app-header-height)' : 0 }}
       >
-        <div className="mobile-app-content p-4 sm:p-6">
+        <div className="mobile-app-content suite-page p-4 sm:p-6">
           {children}
         </div>
       </main>

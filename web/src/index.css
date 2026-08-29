@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -149,7 +148,7 @@ textarea {
   }
 
   .mobile-app-header {
-    height: calc(3.75rem + var(--app-safe-top)) !important;
+    height: calc(var(--app-header-height) + var(--app-safe-top)) !important;
     padding-top: var(--app-safe-top);
     padding-left: var(--app-safe-left);
     padding-right: var(--app-safe-right);
@@ -163,7 +162,7 @@ textarea {
 
   .mobile-app-main {
     min-height: 100dvh;
-    padding-top: calc(3.75rem + var(--app-safe-top)) !important;
+    padding-top: calc(var(--app-header-height) + var(--app-safe-top)) !important;
     padding-bottom: calc(4.25rem + var(--app-safe-bottom));
   }
 

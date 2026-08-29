@@ -1,5 +1,7 @@
 # CLAUDE.md - AI Agent Instructions
 
+> **Verbindliche UI-Regel:** Vor UI-Arbeit `AGENTS.md` sowie im Umbrella-Checkout `../docs/DESIGN_SYSTEM.md` und `../theme/README.md` lesen. Generierte `cores-theme.css`-/`cores-design.ts`-Kopien nicht direkt bearbeiten; Umbrella-Sync und Designprüfung vor dem Release ausführen.
+
 ## Operations Access
 
 - Use the preconfigured local SSH, GitHub, Docker Hub, and Komodo sessions.
