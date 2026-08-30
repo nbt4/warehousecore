@@ -46,11 +46,17 @@ export interface Device {
 }
 
 export interface DeviceStatusHistory {
-  history_id: number; previous_status?: string; new_status: string;
-  previous_condition?: string; new_condition: string;
-  previous_zone_id?: number; new_zone_id?: number;
-  previous_location?: string; new_location?: string;
-  change_source: string; changed_at: string;
+  history_id: number;
+  previous_status?: string;
+  new_status: string;
+  previous_condition?: string;
+  new_condition: string;
+  previous_zone_id?: number;
+  new_zone_id?: number;
+  previous_location?: string;
+  new_location?: string;
+  change_source: string;
+  changed_at: string;
 }
 
 export interface DeviceTreeDevice {
@@ -121,7 +127,7 @@ export interface CaseSummary {
   label_path?: string;
 }
 
-export interface CaseDetail extends CaseSummary {}
+export type CaseDetail = CaseSummary;
 
 export type HandlingUnitType = 'dynamic' | 'fixed' | 'hybrid';
 export type HandlingUnitStatus = 'empty' | 'packing' | 'complete' | 'sealed' | 'staged' | 'on_job' | 'return_check' | 'maintenance';
@@ -155,10 +161,34 @@ export interface HandlingUnit {
 }
 
 export interface HandlingUnitInventory {
-  devices: Array<{ device_id: string; product_id?: number; product_name: string; status: string; serial_number?: string; barcode?: string }>;
-  products: Array<{ product_id: number; product_name: string; quantity: number; unit: string; source_zone_id?: number }>;
-  template: Array<{ product_id: number; product_name: string; expected_quantity: number; actual_quantity: number; complete: boolean }>;
-  child_cases: Array<{ case_id: number; name: string; barcode?: string; workflow_status: string }>;
+  devices: Array<{
+    device_id: string;
+    product_id?: number;
+    product_name: string;
+    status: string;
+    serial_number?: string;
+    barcode?: string;
+  }>;
+  products: Array<{
+    product_id: number;
+    product_name: string;
+    quantity: number;
+    unit: string;
+    source_zone_id?: number;
+  }>;
+  template: Array<{
+    product_id: number;
+    product_name: string;
+    expected_quantity: number;
+    actual_quantity: number;
+    complete: boolean;
+  }>;
+  child_cases: Array<{
+    case_id: number;
+    name: string;
+    barcode?: string;
+    workflow_status: string;
+  }>;
   complete: boolean;
 }
 
@@ -406,13 +436,11 @@ export interface JobSummary {
 // API Functions
 export const dashboardApi = {
   getStats: () => api.get<DashboardStats>('/dashboard/stats'),
-  getRecentMovements: (limit: number = 10) =>
-    api.get<Movement[]>('/movements', { params: { limit } }),
+  getRecentMovements: (limit: number = 10) => api.get<Movement[]>('/movements', { params: { limit } }),
 };
 
 export const devicesApi = {
-  getAll: (params?: { status?: string; zone_id?: number; limit?: number }) =>
-    api.get<Device[]>('/devices', { params }),
+  getAll: (params?: { status?: string; zone_id?: number; limit?: number }) => api.get<Device[]>('/devices', { params }),
   getById: (id: string) => api.get<Device>(`/devices/${id}`),
   getMovements: (id: string) => api.get(`/devices/${id}/movements`),
   getStatusHistory: (id: string) => api.get<DeviceStatusHistory[]>(`/devices/${id}/status-history`),
@@ -474,46 +502,64 @@ export const devicesAdminApi = {
 };
 
 export const casesApi = {
-  list: (params?: { search?: string; status?: string }) =>
-    api.get<CasesResponse>('/cases', { params }),
+  list: (params?: { search?: string; status?: string }) => api.get<CasesResponse>('/cases', { params }),
   getById: (id: number) => api.get<CaseDetail>(`/cases/${id}`),
   getDevices: (id: number) => api.get<CaseDevice[]>(`/cases/${id}/contents`),
   create: (data: Partial<CaseDetail>) => api.post<{ case_id: number; message: string }>('/cases', data),
   update: (id: number, data: Partial<CaseDetail>) => api.put<{ message: string }>(`/cases/${id}`, data),
   delete: (id: number) => api.delete<{ message: string }>(`/cases/${id}`),
   addDevices: (caseId: number, deviceIds: string[]) =>
-    api.post<{ success_count: number; skipped_count: number; total: number; errors?: string[]; message?: string }>(`/cases/${caseId}/devices`, { device_ids: deviceIds }),
-  removeDevice: (caseId: number, deviceId: string) =>
-    api.delete<{ message: string }>(`/cases/${caseId}/devices/${deviceId}`),
+    api.post<{
+      success_count: number;
+      skipped_count: number;
+      total: number;
+      errors?: string[];
+      message?: string;
+    }>(`/cases/${caseId}/devices`, { device_ids: deviceIds }),
+  removeDevice: (caseId: number, deviceId: string) => api.delete<{ message: string }>(`/cases/${caseId}/devices/${deviceId}`),
 };
 
 export const handlingUnitsApi = {
-  list: (params?: { search?: string; workflow_status?: string }) =>
-    api.get<{ cases: HandlingUnit[]; meta: { count: number } }>('/handling-units', { params }),
+  list: (params?: { search?: string; workflow_status?: string }) => api.get<{ cases: HandlingUnit[]; meta: { count: number } }>('/handling-units', { params }),
   get: (id: number) => api.get<HandlingUnit>(`/handling-units/${id}`),
-  findByScan: (scanCode: string) => api.get<HandlingUnit>('/handling-units/scan', { params: { scan_code: scanCode } }),
+  findByScan: (scanCode: string) =>
+    api.get<HandlingUnit>('/handling-units/scan', {
+      params: { scan_code: scanCode },
+    }),
   create: (data: HandlingUnitInput) => api.post<{ case_id: number; message: string }>('/handling-units', data),
   update: (id: number, data: HandlingUnitInput) => api.put<{ message: string }>(`/handling-units/${id}`, data),
   delete: (id: number) => api.delete<{ message: string }>(`/handling-units/${id}`),
   inventory: (id: number) => api.get<HandlingUnitInventory>(`/handling-units/${id}/inventory`),
-  packScan: (id: number, data: { scan_code: string; quantity?: number; source_zone_id?: number }) =>
-    api.post<{ message: string; item_type: string; duplicate?: boolean }>(`/handling-units/${id}/inventory/scan`, data),
+  packScan: (id: number, data: { scan_code: string; quantity?: number; source_zone_id?: number }) => api.post<{ message: string; item_type: string; duplicate?: boolean }>(`/handling-units/${id}/inventory/scan`, data),
   removeDevice: (id: number, deviceId: string) => api.delete(`/handling-units/${id}/inventory/devices/${encodeURIComponent(deviceId)}`),
-  removeProduct: (id: number, productId: number, data: { quantity: number; destination_zone_id: number }) =>
-    api.post(`/handling-units/${id}/inventory/products/${productId}`, data),
+  removeProduct: (id: number, productId: number, data: { quantity: number; destination_zone_id: number }) => api.post(`/handling-units/${id}/inventory/products/${productId}`, data),
   removeChild: (id: number, childId: number, destinationZoneId: number) =>
-    api.post(`/handling-units/${id}/inventory/cases/${childId}`, { destination_zone_id: destinationZoneId }),
+    api.post(`/handling-units/${id}/inventory/cases/${childId}`, {
+      destination_zone_id: destinationZoneId,
+    }),
   setTemplate: (id: number, productId: number, expectedQuantity: number) =>
-    api.post(`/handling-units/${id}/template`, { product_id: productId, expected_quantity: expectedQuantity }),
+    api.post(`/handling-units/${id}/template`, {
+      product_id: productId,
+      expected_quantity: expectedQuantity,
+    }),
   setTemplateByScan: (id: number, scanCode: string, expectedQuantity: number) =>
-    api.post(`/handling-units/${id}/template`, { scan_code: scanCode, expected_quantity: expectedQuantity }),
+    api.post(`/handling-units/${id}/template`, {
+      scan_code: scanCode,
+      expected_quantity: expectedQuantity,
+    }),
   removeTemplate: (id: number, productId: number) => api.delete(`/handling-units/${id}/template/${productId}`),
   seal: (id: number, force = false) => api.post(`/handling-units/${id}/seal`, { force }),
   unseal: (id: number) => api.post(`/handling-units/${id}/unseal`),
   dispatch: (id: number, jobId: number, force = false) => api.post(`/handling-units/${id}/dispatch`, { job_id: jobId, force }),
   returnCase: (id: number, destinationZoneId: number, mode: 'sealed' | 'inspect') =>
-    api.post(`/handling-units/${id}/return`, { destination_zone_id: destinationZoneId, mode }),
-  unpack: (id: number, destinationZoneId: number) => api.post(`/handling-units/${id}/unpack`, { destination_zone_id: destinationZoneId }),
+    api.post(`/handling-units/${id}/return`, {
+      destination_zone_id: destinationZoneId,
+      mode,
+    }),
+  unpack: (id: number, destinationZoneId: number) =>
+    api.post(`/handling-units/${id}/unpack`, {
+      destination_zone_id: destinationZoneId,
+    }),
   events: (id: number) => api.get<Array<Record<string, unknown>>>(`/handling-units/${id}/events`),
 };
 
@@ -537,17 +583,27 @@ export const zonesApi = {
 };
 
 export const warehouseApi = {
-  locations: (includeArchived = true) => api.get<WarehouseLocation[]>('/warehouse/locations', { params: { include_archived: includeArchived } }),
+  locations: (includeArchived = true) =>
+    api.get<WarehouseLocation[]>('/warehouse/locations', {
+      params: { include_archived: includeArchived },
+    }),
   location: (id: number) => api.get<WarehouseLocation>(`/warehouse/locations/${id}`),
   createLocation: (data: Partial<WarehouseLocation>) => api.post<{ zone_id: number; message: string }>('/warehouse/locations', data),
   updateLocation: (id: number, data: Partial<WarehouseLocation>) => api.put<{ message: string }>(`/warehouse/locations/${id}`, data),
   archiveLocation: (id: number) => api.post<{ message: string }>(`/warehouse/locations/${id}/archive`),
   overview: () => api.get<WarehouseOverview>('/warehouse/overview'),
-  tasks: (status?: string) => api.get<WarehouseTask[]>('/warehouse/tasks', { params: status ? { status } : undefined }),
+  tasks: (status?: string) =>
+    api.get<WarehouseTask[]>('/warehouse/tasks', {
+      params: status ? { status } : undefined,
+    }),
   createTask: (data: Partial<WarehouseTask>) => api.post<{ task_id: number; message: string }>('/warehouse/tasks', data),
   updateTaskStatus: (id: number, status: string) => api.patch(`/warehouse/tasks/${id}/status`, { status }),
   counts: () => api.get<InventoryCount[]>('/warehouse/counts'),
-  createCount: (zoneId: number, blindCount: boolean) => api.post<{ count_id: number; message: string }>('/warehouse/counts', { zone_id: zoneId, blind_count: blindCount }),
+  createCount: (zoneId: number, blindCount: boolean) =>
+    api.post<{ count_id: number; message: string }>('/warehouse/counts', {
+      zone_id: zoneId,
+      blind_count: blindCount,
+    }),
   count: (id: number) => api.get<InventoryCountDetail>(`/warehouse/counts/${id}`),
   scanCount: (id: number, scanCode: string, quantity = 1) => api.post(`/warehouse/counts/${id}/scan`, { scan_code: scanCode, quantity }),
   completeCount: (id: number) => api.post(`/warehouse/counts/${id}/complete`),
@@ -601,67 +657,146 @@ export interface JobPicklist {
 }
 
 export const picklistApi = {
-  getByJob: (jobId: number) =>
-    api.get<JobPicklist>(`/jobs/${jobId}/picklist`),
-  scanDevice: (jobId: number, deviceId: string, scannedBy?: string) =>
-    api.post<{ position_id: number; device_id: string; message: string }>(
-      `/jobs/${jobId}/picklist/scan`,
-      { device_id: deviceId, scanned_by: scannedBy || '' }
-    ),
+  getByJob: (jobId: number) => api.get<JobPicklist>(`/jobs/${jobId}/picklist`),
+  scanDevice: (jobId: number, deviceId: string, scannedBy?: string) => api.post<{ position_id: number; device_id: string; message: string }>(`/jobs/${jobId}/picklist/scan`, { device_id: deviceId, scanned_by: scannedBy || '' }),
 };
 
-export interface Defect {
-  defect_id: number;
+export type MaintenanceOrderType = 'defect' | 'preventive' | 'inspection' | 'calibration';
+export type MaintenancePriority = 'low' | 'normal' | 'high' | 'critical';
+export type MaintenanceOrderStatus = 'open' | 'planned' | 'in_progress' | 'waiting_parts' | 'completed' | 'cancelled';
+export type MaintenanceOutcome = 'passed' | 'passed_with_notes' | 'failed' | 'repaired';
+
+export interface MaintenanceOrder {
+  order_id: number;
   device_id: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  status: 'open' | 'in_progress' | 'repaired' | 'closed';
+  plan_id?: number;
+  order_type: MaintenanceOrderType;
+  priority: MaintenancePriority;
+  status: MaintenanceOrderStatus;
+  title: string;
+  description?: string;
+  due_at?: string;
+  scheduled_at?: string;
+  reported_by?: number;
+  reported_by_name?: string;
+  assigned_to?: number;
+  assigned_to_name?: string;
+  started_at?: string;
+  completed_at?: string;
+  outcome?: MaintenanceOutcome;
+  resolution?: string;
+  cost?: number;
+  created_at: string;
+  updated_at: string;
+  product_name?: string;
+  serial_number?: string;
+  device_condition: string;
+  zone_name?: string;
+  plan_name?: string;
+}
+
+export interface MaintenancePlan {
+  plan_id: number;
+  device_id: string;
+  name: string;
+  maintenance_type: Exclude<MaintenanceOrderType, 'defect'>;
+  interval_days: number;
+  lead_time_days: number;
+  instructions?: string;
+  next_due_at: string;
+  last_completed_at?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  product_name?: string;
+  serial_number?: string;
+  device_condition: string;
+  has_active_order: boolean;
+}
+
+export interface MaintenanceOverview {
+  overdue_orders: number;
+  due_soon_orders: number;
+  open_defects: number;
+  in_progress_orders: number;
+  completed_this_month: number;
+  active_plans: number;
+  unavailable_devices: number;
+  cost_this_month: number;
+}
+
+export interface MaintenanceDeviceOption {
+  device_id: string;
+  product_name: string;
+  serial_number?: string;
+  barcode?: string;
+  status: string;
+  condition_status: string;
+}
+
+export interface MaintenanceUserOption {
+  user_id: number;
+  name: string;
+}
+export interface MaintenanceOptions {
+  devices: MaintenanceDeviceOption[];
+  users: MaintenanceUserOption[];
+}
+
+export interface MaintenanceEvent {
+  event_id: number;
+  event_type: string;
+  from_status?: string;
+  to_status?: string;
+  notes?: string;
+  actor_id?: number;
+  actor_name?: string;
+  created_at: string;
+}
+
+export interface MaintenanceOrderInput {
+  device_id: string;
+  order_type: MaintenanceOrderType;
+  priority: MaintenancePriority;
   title: string;
   description: string;
-  reported_at: string;
-  repair_cost?: number;
-  repaired_at?: string;
-  closed_at?: string;
-  product_name?: string;
+  due_at: string;
+  assigned_to?: number;
+  cost?: number;
 }
 
-export interface Inspection {
-  schedule_id: number;
-  device_id?: string;
-  product_id?: number;
-  inspection_type: string;
+export interface MaintenancePlanInput {
+  device_id: string;
+  name: string;
+  maintenance_type: Exclude<MaintenanceOrderType, 'defect'>;
   interval_days: number;
-  last_inspection?: string;
-  next_inspection?: string;
+  lead_time_days: number;
+  instructions: string;
+  next_due_at: string;
   is_active: boolean;
-  product_name?: string;
-  device_name?: string;
-}
-
-export interface MaintenanceStats {
-  open_defects: number;
-  in_progress_defects: number;
-  repaired_defects: number;
-  overdue_inspections: number;
-  upcoming_inspections: number;
 }
 
 export const maintenanceApi = {
-  getStats: () => api.get<MaintenanceStats>('/maintenance/stats'),
-  getDefects: (params?: { status?: string; severity?: string }) =>
-    api.get<Defect[]>('/defects', { params }),
-  createDefect: (data: {
-    device_id: string;
-    severity: string;
-    title: string;
-    description: string;
-  }) => api.post<{ defect_id: number; message: string }>('/defects', data),
-  updateDefect: (id: number, data: {
-    status?: string;
-    repair_cost?: number;
-    repair_notes?: string;
-  }) => api.put(`/defects/${id}`, data),
-  getInspections: (params?: { status?: string }) =>
-    api.get<Inspection[]>('/maintenance/inspections', { params }),
+  overview: () => api.get<MaintenanceOverview>('/maintenance/overview'),
+  options: () => api.get<MaintenanceOptions>('/maintenance/options'),
+  orders: (params?: { scope?: 'active' | 'history'; status?: MaintenanceOrderStatus; type?: MaintenanceOrderType; search?: string }) => api.get<MaintenanceOrder[]>('/maintenance/orders', { params }),
+  createOrder: (data: MaintenanceOrderInput) => api.post<{ order_id: number; message: string }>('/maintenance/orders', data),
+  updateOrder: (id: number, data: MaintenanceOrderInput) => api.put<{ message: string }>(`/maintenance/orders/${id}`, data),
+  transitionOrder: (
+    id: number,
+    data: {
+      status: MaintenanceOrderStatus;
+      outcome?: MaintenanceOutcome;
+      resolution?: string;
+      notes?: string;
+      cost?: number;
+      next_due_at?: string;
+    },
+  ) => api.post<{ message: string }>(`/maintenance/orders/${id}/transition`, data),
+  events: (id: number) => api.get<MaintenanceEvent[]>(`/maintenance/orders/${id}/events`),
+  plans: () => api.get<MaintenancePlan[]>('/maintenance/plans'),
+  createPlan: (data: MaintenancePlanInput) => api.post<{ plan_id: number; message: string }>('/maintenance/plans', data),
+  updatePlan: (id: number, data: MaintenancePlanInput) => api.put<{ message: string }>(`/maintenance/plans/${id}`, data),
 };
 
 // LED Control Types
@@ -739,10 +874,8 @@ export const ledApi = {
   highlightJob: (jobId: number) => api.post(`/led/highlight?job_id=${jobId}`),
   clear: () => api.post('/led/clear'),
   identify: () => api.post('/led/identify'),
-  testBin: (shelfId: string, binId: string) =>
-    api.post(`/led/test?shelf_id=${shelfId}&bin_id=${binId}`),
-  locateBin: (binCode: string) =>
-    api.post(`/led/locate?bin_code=${binCode}`),
+  testBin: (shelfId: string, binId: string) => api.post(`/led/test?shelf_id=${shelfId}&bin_id=${binId}`),
+  locateBin: (binCode: string) => api.post(`/led/locate?bin_code=${binCode}`),
   getJobSettings: () => api.get<LEDJobHighlightSettings>('/admin/led/job-highlights'),
   updateJobSettings: (settings: LEDJobHighlightSettings) => api.put('/admin/led/job-highlights', settings),
   getMapping: () => api.get<LEDMapping>('/admin/led/mapping'),
@@ -764,8 +897,7 @@ export const ledApi = {
   createController: (payload: LEDControllerPayload) => api.post('/admin/led/controllers', payload),
   updateController: (id: number, payload: LEDControllerPayload) => api.put(`/admin/led/controllers/${id}`, payload),
   deleteController: (id: number) => api.delete(`/admin/led/controllers/${id}`),
-  configureController: (id: number, config: { led_count?: number; data_pin?: number; chipset?: string }) =>
-    api.post(`/admin/led/controllers/${id}/configure`, config),
+  configureController: (id: number, config: { led_count?: number; data_pin?: number; chipset?: string }) => api.post(`/admin/led/controllers/${id}/configure`, config),
   restartController: (id: number) => api.post(`/admin/led/controllers/${id}/restart`),
 };
 
@@ -850,41 +982,60 @@ export interface LabelElement {
 }
 
 export const labelsApi = {
-  generateQRCode: (content: string, size: number = 256) =>
-    api.post<{ image_data: string }>('/labels/qrcode', { content, size }),
+  generateQRCode: (content: string, size: number = 256) => api.post<{ image_data: string }>('/labels/qrcode', { content, size }),
   generateBarcode: (content: string, width: number = 300, height: number = 100) =>
-    api.post<{ image_data: string }>('/labels/barcode', { content, width, height }),
+    api.post<{ image_data: string }>('/labels/barcode', {
+      content,
+      width,
+      height,
+    }),
   getTemplates: () => api.get<LabelTemplate[]>('/labels/templates'),
   getTemplate: (id: number) => api.get<LabelTemplate>(`/labels/templates/${id}`),
   createTemplate: (template: LabelTemplate) => api.post<LabelTemplate>('/labels/templates', template),
   updateTemplate: (id: number, updates: Partial<LabelTemplate>) => api.put(`/labels/templates/${id}`, updates),
   deleteTemplate: (id: number) => api.delete(`/labels/templates/${id}`),
-  generateDeviceLabel: (deviceId: string, templateId: number) =>
-    api.post(`/labels/device/${deviceId}`, { template_id: templateId }),
-  generateCaseLabel: (caseId: number, templateId: number) =>
-    api.post(`/labels/case/${caseId}`, { template_id: templateId }),
+  generateDeviceLabel: (deviceId: string, templateId: number) => api.post(`/labels/device/${deviceId}`, { template_id: templateId }),
+  generateCaseLabel: (caseId: number, templateId: number) => api.post(`/labels/case/${caseId}`, { template_id: templateId }),
   saveLabel: (deviceId: string, imageData: string) =>
-    api.post<{ label_path: string; message: string }>('/labels/save', { device_id: deviceId, image_data: imageData }),
+    api.post<{ label_path: string; message: string }>('/labels/save', {
+      device_id: deviceId,
+      image_data: imageData,
+    }),
   saveCaseLabel: (caseId: number, imageData: string) =>
-    api.post<{ label_path: string; message: string }>('/labels/save-case', { case_id: caseId, image_data: imageData }),
+    api.post<{ label_path: string; message: string }>('/labels/save-case', {
+      case_id: caseId,
+      image_data: imageData,
+    }),
   getTargets: (type: LabelTargetType, search = '', limit = 250) =>
-    api.get<LabelTarget[]>('/labels/targets', { params: { type, search, limit } }),
-  getTarget: (type: LabelTargetType, id: string) =>
-    api.get<LabelTarget>(`/labels/targets/${type}/${encodeURIComponent(id)}`),
-  getFields: (type: LabelTargetType) =>
-    api.get<LabelFieldDefinition[]>(`/labels/fields/${type}`),
+    api.get<LabelTarget[]>('/labels/targets', {
+      params: { type, search, limit },
+    }),
+  getTarget: (type: LabelTargetType, id: string) => api.get<LabelTarget>(`/labels/targets/${type}/${encodeURIComponent(id)}`),
+  getFields: (type: LabelTargetType) => api.get<LabelFieldDefinition[]>(`/labels/fields/${type}`),
   renderTarget: (payload: { target_type: LabelTargetType; target_id: string; template_id: number; save: boolean }) =>
-    api.post<{ target: LabelTarget; template: LabelTemplate; elements: LabelElement[]; image_data: string; label_path?: string }>('/labels/render', payload),
+    api.post<{
+      target: LabelTarget;
+      template: LabelTemplate;
+      elements: LabelElement[];
+      image_data: string;
+      label_path?: string;
+    }>('/labels/render', payload),
   renderTargets: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; save: boolean; include_images: boolean }) =>
-    api.post<{ results: Array<{ target: LabelTarget; template: LabelTemplate; elements: LabelElement[]; image_data: string; label_path?: string }> }>('/labels/render-batch', payload),
-  exportPDF: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; copies: number }) =>
-    api.post<Blob>('/labels/pdf', payload, { responseType: 'blob' }),
+    api.post<{
+      results: Array<{
+        target: LabelTarget;
+        template: LabelTemplate;
+        elements: LabelElement[];
+        image_data: string;
+        label_path?: string;
+      }>;
+    }>('/labels/render-batch', payload),
+  exportPDF: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; copies: number }) => api.post<Blob>('/labels/pdf', payload, { responseType: 'blob' }),
   getPrinters: () => api.get<LabelPrinter[]>('/labels/printers'),
   createPrinter: (printer: LabelPrinter) => api.post<LabelPrinter>('/labels/printers', printer),
   updatePrinter: (id: number, printer: LabelPrinter) => api.put<LabelPrinter>(`/labels/printers/${id}`, printer),
   deletePrinter: (id: number) => api.delete(`/labels/printers/${id}`),
-  printDirect: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; printer_id: number; copies: number }) =>
-    api.post<{ jobs: LabelPrintJob[] }>('/labels/print', payload),
+  printDirect: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; printer_id: number; copies: number }) => api.post<{ jobs: LabelPrintJob[] }>('/labels/print', payload),
   getPrintJobs: (limit = 100) => api.get<LabelPrintJob[]>('/labels/print-jobs', { params: { limit } }),
 };
 
@@ -1017,15 +1168,12 @@ export const cablesAdminApi = {
     return api.get<Cable[]>(`/admin/cables${query ? `?${query}` : ''}`);
   },
   getById: (id: number) => api.get<Cable>(`/admin/cables/${id}`),
-  create: (data: CableCreateInput) => api.post<{cable_id: number; message: string}>('/admin/cables', data),
-  update: (id: number, data: CableUpdateInput) => api.put<{message: string}>(`/admin/cables/${id}`, data),
-  delete: (id: number) => api.delete<{message: string}>(`/admin/cables/${id}`),
-  setStock: (id: number, data: { zone_id?: number | null; quantity: number }) =>
-    api.put<{message: string}>(`/admin/cables/${id}/stock`, data),
-  createUnits: (id: number, data: { zone_id?: number | null; quantity: number }) =>
-    api.post<{created_count: number; message: string}>(`/admin/cables/${id}/units`, data),
-  deleteUnit: (id: number, deviceId: string) =>
-    api.delete<{message: string}>(`/admin/cables/${id}/units/${encodeURIComponent(deviceId)}`),
+  create: (data: CableCreateInput) => api.post<{ cable_id: number; message: string }>('/admin/cables', data),
+  update: (id: number, data: CableUpdateInput) => api.put<{ message: string }>(`/admin/cables/${id}`, data),
+  delete: (id: number) => api.delete<{ message: string }>(`/admin/cables/${id}`),
+  setStock: (id: number, data: { zone_id?: number | null; quantity: number }) => api.put<{ message: string }>(`/admin/cables/${id}/stock`, data),
+  createUnits: (id: number, data: { zone_id?: number | null; quantity: number }) => api.post<{ created_count: number; message: string }>(`/admin/cables/${id}/units`, data),
+  deleteUnit: (id: number, deviceId: string) => api.delete<{ message: string }>(`/admin/cables/${id}/units/${encodeURIComponent(deviceId)}`),
   getConnectors: () => api.get<CableConnector[]>('/admin/cable-connectors'),
   getTypes: () => api.get<CableType[]>('/admin/cable-types'),
 };
@@ -1045,16 +1193,21 @@ export const productPicturesApi = {
   list: (productId: number) => api.get<{ pictures: ProductPicture[] }>(`/admin/products/${productId}/pictures`),
   upload: (productId: number, files: FileList | File[]) => {
     const data = new FormData();
-    Array.from(files as ArrayLike<File>).forEach(file => data.append('files', file));
+    Array.from(files as ArrayLike<File>).forEach((file) => data.append('files', file));
     return api.post(`/admin/products/${productId}/pictures`, data, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
-  delete: (productId: number, fileName: string) =>
-    api.delete(`/admin/products/${productId}/pictures/${encodeURIComponent(fileName)}`),
+  delete: (productId: number, fileName: string) => api.delete(`/admin/products/${productId}/pictures/${encodeURIComponent(fileName)}`),
 };
 
 export const productWebsiteApi = {
-  update: (productId: number, payload: { website_visible: boolean; website_images: string[]; website_thumbnail?: string | null }) =>
-    api.put(`/admin/products/${productId}/website`, payload),
+  update: (
+    productId: number,
+    payload: {
+      website_visible: boolean;
+      website_images: string[];
+      website_thumbnail?: string | null;
+    },
+  ) => api.put(`/admin/products/${productId}/website`, payload),
 };

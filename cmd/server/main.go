@@ -207,6 +207,9 @@ func main() {
 	if err := handlers.EnsureDeviceStatusSchema(); err != nil {
 		log.Fatalf("Failed to initialize device status schema: %v", err)
 	}
+	if err := handlers.EnsureMaintenanceSchema(); err != nil {
+		log.Fatalf("Failed to initialize maintenance schema: %v", err)
+	}
 	if err := handlers.EnsureLabelStudioSchema(); err != nil {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
@@ -254,7 +257,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.62")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.63")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -363,12 +366,19 @@ func main() {
 	api.HandleFunc("/handling-units/{id}/unpack", handlers.UnpackHandlingUnit).Methods("POST")
 	api.HandleFunc("/handling-units/{id}/events", handlers.GetHandlingUnitEvents).Methods("GET")
 
-	// Maintenance endpoints
-	api.HandleFunc("/defects", handlers.GetDefects).Methods("GET")
-	api.HandleFunc("/defects", handlers.CreateDefect).Methods("POST")
-	api.HandleFunc("/defects/{id}", handlers.UpdateDefect).Methods("PUT")
-	api.HandleFunc("/maintenance/inspections", handlers.GetInspections).Methods("GET")
-	api.HandleFunc("/maintenance/stats", handlers.GetMaintenanceStats).Methods("GET")
+	// Maintenance work management. All work orders, plans, assignments and
+	// history contain operational employee/device data and require a session.
+	protected.HandleFunc("/maintenance/overview", handlers.GetMaintenanceOverview).Methods("GET")
+	protected.HandleFunc("/maintenance/stats", handlers.GetMaintenanceOverview).Methods("GET")
+	protected.HandleFunc("/maintenance/options", handlers.GetMaintenanceOptions).Methods("GET")
+	protected.HandleFunc("/maintenance/orders", handlers.ListMaintenanceOrders).Methods("GET")
+	protected.HandleFunc("/maintenance/orders", handlers.CreateMaintenanceOrder).Methods("POST")
+	protected.HandleFunc("/maintenance/orders/{id}", handlers.UpdateMaintenanceOrder).Methods("PUT")
+	protected.HandleFunc("/maintenance/orders/{id}/transition", handlers.TransitionMaintenanceOrder).Methods("POST")
+	protected.HandleFunc("/maintenance/orders/{id}/events", handlers.GetMaintenanceOrderEvents).Methods("GET")
+	protected.HandleFunc("/maintenance/plans", handlers.ListMaintenancePlans).Methods("GET")
+	protected.HandleFunc("/maintenance/plans", handlers.CreateMaintenancePlan).Methods("POST")
+	protected.HandleFunc("/maintenance/plans/{id}", handlers.UpdateMaintenancePlan).Methods("PUT")
 
 	// Dashboard/stats
 	api.HandleFunc("/dashboard/stats", handlers.GetDashboardStats).Methods("GET")

@@ -25,7 +25,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 - **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
 - **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
 - **Dynamische Handling Units** — Leere Euroboxen und Flightcases je Job frei befüllen, feste oder hybride Soll-Inhalte pflegen, Geräte/Mengenartikel/Untercases scannen, versiegeln, komplett ausgeben, im Rücklauf prüfen und gesammelt zurücklagern
-- **Wartungsmanagement** — Defekt-Tracking, Inspektionshistorie und Wartungsstatistiken
+- **Wartungsmanagement** — Priorisierter Arbeitsvorrat für Defekte, vorbeugende Wartung, Prüfungen und Kalibrierungen; wiederkehrende Gerätepläne erzeugen fällige Aufträge automatisch, während Verantwortliche, Statusereignisse, Abschlussnachweis, Kosten und Folgetermin revisionsfähig zusammenbleiben
 - **Öffentliche Produktseite** — Ungeschützte API für getrennte Produkt- und Paketlisten, jeweils mit Website-Freigabe und Bildern
 - **Produktpakete** — Pakete unabhängig von normalen Produkten verwalten, Produkte mit Mengen zuweisen und eigene Paketbilder pflegen
 - **Role-Based Access** — Feingranulares Rollensystem mit Admin-Bereich für Benutzer-, Kategorie- und LED-Konfiguration
@@ -125,6 +125,23 @@ warehousecore:
 | `GET`   | `/api/v1/scans/history`                 | Scan-Historie (🔒)                        |
 
 `POST /api/v1/scans` akzeptiert `scan_code`, `action`, optional `job_id`, `zone_id` und `quantity`. `job_id` bezeichnet ausschließlich den echten Zieljob; Mengen werden nicht mehr über dieses Feld transportiert. Eine Ausgabe benötigt einen offenen Job, eine Einlagerung einen bestätigten Lagerplatz.
+
+### Wartung und Instandhaltung
+
+| Methode | Pfad                                      | Beschreibung |
+|---------|-------------------------------------------|--------------|
+| `GET`   | `/api/v1/maintenance/overview`            | Fälligkeiten, offene Defekte, laufende Arbeiten und Monatsleistung |
+| `GET`   | `/api/v1/maintenance/options`             | Geräte- und Mitarbeiterauswahl für Wartungsformulare |
+| `GET`   | `/api/v1/maintenance/orders`              | Aktiven Arbeitsvorrat oder Historie filtern |
+| `POST`  | `/api/v1/maintenance/orders`              | Defekt-, Wartungs-, Prüf- oder Kalibrierauftrag anlegen |
+| `PUT`   | `/api/v1/maintenance/orders/:id`          | Stammdaten eines aktiven Auftrags aktualisieren |
+| `POST`  | `/api/v1/maintenance/orders/:id/transition` | Kontrollierten Statuswechsel oder Abschluss buchen |
+| `GET`   | `/api/v1/maintenance/orders/:id/events`   | Revisionsfähigen Auftragsverlauf laden |
+| `GET`   | `/api/v1/maintenance/plans`               | Wiederkehrende gerätebezogene Pläne laden |
+| `POST`  | `/api/v1/maintenance/plans`               | Wartungsplan anlegen |
+| `PUT`   | `/api/v1/maintenance/plans/:id`           | Wartungsplan bearbeiten, pausieren oder aktivieren |
+
+Aktive Pläne erzeugen einmalig innerhalb ihres Vorlaufs einen geplanten Arbeitsauftrag. Beim Start wird das Gerät auf `maintenance` gesetzt; Defektmeldungen setzen es auf `defective`. Ein erfolgreicher Abschluss stellt `available` nur wieder her, wenn kein weiterer blockierender Auftrag existiert. Abschluss und Plan aktualisieren außerdem `lastmaintenance` und `nextmaintenance` am Gerät. Sämtliche Wartungsendpunkte erfordern eine authentifizierte Sitzung.
 
 ### Zonen
 
