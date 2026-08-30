@@ -16,6 +16,7 @@ import { devicesApi, jobsApi, scansApi, warehouseApi, zonesApi } from '../lib/ap
 import type { Device, JobSummary, ScanResponse, WarehouseLocation } from '../lib/api';
 import { formatStatus } from '../lib/utils';
 import { toast } from '../lib/toast';
+import { isDispatchableJob } from '../lib/job-status';
 
 type ScanAction = 'check' | 'intake' | 'outtake';
 type ScanStep = 'job' | 'device' | 'zone';
@@ -30,16 +31,6 @@ const actionOptions: Array<{
   { value: 'intake', label: 'Einlagern', description: 'Artikel und danach Lagerplatz scannen', icon: PackageCheck },
   { value: 'outtake', label: 'Auslagern', description: 'Job und danach Artikel scannen', icon: PackageMinus },
 ];
-
-const closedJobStatuses = new Set([
-  'abgeschlossen',
-  'abgerechnet',
-  'storniert',
-  'completed',
-  'paid',
-  'canceled',
-  'cancelled',
-]);
 
 const firstStep = (action: ScanAction): ScanStep => (action === 'outtake' ? 'job' : 'device');
 
@@ -116,10 +107,10 @@ export function ScanPage() {
 
   const selectJob = async (code: string) => {
     const { data: job } = await jobsApi.getByScan(code);
-    if (closedJobStatuses.has(job.status.trim().toLowerCase())) {
+	if (!isDispatchableJob(job.status_id)) {
       setResult({
         success: false,
-        message: `${job.job_code} ist bereits ${job.status} und kann nicht mehr ausgelagert werden.`,
+		message: `${job.job_code} hat den Status ${job.status}. Ausgaben sind nur für bestätigte Jobs möglich.`,
         action: 'outtake',
         duplicate: false,
       });

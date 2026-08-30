@@ -406,6 +406,7 @@ export interface Job {
   description?: string;
   start_date?: string;
   end_date?: string;
+  status_id: number;
   status: string;
   customer_first_name?: string;
   customer_last_name?: string;
@@ -429,6 +430,7 @@ export interface JobSummary {
   description?: string;
   start_date?: string;
   end_date?: string;
+  status_id: number;
   status: string;
   customer_first_name?: string;
   customer_last_name?: string;

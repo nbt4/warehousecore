@@ -167,6 +167,8 @@ Das Dashboard aktualisiert Betriebskennzahlen automatisch alle 30 Sekunden und o
 
 Geräte verwenden zwei voneinander unabhängige Statusdimensionen. Der Lagerstatus wird ausschließlich von den physischen Workflows gesetzt: `location_unknown` bei Neuanlage oder Verlust der Zuordnung, `in_storage` durch Einlagerung, Lagerplatzzuweisung, Inventurbestätigung oder Packen in ein Case, `on_job` durch Einzel- oder Case-Ausgabe und `return_pending` beim Jobabschluss bzw. prüfpflichtigen Rücklauf. Der Betriebszustand (`available`, `blocked`, `defective`, `maintenance`, `retired`) wird administrativ oder über Defekt-/Reparaturvorgänge gepflegt und bleibt bei Ortsbewegungen erhalten. Geräte sind nur mit `in_storage` plus `available` ausgabefähig. Änderungen an Status, Zustand und Ort werden in `device_status_history` protokolliert.
 
+Job- und Lagerstatus bleiben ebenfalls getrennt. WarehouseCore zeigt für Vorbereitung, Einzelgeräte-, Mengenartikel- und Case-Ausgaben ausschließlich Jobs mit dem RentalCore-Status `Bestätigt`. `Planung` ist noch nicht zur Ausgabe freigegeben; `Abgeschlossen` und `Storniert` sind terminal. Beim Jobabschluss wechseln ausgegebene Geräte auf `return_pending`, bis eine physische Rücknahme sie wieder als `in_storage` bestätigt. Der Rechnungsstatus hat auf diesen Ablauf keinen Einfluss.
+
 ### Lagersteuerung & Inventur
 
 | Methode | Pfad                                      | Beschreibung |

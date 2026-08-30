@@ -221,8 +221,8 @@ func (s *ScanService) processOuttake(tx *sql.Tx, device *models.Device, jobID *i
 	if err != nil {
 		return nil, nil, fmt.Errorf("Job konnte nicht geprüft werden: %w", err)
 	}
-	if isClosedJobStatus(jobStatus) {
-		return nil, nil, fmt.Errorf("%s ist bereits %s und kann nicht mehr ausgegeben werden", jobCode, jobStatus)
+	if !isDispatchableJobStatus(jobStatus) {
+		return nil, nil, fmt.Errorf("%s hat den Status %s; Ausgaben sind nur für bestätigte Jobs möglich", jobCode, jobStatus)
 	}
 	if err := validateDeviceForOuttake(device, *jobID); err != nil {
 		return nil, nil, err
@@ -726,8 +726,8 @@ func (s *ScanService) processConsumableOuttake(tx *sql.Tx, product *ConsumablePr
 	`, *jobID).Scan(&jobCode, &jobStatus)
 	if err == sql.ErrNoRows {
 		err = fmt.Errorf("Job %d wurde nicht gefunden", *jobID)
-	} else if err == nil && isClosedJobStatus(jobStatus) {
-		err = fmt.Errorf("%s ist bereits %s und kann nicht mehr ausgegeben werden", jobCode, jobStatus)
+	} else if err == nil && !isDispatchableJobStatus(jobStatus) {
+		err = fmt.Errorf("%s hat den Status %s; Ausgaben sind nur für bestätigte Jobs möglich", jobCode, jobStatus)
 	}
 	if err != nil {
 		s.logScanEvent(tx, scanCode, productIDStr, "outtake", jobID, zoneID, userID, false, err.Error(), ipAddr, userAgent)

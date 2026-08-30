@@ -34,6 +34,17 @@ func TestClosedJobStatus(t *testing.T) {
 	}
 }
 
+func TestOnlyConfirmedJobIsDispatchable(t *testing.T) {
+	if !isDispatchableJobStatus("Bestätigt") {
+		t.Fatal("expected confirmed job to be dispatchable")
+	}
+	for _, status := range []string{"Planung", "Abgeschlossen", "Storniert"} {
+		if isDispatchableJobStatus(status) {
+			t.Fatalf("expected %q not to be dispatchable", status)
+		}
+	}
+}
+
 func TestReturnPendingDeviceCannotBeIssuedAgain(t *testing.T) {
 	device := &models.Device{
 		DeviceID:          "SUB1001",

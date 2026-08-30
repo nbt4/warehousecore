@@ -19,6 +19,7 @@ import (
 	commonhealth "github.com/nbt4/cores-common/pkg/health"
 	commonresponse "github.com/nbt4/cores-common/pkg/response"
 
+	"warehousecore/internal/jobstatus"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
@@ -1515,7 +1516,7 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT j.jobID,
 		       COALESCE(j.job_code, CONCAT('JOB', LPAD(CAST(j.jobID AS TEXT), 6, '0'))) AS job_code,
-		       j.description, j.startDate, j.endDate, s.status,
+		       j.description, j.startDate, j.endDate, j.statusid, s.status,
 		       COALESCE(c.firstName, '') as customer_first_name,
 		       COALESCE(c.lastName, '') as customer_last_name,
 		       COUNT(DISTINCT jd.deviceID) as device_count
@@ -1523,23 +1524,18 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN status s ON j.statusID = s.statusID
 		LEFT JOIN customers c ON j.customerID = c.customerID
 		LEFT JOIN job_devices jd ON j.jobID = jd.jobID
-		WHERE 1=1`
+		WHERE j.deleted_at IS NULL`
 
 	args := []interface{}{}
-	// Exclude completed/cancelled statuses regardless of language (DE+EN)
-	excludedStatuses := []interface{}{"Abgeschlossen", "Abgerechnet", "Storniert", "canceled", "paid"}
-	placeholders := make([]string, len(excludedStatuses))
-	for i := range excludedStatuses {
-		placeholders[i] = qb.NextPlaceholder()
-	}
-	query += " AND (s.status IS NULL OR s.status NOT IN (" + strings.Join(placeholders, ",") + "))"
-	args = append(args, excludedStatuses...)
-	if status != "" && status != "open" {
+	if status == "" || status == "open" {
+		query += " AND j.statusid = " + qb.NextPlaceholder()
+		args = append(args, jobstatus.ConfirmedID)
+	} else {
 		query += " AND s.status = " + qb.NextPlaceholder()
 		args = append(args, status)
 	}
 
-	query += " GROUP BY j.jobID, j.job_code, j.description, j.startDate, j.endDate, s.status, c.firstName, c.lastName ORDER BY j.startDate ASC"
+	query += " GROUP BY j.jobID, j.job_code, j.description, j.startDate, j.endDate, j.statusid, s.status, c.firstName, c.lastName ORDER BY j.startDate ASC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -1555,6 +1551,7 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 		Description       *string `json:"description,omitempty"`
 		StartDate         *string `json:"start_date,omitempty"`
 		EndDate           *string `json:"end_date,omitempty"`
+		StatusID          int     `json:"status_id"`
 		Status            string  `json:"status"`
 		CustomerFirstName string  `json:"customer_first_name,omitempty"`
 		CustomerLastName  string  `json:"customer_last_name,omitempty"`
@@ -1566,7 +1563,7 @@ func GetJobs(w http.ResponseWriter, r *http.Request) {
 		var j JobResponse
 		var description, startDate, endDate sql.NullString
 
-		if err := rows.Scan(&j.JobID, &j.JobCode, &description, &startDate, &endDate, &j.Status,
+		if err := rows.Scan(&j.JobID, &j.JobCode, &description, &startDate, &endDate, &j.StatusID, &j.Status,
 			&j.CustomerFirstName, &j.CustomerLastName, &j.DeviceCount); err != nil {
 			log.Printf("Error scanning job row: %v", err)
 			continue
@@ -1634,18 +1631,19 @@ func GetJobSummary(w http.ResponseWriter, r *http.Request) {
 		jobCode                             sql.NullString
 		description, startDate, endDate     sql.NullString
 		status                              string
+		statusID                            int
 		customerFirstName, customerLastName string
 	)
 
 	err = db.QueryRow(`
-		SELECT j.job_code, j.description, j.startDate, j.endDate, s.status,
+		SELECT j.job_code, j.description, j.startDate, j.endDate, j.statusid, s.status,
 		       COALESCE(c.firstName, '') as customer_first_name,
 		       COALESCE(c.lastName, '') as customer_last_name
 		FROM jobs j
 		LEFT JOIN status s ON j.statusID = s.statusID
 		LEFT JOIN customers c ON j.customerID = c.customerID
 		WHERE j.jobID = $1
-	`, jobID).Scan(&jobCode, &description, &startDate, &endDate, &status, &customerFirstName, &customerLastName)
+	`, jobID).Scan(&jobCode, &description, &startDate, &endDate, &statusID, &status, &customerFirstName, &customerLastName)
 
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Job not found"})
@@ -1722,6 +1720,7 @@ func GetJobSummary(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"job_id":              jobID,
 		"job_code":            jobCodeValue,
+		"status_id":           statusID,
 		"status":              status,
 		"customer_first_name": customerFirstName,
 		"customer_last_name":  customerLastName,
@@ -2788,9 +2787,8 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type='intake'),
 		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type='outtake'),
 		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type IN ('transfer','move','assignment')),
-		(SELECT COUNT(*) FROM jobs j LEFT JOIN status s ON s.statusid=j.statusid
-		 WHERE j.deleted_at IS NULL AND LOWER(TRIM(COALESCE(s.status,''))) NOT IN
-		 ('abgeschlossen','abgerechnet','storniert','completed','paid','canceled','cancelled')),
+		(SELECT COUNT(*) FROM jobs j
+		 WHERE j.deleted_at IS NULL AND j.statusid=$1),
 		(SELECT COUNT(*) FROM cases),
 		(SELECT COUNT(*) FROM cases WHERE workflow_status='on_job'),
 		(SELECT COUNT(*) FROM cases WHERE workflow_status='return_check'),
@@ -2798,7 +2796,7 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 		(SELECT COUNT(*) FROM maintenance_orders WHERE order_type='defect' AND status NOT IN ('completed','cancelled')),
 		(SELECT COUNT(*) FROM maintenance_orders WHERE order_type='inspection'
 		 AND status NOT IN ('completed','cancelled') AND due_at<CURRENT_DATE)
-	`).Scan(&readyForDispatch, &unavailable, &movementsToday, &intakesToday, &outtakesToday, &transfersToday,
+	`, jobstatus.ConfirmedID).Scan(&readyForDispatch, &unavailable, &movementsToday, &intakesToday, &outtakesToday, &transfersToday,
 		&activeJobs, &casesTotal, &casesOnJob, &casesReturnCheck, &casesPacking, &openDefects, &overdueInspections)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load operational dashboard statistics"})

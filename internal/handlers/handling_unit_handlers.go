@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"warehousecore/internal/jobstatus"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
 )
@@ -798,13 +799,14 @@ func DispatchHandlingUnit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var jobCode, jobStatus string
-	err = tx.QueryRow(`SELECT j.job_code,COALESCE(s.status,'') FROM jobs j LEFT JOIN status s ON s.statusid=j.statusid WHERE j.jobid=$1 AND j.deleted_at IS NULL`, input.JobID).Scan(&jobCode, &jobStatus)
+	var jobStatusID int
+	err = tx.QueryRow(`SELECT j.job_code,j.statusid,COALESCE(s.status,'') FROM jobs j LEFT JOIN status s ON s.statusid=j.statusid WHERE j.jobid=$1 AND j.deleted_at IS NULL`, input.JobID).Scan(&jobCode, &jobStatusID, &jobStatus)
 	if err != nil {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Job nicht gefunden"})
 		return
 	}
-	if strings.EqualFold(jobStatus, "completed") || strings.EqualFold(jobStatus, "cancelled") {
-		respondJSON(w, http.StatusConflict, map[string]string{"error": "Job ist bereits abgeschlossen"})
+	if jobStatusID != jobstatus.ConfirmedID {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("Job hat den Status %s; Case-Ausgaben sind nur für bestätigte Jobs möglich", jobStatus)})
 		return
 	}
 	_, err = tx.Exec(`WITH RECURSIVE tree AS (SELECT $1::int AS case_id UNION ALL SELECT cc.child_case_id FROM case_child_contents cc JOIN tree t ON cc.parent_case_id=t.case_id) UPDATE cases c SET workflow_status='on_job',status='rented',current_job_id=$2,zone_id=NULL FROM tree WHERE c.caseID=tree.case_id`, caseID, input.JobID)

@@ -118,7 +118,7 @@ export function Dashboard() {
 
       <section className="suite-kpi-grid">
         <KpiCard icon={PackageCheck} label="Einsatzbereit im Lager" value={stats.ready_for_dispatch} detail={`${readiness}% aller Geräte`} color="var(--color-success)" progress={readiness} onClick={() => navigate('/scan')} />
-        <KpiCard icon={BriefcaseBusiness} label="Aktive Jobs" value={stats.active_jobs} detail={`${stats.on_job} Geräte · ${stats.cases_on_job} Cases draußen`} color="var(--color-info)" onClick={() => navigate('/jobs')} />
+		<KpiCard icon={BriefcaseBusiness} label="Bestätigte Jobs" value={stats.active_jobs} detail={`${stats.on_job} Geräte · ${stats.cases_on_job} Cases draußen`} color="var(--color-info)" onClick={() => navigate('/jobs')} />
         <KpiCard icon={MapPinOff} label="Nicht zugeordnet" value={unassigned} detail={`${overview?.unplaced_product_quantity || 0} Mengeneinheiten zusätzlich`} color={unassigned ? 'var(--color-error)' : 'var(--color-success)'} onClick={() => navigate('/zones')} />
         <KpiCard icon={ClipboardCheck} label="Offene Lagerarbeit" value={(overview?.open_tasks || 0) + (overview?.counts_due || 0)} detail={`${overview?.open_tasks || 0} Aufgaben · ${overview?.counts_due || 0} Inventuren`} color={(overview?.open_tasks || overview?.counts_due) ? 'var(--color-warning)' : 'var(--text-secondary)'} onClick={() => navigate('/zones')} />
       </section>

@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"warehousecore/internal/jobstatus"
 	"warehousecore/internal/models"
 )
 
@@ -19,12 +20,11 @@ func requestedQuantity(input *float64) (float64, error) {
 }
 
 func isClosedJobStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "abgeschlossen", "abgerechnet", "storniert", "completed", "paid", "canceled", "cancelled":
-		return true
-	default:
-		return false
-	}
+	return jobstatus.IsClosed(status)
+}
+
+func isDispatchableJobStatus(status string) bool {
+	return jobstatus.IsDispatchable(status)
 }
 
 func validateDeviceForOuttake(device *models.Device, requestedJobID int64) error {

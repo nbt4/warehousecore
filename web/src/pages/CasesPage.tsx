@@ -10,6 +10,7 @@ import {
   type Job, type WarehouseLocation,
 } from '../lib/api';
 import { toast } from '../lib/toast';
+import { isDispatchableJob } from '../lib/job-status';
 
 const workflowLabels: Record<string, string> = {
   empty: 'Leer', packing: 'Wird gepackt', complete: 'Vollständig', sealed: 'Versiegelt',
@@ -53,7 +54,7 @@ export function CasesPage() {
       ]);
       setCases(caseResult.data.cases);
       setLocations(locationResult.data.filter((item) => item.is_storable && item.operational_status === 'available'));
-      setJobs(jobResult.data.filter((job) => !['completed', 'cancelled', 'canceled'].includes(job.status.toLowerCase())));
+		setJobs(jobResult.data.filter((job) => isDispatchableJob(job.status_id)));
     } catch (error) { toast.error('Cases konnten nicht geladen werden: ' + String(error)); }
     finally { setLoading(false); }
   }, [searchQuery, statusFilter]);
