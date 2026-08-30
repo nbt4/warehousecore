@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -71,10 +72,16 @@ func GetRentalEquipment(w http.ResponseWriter, r *http.Request) {
 	argIdx := 1
 
 	if search != "" {
-		query += " AND (name ILIKE $" + strconv.Itoa(argIdx) + " OR supplier ILIKE $" + strconv.Itoa(argIdx+1) + " OR description ILIKE $" + strconv.Itoa(argIdx+2) + ")"
-		searchPattern := "%" + search + "%"
-		args = append(args, searchPattern, searchPattern, searchPattern)
-		argIdx += 3
+		for _, term := range warehouseProductSearchTerms(search) {
+			placeholder := "$" + strconv.Itoa(argIdx)
+			query += ` AND (CONCAT_WS(' ',name,supplier,category,description,notes,rental_price::text,customer_price::text) ILIKE ` + placeholder + `
+				OR EXISTS (SELECT 1 FROM rental_equipment_field_values search_value
+				 JOIN rental_equipment_field_definitions search_definition ON search_definition.id=search_value.field_definition_id
+				 WHERE search_value.equipment_id=rental_equipment.id
+				 AND CONCAT_WS(' ',search_definition.name,search_definition.unit,search_value.value) ILIKE ` + placeholder + `))`
+			args = append(args, "%"+strings.ToLower(term)+"%")
+			argIdx++
+		}
 	}
 
 	if supplierFilter != "" {

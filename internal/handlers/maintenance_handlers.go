@@ -143,6 +143,8 @@ const maintenanceOrderSelect = `SELECT o.order_id,o.device_id,o.plan_id,o.order_
 	FROM maintenance_orders o
 	JOIN devices d ON d.deviceID=o.device_id
 	LEFT JOIN products p ON p.productID=d.productID
+	LEFT JOIN brands b ON b.brandid=p.brandid
+	LEFT JOIN manufacturer m ON m.manufacturerid=p.manufacturerid
 	LEFT JOIN storage_zones z ON z.zone_id=d.zone_id
 	LEFT JOIN users ru ON ru.userID=o.reported_by
 	LEFT JOIN users au ON au.userID=o.assigned_to
@@ -256,9 +258,11 @@ func ListMaintenanceOrders(w http.ResponseWriter, r *http.Request) {
 		args = append(args, orderType)
 	}
 	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
-		placeholder := qb.NextPlaceholder()
-		query += " AND (o.title ILIKE " + placeholder + " OR o.device_id ILIKE " + placeholder + " OR p.name ILIKE " + placeholder + " OR d.serialnumber ILIKE " + placeholder + ")"
-		args = append(args, "%"+search+"%")
+		for _, term := range warehouseProductSearchTerms(search) {
+			placeholder := qb.NextPlaceholder()
+			query += " AND CONCAT_WS(' ',o.title,o.description,o.device_id,p.name,b.name,m.name,d.serialnumber,d.barcode) ILIKE " + placeholder
+			args = append(args, "%"+term+"%")
+		}
 	}
 	query += ` ORDER BY
 		CASE WHEN o.status NOT IN ('completed','cancelled') AND o.due_at<CURRENT_DATE THEN 0

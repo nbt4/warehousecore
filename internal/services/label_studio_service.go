@@ -170,10 +170,15 @@ func (s *LabelService) ListTargets(targetType, search string, limit int) ([]Labe
 			COALESCE(d.updated_at, d.created_at), a.generated_at, a.source_updated_at,
 			COALESCE(a.template_revision, 0), COALESCE(t.revision, 0)
 		FROM devices d LEFT JOIN products p ON p.productid = d.productid
+		LEFT JOIN brands b ON b.brandid = p.brandid
+		LEFT JOIN manufacturer m ON m.manufacturerid = p.manufacturerid
 		LEFT JOIN storage_zones z ON z.zone_id = d.zone_id
 		LEFT JOIN label_assets a ON a.target_type = 'device' AND a.target_id = d.deviceid
 		LEFT JOIN label_templates t ON t.target_type = 'device' AND t.is_default
-		WHERE ($1 = '' OR d.deviceid ILIKE '%' || $1 || '%' OR COALESCE(d.barcode, '') ILIKE '%' || $1 || '%' OR COALESCE(p.name, '') ILIKE '%' || $1 || '%')
+		WHERE ($1 = '' OR NOT EXISTS (
+			SELECT 1 FROM unnest(regexp_split_to_array(lower(trim($1)), '\\s+')) search_term(value)
+			WHERE CONCAT_WS(' ',d.deviceid,d.barcode,d.serialnumber,p.name,b.name,m.name) NOT ILIKE '%' || search_term.value || '%'
+		))
 		ORDER BY p.name NULLS LAST, d.deviceid LIMIT $2`
 	case LabelTargetProduct:
 		query = `SELECT p.productid::text, COALESCE(NULLIF(p.generic_barcode, ''), 'PROD-' || LPAD(p.productid::text, 6, '0')), p.name,
@@ -184,10 +189,15 @@ func (s *LabelService) ListTargets(targetType, search string, limit int) ([]Labe
 		JOIN cable_types ct ON ct.cable_typesid = cp.cable_type_id
 		JOIN cable_connectors ca ON ca.cable_connectorsid = cp.connector_a_id
 		JOIN cable_connectors cb ON cb.cable_connectorsid = cp.connector_b_id
+		LEFT JOIN brands b ON b.brandid = p.brandid
+		LEFT JOIN manufacturer m ON m.manufacturerid = p.manufacturerid
 		LEFT JOIN label_assets a ON a.target_type = 'product' AND a.target_id = p.productid::text
 		LEFT JOIN label_templates t ON t.target_type = 'product' AND t.is_default
-		WHERE ($1 = '' OR p.name ILIKE '%' || $1 || '%' OR COALESCE(p.generic_barcode, '') ILIKE '%' || $1 || '%'
-			OR ct.name ILIKE '%' || $1 || '%' OR ca.name ILIKE '%' || $1 || '%' OR cb.name ILIKE '%' || $1 || '%')
+		WHERE ($1 = '' OR NOT EXISTS (
+			SELECT 1 FROM unnest(regexp_split_to_array(lower(trim($1)), '\\s+')) search_term(value)
+			WHERE CONCAT_WS(' ',p.name,p.generic_barcode,b.name,m.name,ct.name,ca.name,cb.name,
+				cp.length_m::text,cp.cross_section_mm2::text) NOT ILIKE '%' || search_term.value || '%'
+		))
 		ORDER BY p.name LIMIT $2`
 	case LabelTargetCase:
 		query = `SELECT c.caseid::text, COALESCE(NULLIF(c.barcode, ''), 'CASE-' || c.caseid::text), c.name,

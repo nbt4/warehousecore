@@ -159,15 +159,14 @@ export function DevicesTab() {
     setZoneFilter('');
   };
 
+  const deviceSearchTerms = debouncedSearch.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filteredDevices = devices.filter((device) => {
-    const matchesSearch =
-      !debouncedSearch ||
-      device.device_id.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-      device.product_name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-      device.product_category?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-      device.serial_number?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-      device.barcode?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-      device.notes?.toLowerCase().includes(debouncedSearch.toLowerCase());
+    const searchFields = [device.device_id, device.product_name, device.product_brand,
+      device.product_manufacturer, device.product_category, device.serial_number,
+      device.barcode, device.qr_code, device.notes, device.zone_name, device.zone_code]
+      .filter(Boolean).map((value) => String(value).toLowerCase());
+    const matchesSearch = deviceSearchTerms.every((term) =>
+      searchFields.some((field) => field.includes(term)));
 
     const matchesStatus = !statusFilter || device.status === statusFilter;
     const matchesCondition = !conditionFilter || (device.condition_status || 'available') === conditionFilter;
@@ -349,7 +348,7 @@ export function DevicesTab() {
       <div className="glass-dark rounded-xl p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
           {/* Search */}
-          <div className="relative lg:col-span-2">
+          <div className="suite-search-field lg:col-span-2">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"

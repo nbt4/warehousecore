@@ -13,6 +13,11 @@ interface ProductDependency {
   is_accessory: boolean;
   is_consumable: boolean;
   generic_barcode?: string;
+  description?: string;
+  brand_name?: string;
+  manufacturer_name?: string;
+  category_name?: string;
+  subcategory_name?: string;
   count_type_abbr?: string;
   stock_quantity?: number;
   is_optional: boolean;
@@ -24,6 +29,11 @@ interface ProductDependency {
 interface AvailableProduct {
   product_id: number;
   name: string;
+  description?: string;
+  brand_name?: string;
+  manufacturer_name?: string;
+  category_name?: string;
+  subcategory_name?: string;
   is_accessory: boolean;
   is_consumable: boolean;
   generic_barcode?: string;
@@ -116,10 +126,20 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
     }
   };
 
-  const filteredProducts = availableProducts.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.generic_barcode?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const filteredProducts = availableProducts.filter((product) => {
+    const fields = [
+      product.name,
+      product.description,
+      product.brand_name,
+      product.manufacturer_name,
+      product.category_name,
+      product.subcategory_name,
+      product.generic_barcode,
+      String(product.product_id),
+    ].filter(Boolean).map((value) => String(value).toLowerCase());
+    return searchTerms.every((term) => fields.some((field) => field.includes(term)));
+  });
 
   const existingDepIds = dependencies.map(d => d.dependency_product_id);
   const availableToAdd = filteredProducts.filter(p => !existingDepIds.includes(p.product_id));
@@ -167,7 +187,7 @@ export function ProductDependenciesModal({ productId, productName, onClose }: Pr
                   {/* Search */}
                   <input
                     type="text"
-                    placeholder="Search products..."
+                    placeholder="Name, Marke, Barcode oder Kategorie …"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full mb-3 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 text-sm"

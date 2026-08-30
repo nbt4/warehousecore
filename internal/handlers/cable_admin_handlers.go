@@ -169,6 +169,8 @@ func cableSelectQuery() string {
 		JOIN cable_connectors cc1 ON cc1.cable_connectorsid = cp.connector_a_id
 		JOIN cable_connectors cc2 ON cc2.cable_connectorsid = cp.connector_b_id
 		JOIN cable_types ct ON ct.cable_typesid = cp.cable_type_id
+		LEFT JOIN brands b ON b.brandid = p.brandid
+		LEFT JOIN manufacturer m ON m.manufacturerid = p.manufacturerid
 		LEFT JOIN LATERAL (
 			SELECT COUNT(*) AS total_count,
 			       COUNT(*) FILTER (WHERE d.status='in_storage' AND d.condition_status='available') AS available_count
@@ -225,8 +227,11 @@ func GetAllCables(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
-		placeholder := addArg("%" + search + "%")
-		query += fmt.Sprintf(" AND (p.name ILIKE %s OR p.generic_barcode ILIKE %s OR cc1.name ILIKE %s OR cc2.name ILIKE %s OR ct.name ILIKE %s)", placeholder, placeholder, placeholder, placeholder, placeholder)
+		for _, term := range warehouseProductSearchTerms(search) {
+			placeholder := addArg("%" + term + "%")
+			query += fmt.Sprintf(` AND CONCAT_WS(' ',p.name,p.generic_barcode,b.name,m.name,cc1.name,cc2.name,
+				ct.name,cp.length_m::text,cp.cross_section_mm2::text) ILIKE %s`, placeholder)
+		}
 	}
 	if value, err := strconv.Atoi(r.URL.Query().Get("connector1")); err == nil && value > 0 {
 		placeholder := addArg(value)

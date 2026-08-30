@@ -236,7 +236,7 @@ export function DeviceTreeTab() {
       </div>
 
       <div className="glass rounded-xl sm:rounded-2xl p-3 sm:p-4">
-        <div className="relative">
+        <div className="suite-search-field">
           <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
           <input
             type="text"

@@ -1,6 +1,16 @@
 package handlers
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestWarehouseProductSearchTerms(t *testing.T) {
+	want := []string{"ld", "systems", "stinger", "sub", "18a", "g3"}
+	if got := warehouseProductSearchTerms(" LD Systems  Stinger SUB 18A G3 "); !reflect.DeepEqual(got, want) {
+		t.Fatalf("warehouseProductSearchTerms() = %v, want %v", got, want)
+	}
+}
 
 func intPointer(value int) *int { return &value }
 

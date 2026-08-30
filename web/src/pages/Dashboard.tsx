@@ -87,7 +87,7 @@ export function Dashboard() {
     const items: Array<{ title: string; detail: string; value: number; tone: 'critical' | 'warning'; path: string }> = [];
     if (overview && overview.active_locations === 0) items.push({ title: 'Lagerstruktur fehlt', detail: 'Ohne belegbare Lagerplätze bleibt Material ungeklärt.', value: unassigned, tone: 'critical', path: '/zones' });
     else if (unassigned > 0) items.push({ title: 'Material ohne Lagerplatz', detail: `${overview?.unplaced_devices || 0} Geräte und ${overview?.unplaced_cases || 0} Cases zuordnen.`, value: unassigned, tone: 'warning', path: '/zones' });
-    if (stats.return_pending > 0 || stats.cases_return_check > 0) items.push({ title: 'Rücklauf bearbeiten', detail: 'Geräte und Cases warten auf Prüfung oder Einlagerung.', value: stats.return_pending + stats.cases_return_check, tone: 'warning', path: '/scan' });
+    if (stats.return_pending > 0 || stats.cases_return_check > 0) items.push({ title: 'Rücklauf bearbeiten', detail: 'Geräte und Cases warten auf Prüfung oder Einlagerung.', value: stats.return_pending + stats.cases_return_check, tone: 'warning', path: '/scan?mode=returns' });
     if (stats.open_defects > 0 || stats.overdue_inspections > 0) items.push({ title: 'Technische Klärung', detail: `${stats.open_defects} offene Defekte · ${stats.overdue_inspections} Prüfungen überfällig`, value: stats.open_defects + stats.overdue_inspections, tone: 'warning', path: '/maintenance' });
     if ((overview?.counts_due || 0) > 0) items.push({ title: 'Inventuren fällig', detail: 'Fällige Lagerplätze jetzt zählen.', value: overview?.counts_due || 0, tone: 'warning', path: '/zones' });
     return items;
@@ -96,7 +96,7 @@ export function Dashboard() {
   const flow = [
     { label: 'Im Lager', value: stats.in_storage, color: 'var(--color-success)', path: '/zones' },
     { label: 'Auf Job', value: stats.on_job, color: 'var(--color-info)', path: '/jobs' },
-    { label: 'Rückgabe offen', value: stats.return_pending, color: 'var(--color-warning)', path: '/scan' },
+    { label: 'Rückgabe offen', value: stats.return_pending, color: 'var(--color-warning)', path: '/scan?mode=returns' },
     { label: 'Standort ungeklärt', value: stats.location_unknown, color: 'var(--color-error)', path: '/zones' },
   ];
 

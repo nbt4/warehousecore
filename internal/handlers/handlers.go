@@ -344,7 +344,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 }
 
 // HealthCheck returns server health status
-var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.63")
+var HealthCheck = commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.64")
 
 // HandleScan processes barcode/QR scan requests
 func HandleScan(w http.ResponseWriter, r *http.Request) {
@@ -658,16 +658,23 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 		SELECT d.deviceID, d.productID, d.serialnumber, d.status, d.condition_status, d.barcode, d.qr_code,
 		       d.zone_id, d.condition_rating, d.usage_hours, d.label_path,
 		       COALESCE(p.name, '') as product_name,
+		       COALESCE(b.name, '') as product_brand,
+		       COALESCE(m.name, '') as product_manufacturer,
+		       COALESCE(pc.name, '') as product_category,
 		       COALESCE(z.name, '') as zone_name,
 		       COALESCE(z.code, '') as zone_code,
 		       COALESCE(c.name, '') as case_name,
-		       COALESCE(CAST(jd.jobID AS TEXT), '') as job_number
+		       COALESCE(NULLIF(j.job_code, ''), CAST(jd.jobID AS TEXT), '') as job_number
 		FROM devices d
 		LEFT JOIN products p ON d.productID = p.productID
+		LEFT JOIN brands b ON p.brandid = b.brandid
+		LEFT JOIN manufacturer m ON p.manufacturerid = m.manufacturerid
+		LEFT JOIN categories pc ON p.categoryID = pc.categoryID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
 		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
 		LEFT JOIN cases c ON dc.caseID = c.caseID
 		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID AND jd.pack_status IN ('packed', 'issued')
+		LEFT JOIN jobs j ON jd.jobID = j.jobID
 		WHERE 1=1`
 
 	args := []interface{}{}
@@ -695,6 +702,9 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 		DeviceID        string  `json:"device_id"`
 		ProductID       *int64  `json:"product_id,omitempty"`
 		ProductName     string  `json:"product_name,omitempty"`
+		ProductBrand    string  `json:"product_brand,omitempty"`
+		Manufacturer    string  `json:"product_manufacturer,omitempty"`
+		ProductCategory string  `json:"product_category,omitempty"`
 		SerialNumber    *string `json:"serial_number,omitempty"`
 		Barcode         *string `json:"barcode,omitempty"`
 		QRCode          *string `json:"qr_code,omitempty"`
@@ -713,9 +723,10 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 	devices := []DeviceResponse{}
 	for rows.Next() {
 		var d models.DeviceWithDetails
-		var caseName, jobNumber string
+		var productBrand, manufacturer, productCategory, caseName, jobNumber string
 		if err := rows.Scan(&d.DeviceID, &d.ProductID, &d.SerialNumber, &d.Status, &d.ConditionStatus, &d.Barcode, &d.QRCode,
-			&d.ZoneID, &d.ConditionRating, &d.UsageHours, &d.LabelPath, &d.ProductName, &d.ZoneName, &d.ZoneCode,
+			&d.ZoneID, &d.ConditionRating, &d.UsageHours, &d.LabelPath, &d.ProductName, &productBrand, &manufacturer,
+			&productCategory, &d.ZoneName, &d.ZoneCode,
 			&caseName, &jobNumber); err != nil {
 			log.Printf("Error scanning device row: %v", err)
 			continue
@@ -725,6 +736,9 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 		resp := DeviceResponse{
 			DeviceID:        d.DeviceID,
 			ProductName:     d.ProductName,
+			ProductBrand:    productBrand,
+			Manufacturer:    manufacturer,
+			ProductCategory: productCategory,
 			Status:          d.Status,
 			ConditionStatus: d.ConditionStatus,
 			ZoneName:        d.ZoneName,

@@ -17,6 +17,8 @@ export interface Device {
   product_id?: number;
   product_name?: string;
   product_category?: string;
+  product_brand?: string;
+  product_manufacturer?: string;
   barcode?: string;
   qr_code?: string;
   serial_number?: string;
@@ -444,6 +446,8 @@ export const devicesApi = {
   getById: (id: string) => api.get<Device>(`/devices/${id}`),
   getMovements: (id: string) => api.get(`/devices/${id}/movements`),
   getStatusHistory: (id: string) => api.get<DeviceStatusHistory[]>(`/devices/${id}/status-history`),
+  updateStatus: (id: string, data: { status?: string; condition_status?: string }) =>
+    api.put<{ message: string }>(`/devices/${id}/status`, data),
   getTree: () => api.get<DeviceTreeResponse>('/devices/tree'),
 };
 

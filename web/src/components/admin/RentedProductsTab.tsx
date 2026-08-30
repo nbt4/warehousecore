@@ -341,12 +341,12 @@ export function RentedProductsTab() {
 
         <div className="flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <div className="relative flex-1">
+            <div className="suite-search-field flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 value={searchTerm}
                 onChange={event => setSearchTerm(event.target.value)}
-                placeholder="Suchen (Name, Lieferant, Beschreibung ...)"
+                placeholder="Name, Lieferant, Kategorie oder Parameter …"
                 className="w-full rounded-lg bg-white/10 py-2 pl-9 pr-3 text-sm text-white placeholder-gray-500 outline-none transition focus:bg-white/15 focus:ring-1 focus:ring-accent-red"
               />
             </div>

@@ -27,6 +27,10 @@ var productPictureService = services.NewProductPictureServiceFromEnv()
 var errPicturesUnavailable = errors.New("product pictures not available")
 var websiteRevalidator = services.NewRevalidatorFromEnv()
 
+func warehouseProductSearchTerms(value string) []string {
+	return strings.Fields(strings.ToLower(strings.TrimSpace(value)))
+}
+
 // Product represents a product (item type)
 type Product struct {
 	ProductID           int      `json:"product_id"`
@@ -166,10 +170,18 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if search != "" {
-		argIdx++
-		query += fmt.Sprintf(" AND (p.name LIKE $%d OR p.description LIKE $%d)", argIdx, argIdx)
-		searchPattern := "%" + search + "%"
-		args = append(args, searchPattern)
+		for _, term := range warehouseProductSearchTerms(search) {
+			argIdx++
+			query += fmt.Sprintf(` AND (
+				CONCAT_WS(' ',p.productID::text,p.name,p.description,b.name,m.name,c.name,sc.name,sbc.name,
+				 p.generic_barcode,p.product_type,p.tracking_mode,ct.name,ct.abbreviation,
+				 p.weight::text,p.height::text,p.width::text,p.depth::text,p.powerconsumption::text) ILIKE $%d
+				OR EXISTS (SELECT 1 FROM devices search_device WHERE search_device.productID=p.productID
+				 AND CONCAT_WS(' ',search_device.deviceID,search_device.serialnumber,search_device.barcode,
+				 search_device.qr_code,search_device.notes) ILIKE $%d)
+			)`, argIdx, argIdx)
+			args = append(args, "%"+term+"%")
+		}
 	}
 
 	if categoryID != "" {

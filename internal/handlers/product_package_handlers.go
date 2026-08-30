@@ -57,8 +57,17 @@ func GetProductPackages(w http.ResponseWriter, r *http.Request) {
 		WHERE COALESCE(pp.is_active, TRUE) = TRUE`
 	args := []interface{}{}
 	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
-		query += " AND (pp.name ILIKE $1 OR COALESCE(pp.description, '') ILIKE $1 OR COALESCE(pp.code, '') ILIKE $1)"
-		args = append(args, "%"+search+"%")
+		for _, term := range warehouseProductSearchTerms(search) {
+			args = append(args, "%"+term+"%")
+			placeholder := fmt.Sprintf("$%d", len(args))
+			query += ` AND (CONCAT_WS(' ',pp.name,pp.description,pp.code,pp.package_code,pp.category,pp.alias_json::text) ILIKE ` + placeholder + `
+				OR EXISTS (SELECT 1 FROM product_package_items search_item
+				 JOIN products search_product ON search_product.productID=search_item.product_id
+				 LEFT JOIN brands search_brand ON search_brand.brandid=search_product.brandid
+				 LEFT JOIN manufacturer search_manufacturer ON search_manufacturer.manufacturerid=search_product.manufacturerid
+				 WHERE search_item.package_id=pp.id AND CONCAT_WS(' ',search_product.name,search_product.description,
+				 search_product.generic_barcode,search_brand.name,search_manufacturer.name) ILIKE ` + placeholder + `))`
+		}
 	}
 	query += " ORDER BY pp.name"
 

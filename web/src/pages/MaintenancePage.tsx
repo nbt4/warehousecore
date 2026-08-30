@@ -781,7 +781,7 @@ function OrdersView({
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative">
+          <div className="suite-search-field">
             <Search
               className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
               style={{ color: "var(--text-muted)" }}

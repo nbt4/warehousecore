@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   BriefcaseBusiness,
   CheckCircle,
@@ -8,10 +9,11 @@ import {
   RotateCcw,
   ScanLine,
   Search,
+  ShieldAlert,
   XCircle,
 } from 'lucide-react';
-import { jobsApi, scansApi, zonesApi } from '../lib/api';
-import type { JobSummary, ScanResponse } from '../lib/api';
+import { devicesApi, jobsApi, scansApi, warehouseApi, zonesApi } from '../lib/api';
+import type { Device, JobSummary, ScanResponse, WarehouseLocation } from '../lib/api';
 import { formatStatus } from '../lib/utils';
 import { toast } from '../lib/toast';
 
@@ -47,7 +49,9 @@ function requestError(error: unknown, fallback: string): string {
 }
 
 export function ScanPage() {
-  const [action, setAction] = useState<ScanAction>('check');
+  const [searchParams] = useSearchParams();
+  const returnMode = searchParams.get('mode') === 'returns';
+  const [action, setAction] = useState<ScanAction>(() => returnMode ? 'intake' : 'check');
   const [step, setStep] = useState<ScanStep>('device');
   const [scanCode, setScanCode] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -56,7 +60,33 @@ export function ScanPage() {
   const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
   const [pendingItemCode, setPendingItemCode] = useState('');
   const [pendingItem, setPendingItem] = useState<ScanResponse | null>(null);
+  const [returnDevices, setReturnDevices] = useState<Device[]>([]);
+  const [returnLocations, setReturnLocations] = useState<WarehouseLocation[]>([]);
+  const [returnsLoading, setReturnsLoading] = useState(false);
+  const [returnsError, setReturnsError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const loadReturns = useCallback(async () => {
+    setReturnsLoading(true);
+    setReturnsError('');
+    try {
+      const [deviceResult, locationResult] = await Promise.all([
+        devicesApi.getAll({ status: 'return_pending', limit: 250 }),
+        warehouseApi.locations(false),
+      ]);
+      setReturnDevices(deviceResult.data || []);
+      setReturnLocations((locationResult.data || []).filter((location) =>
+        location.is_storable && location.operational_status === 'available'));
+    } catch (error) {
+      setReturnsError(requestError(error, 'Rücklauf konnte nicht geladen werden.'));
+    } finally {
+      setReturnsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (returnMode || action === 'intake') void loadReturns();
+  }, [action, loadReturns, returnMode]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -131,6 +161,7 @@ export function ScanPage() {
     setPendingItemCode('');
     setPendingItem(null);
     setQuantity(1);
+    await loadReturns();
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -322,6 +353,136 @@ export function ScanPage() {
           </div>
         </div>
       )}
+
+      {(returnMode || action === 'intake') && (
+        <ReturnQueue
+          devices={returnDevices}
+          locations={returnLocations}
+          loading={returnsLoading}
+          error={returnsError}
+          onRefresh={loadReturns}
+        />
+      )}
     </div>
+  );
+}
+
+function ReturnQueue({
+  devices,
+  locations,
+  loading,
+  error,
+  onRefresh,
+}: {
+  devices: Device[];
+  locations: WarehouseLocation[];
+  loading: boolean;
+  error: string;
+  onRefresh: () => Promise<void>;
+}) {
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" style={{ borderColor: 'var(--border-subtle)' }}>
+        <div>
+          <div className="flex items-center gap-2">
+            <RotateCcw className="h-5 w-5" style={{ color: 'var(--color-warning)' }} />
+            <h2 className="font-bold" style={{ color: 'var(--text-primary)' }}>Offene Geräterückläufe</h2>
+          </div>
+          <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+            Zustand prüfen, Zielplatz wählen und Rückgabe manuell abschließen.
+          </p>
+        </div>
+        <button type="button" onClick={() => void onRefresh()} disabled={loading} className="suite-button self-start disabled:opacity-50 sm:self-auto">
+          <RotateCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Aktualisieren
+        </button>
+      </div>
+      {error && <div role="alert" className="m-4 rounded-lg border p-3 text-sm" style={{ borderColor: 'var(--color-error)', color: 'var(--color-error)' }}>{error}</div>}
+      {loading && devices.length === 0 ? (
+        <div className="space-y-2 p-4 sm:p-5">{Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-lg" style={{ background: 'var(--surface-2)' }} />)}</div>
+      ) : devices.length === 0 ? (
+        <div className="p-10 text-center">
+          <CheckCircle className="mx-auto h-9 w-9" style={{ color: 'var(--color-success)' }} />
+          <div className="mt-3 font-semibold" style={{ color: 'var(--text-primary)' }}>Keine Geräte warten auf Rücklauf</div>
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>Alle ausgegebenen Geräte sind verarbeitet.</p>
+        </div>
+      ) : (
+        <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+          {devices.map((device) => <ReturnQueueRow key={device.device_id} device={device} locations={locations} onUpdated={onRefresh} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReturnQueueRow({ device, locations, onUpdated }: { device: Device; locations: WarehouseLocation[]; onUpdated: () => Promise<void> }) {
+  const [condition, setCondition] = useState(device.condition_status || 'available');
+  const [zoneID, setZoneID] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const saveCondition = async () => {
+    setBusy(true);
+    try {
+      await devicesApi.updateStatus(device.device_id, { condition_status: condition });
+      toast.success(`Zustand für ${device.device_id} aktualisiert`);
+      await onUpdated();
+    } catch (error) {
+      toast.error(requestError(error, 'Zustand konnte nicht gespeichert werden.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const completeReturn = async () => {
+    if (!zoneID) {
+      toast.error('Bitte zuerst einen Lagerplatz wählen.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await devicesApi.updateStatus(device.device_id, { condition_status: condition });
+      const result = await scansApi.process({ scan_code: device.device_id, action: 'intake', zone_id: Number(zoneID) });
+      if (!result.data.success) throw new Error(result.data.message || 'Rücklauf konnte nicht abgeschlossen werden.');
+      toast.success(`${device.product_name || device.device_id} eingelagert`);
+      await onUpdated();
+    } catch (error) {
+      toast.error(requestError(error, 'Rücklauf konnte nicht abgeschlossen werden.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_180px_minmax(220px,0.7fr)_auto] xl:items-end">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: 'color-mix(in srgb, var(--color-warning) 13%, transparent)', color: 'var(--color-warning)' }}>{formatStatus(device.status)}</span>
+          <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{device.device_id}</span>
+        </div>
+        <div className="mt-2 font-semibold" style={{ color: 'var(--text-primary)' }}>{device.product_name || 'Unbekanntes Produkt'}</div>
+        <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+          {[device.product_brand || device.product_manufacturer, device.serial_number ? `SN ${device.serial_number}` : '', device.current_job_code || device.job_number ? `Job ${device.current_job_code || device.job_number}` : ''].filter(Boolean).join(' · ') || 'Keine weiteren Gerätedaten'}
+        </div>
+      </div>
+      <label className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+        Betriebszustand
+        <select value={condition} onChange={(event) => setCondition(event.target.value)} className="mt-1 w-full">
+          <option value="available">Einsatzbereit</option>
+          <option value="blocked">Gesperrt</option>
+          <option value="defective">Defekt</option>
+          <option value="maintenance">Wartung</option>
+        </select>
+      </label>
+      <label className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+        Ziel-Lagerplatz
+        <select value={zoneID} onChange={(event) => setZoneID(event.target.value)} className="mt-1 w-full">
+          <option value="">Lagerplatz wählen</option>
+          {locations.map((location) => <option key={location.zone_id} value={location.zone_id}>{location.code} · {location.name}</option>)}
+        </select>
+      </label>
+      <div className="flex flex-wrap gap-2 xl:justify-end">
+        <button type="button" disabled={busy} onClick={() => void saveCondition()} className="suite-button disabled:opacity-50"><ShieldAlert className="h-4 w-4" /> Zustand speichern</button>
+        <button type="button" disabled={busy || !zoneID} onClick={() => void completeReturn()} className="suite-button suite-button--primary disabled:opacity-50"><PackageCheck className="h-4 w-4" /> Einlagern</button>
+      </div>
+    </article>
   );
 }

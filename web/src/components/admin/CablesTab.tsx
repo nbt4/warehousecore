@@ -345,7 +345,7 @@ export function CablesTab() {
       </div>
 
       <div className="card grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_220px_180px_auto]">
-        <label className="relative">
+        <label className="suite-search-field">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <input
             type="search"
