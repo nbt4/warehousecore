@@ -443,6 +443,7 @@ func (s *ScanService) findDeviceByScan(scanCode string) (*models.Device, error) 
 		WHERE UPPER(COALESCE(d.barcode, '')) = UPPER($1)
 		   OR UPPER(COALESCE(d.qr_code, '')) = UPPER($1)
 		   OR UPPER(d.deviceID) = UPPER($1)
+		   OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='device' AND ii.entity_key=d.deviceID AND ii.active AND UPPER(ii.code)=UPPER($1))
 		LIMIT 1
 	`, scanCode).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
@@ -617,7 +618,8 @@ func (s *ScanService) findConsumableByScan(scanCode string) (*ConsumableProduct,
 		WHERE p.lifecycle_status = 'active'
 		  AND p.tracking_mode = 'quantity'
 		  AND (p.is_consumable = TRUE OR p.is_accessory = TRUE)
-		  AND (UPPER(COALESCE(p.generic_barcode, '')) = UPPER($1) OR CAST(p.productID AS CHAR) = $1)
+		  AND (UPPER(COALESCE(p.generic_barcode, '')) = UPPER($1) OR CAST(p.productID AS CHAR) = $1
+		       OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='product' AND ii.entity_key=p.productID::text AND ii.active AND UPPER(ii.code)=UPPER($1)))
 		LIMIT 1
 	`, scanCode).Scan(
 		&product.ProductID, &product.Name, &product.IsConsumable,

@@ -51,6 +51,17 @@ func TestNormalizeProductRequest(t *testing.T) {
 			product: Product{Name: "Fluid", ProductType: "consumable", TrackingMode: "quantity", CountTypeID: intPointer(1), StockQuantity: floatPointer(-1)},
 			wantErr: true,
 		},
+		{
+			name:    "initial devices require individual tracking",
+			product: Product{Name: "Adapter", ProductType: "accessory", TrackingMode: "quantity", CountTypeID: intPointer(1), InitialDeviceQty: 2},
+			wantErr: true,
+		},
+		{
+			name:         "product class is independent from accessory role",
+			product:      Product{Name: "XLR Adapter", ProductType: "accessory", TrackingMode: "individual", ProductKind: "cable"},
+			wantType:     "accessory",
+			wantTracking: "individual",
+		},
 	}
 
 	for _, test := range tests {

@@ -140,6 +140,8 @@ export interface HandlingUnit {
   description?: string;
   status: string;
   case_type: HandlingUnitType;
+	case_model_id?: number;
+	case_model_name?: string;
   workflow_status: HandlingUnitStatus;
   width?: number;
   height?: number;
@@ -198,6 +200,7 @@ export interface HandlingUnitInput {
   name: string;
   description?: string;
   case_type: HandlingUnitType;
+	case_model_id?: number;
   width?: number;
   height?: number;
   depth?: number;
@@ -527,6 +530,7 @@ export const casesApi = {
 
 export const handlingUnitsApi = {
   list: (params?: { search?: string; workflow_status?: string }) => api.get<{ cases: HandlingUnit[]; meta: { count: number } }>('/handling-units', { params }),
+  models: () => api.get<Array<{ model_id: number; name: string; description?: string; case_count: number }>>('/handling-unit-models'),
   get: (id: number) => api.get<HandlingUnit>(`/handling-units/${id}`),
   findByScan: (scanCode: string) =>
     api.get<HandlingUnit>('/handling-units/scan', {

@@ -8,6 +8,8 @@ type ProductDependency struct {
 	ProductID           int       `json:"product_id" db:"product_id"`
 	DependencyProductID int       `json:"dependency_product_id" db:"dependency_product_id"`
 	IsOptional          bool      `json:"is_optional" db:"is_optional"`
+	RelationType        string    `json:"relation_type" db:"relation_type"`
+	AssignmentScope     string    `json:"assignment_scope" db:"assignment_scope"`
 	DefaultQuantity     float64   `json:"default_quantity" db:"default_quantity"`
 	Notes               *string   `json:"notes,omitempty" db:"notes"`
 	CreatedAt           time.Time `json:"created_at" db:"created_at"`
@@ -26,6 +28,8 @@ type ProductDependencyWithDetails struct {
 	CountTypeAbbr       *string  `json:"count_type_abbr,omitempty"`
 	StockQuantity       *float64 `json:"stock_quantity,omitempty"`
 	IsOptional          bool     `json:"is_optional"`
+	RelationType        string   `json:"relation_type"`
+	AssignmentScope     string   `json:"assignment_scope"`
 	DefaultQuantity     float64  `json:"default_quantity"`
 	Notes               *string  `json:"notes,omitempty"`
 	CreatedAt           string   `json:"created_at"`
@@ -33,8 +37,10 @@ type ProductDependencyWithDetails struct {
 
 // CreateProductDependencyRequest represents a request to create a dependency
 type CreateProductDependencyRequest struct {
-	DependencyProductID int      `json:"dependency_product_id" binding:"required"`
-	IsOptional          bool     `json:"is_optional"`
-	DefaultQuantity     float64  `json:"default_quantity"`
-	Notes               *string  `json:"notes,omitempty"`
+	DependencyProductID int     `json:"dependency_product_id" binding:"required"`
+	IsOptional          bool    `json:"is_optional"`
+	RelationType        string  `json:"relation_type"`
+	AssignmentScope     string  `json:"assignment_scope"`
+	DefaultQuantity     float64 `json:"default_quantity"`
+	Notes               *string `json:"notes,omitempty"`
 }

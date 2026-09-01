@@ -23,6 +23,8 @@ type handlingUnit struct {
 	Description      *string    `json:"description,omitempty"`
 	LegacyStatus     string     `json:"status"`
 	CaseType         string     `json:"case_type"`
+	CaseModelID      *int64     `json:"case_model_id,omitempty"`
+	CaseModelName    *string    `json:"case_model_name,omitempty"`
 	WorkflowStatus   string     `json:"workflow_status"`
 	Width            *float64   `json:"width,omitempty"`
 	Height           *float64   `json:"height,omitempty"`
@@ -47,17 +49,22 @@ type handlingUnit struct {
 
 func scanHandlingUnit(scanner interface{ Scan(...interface{}) error }) (handlingUnit, error) {
 	var item handlingUnit
-	var description, zoneName, zoneCode, barcode, rfid sql.NullString
+	var description, zoneName, zoneCode, barcode, rfid, modelName sql.NullString
 	var width, height, depth, weight, maxWeight sql.NullFloat64
-	var zoneID, homeZoneID, jobID sql.NullInt64
+	var zoneID, homeZoneID, jobID, modelID sql.NullInt64
 	var sealed sql.NullTime
-	err := scanner.Scan(&item.CaseID, &item.Name, &description, &item.LegacyStatus, &item.CaseType, &item.WorkflowStatus,
+	err := scanner.Scan(&item.CaseID, &item.Name, &description, &item.LegacyStatus, &item.CaseType, &modelID, &modelName, &item.WorkflowStatus,
 		&width, &height, &depth, &weight, &maxWeight, &zoneID, &zoneName, &zoneCode, &homeZoneID, &jobID, &barcode, &rfid, &sealed,
 		&item.DeviceCount, &item.ProductLineCount, &item.ProductQuantity, &item.ChildCaseCount, &item.ExpectedLines, &item.Complete)
 	if err != nil {
 		return item, err
 	}
 	item.Description = ptrString(description)
+	item.CaseModelName = ptrString(modelName)
+	if modelID.Valid {
+		v := modelID.Int64
+		item.CaseModelID = &v
+	}
 	item.Width = ptrFloat64(width)
 	item.Height = ptrFloat64(height)
 	item.Depth = ptrFloat64(depth)
@@ -87,7 +94,7 @@ func scanHandlingUnit(scanner interface{ Scan(...interface{}) error }) (handling
 }
 
 const handlingUnitSelect = `
-	SELECT c.caseID,c.name,c.description,c.status,c.case_type,c.workflow_status,
+	SELECT c.caseID,c.name,c.description,c.status,c.case_type,c.case_model_id,cm.name,c.workflow_status,
 	       c.width,c.height,c.depth,c.weight,c.max_weight_kg,c.zone_id,z.name,z.code,
 	       c.home_zone_id,c.current_job_id,c.barcode,c.rfid_tag,c.sealed_at,
 	       (SELECT COUNT(*) FROM devicescases dc WHERE dc.caseID=c.caseID),
@@ -101,7 +108,7 @@ const handlingUnitSelect = `
 	           SELECT COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE dc.caseID=c.caseID AND d.productID=ct.product_id
 	         ),0) + COALESCE((SELECT pc.quantity FROM case_product_contents pc WHERE pc.case_id=c.caseID AND pc.product_id=ct.product_id),0) < ct.expected_quantity
 	       ) THEN TRUE ELSE FALSE END
-	FROM cases c LEFT JOIN storage_zones z ON z.zone_id=c.zone_id`
+	FROM cases c LEFT JOIN storage_zones z ON z.zone_id=c.zone_id LEFT JOIN case_models cm ON cm.model_id=c.case_model_id`
 
 func ListHandlingUnits(w http.ResponseWriter, r *http.Request) {
 	query := handlingUnitSelect + ` WHERE 1=1`
@@ -157,7 +164,7 @@ func FindHandlingUnitByScan(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Scan-Code fehlt"})
 		return
 	}
-	item, err := scanHandlingUnit(repository.GetSQLDB().QueryRow(handlingUnitSelect+` WHERE LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) LIMIT 1`, code))
+	item, err := scanHandlingUnit(repository.GetSQLDB().QueryRow(handlingUnitSelect+` WHERE LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='case' AND ii.entity_key=c.caseID::text AND ii.active AND LOWER(ii.code)=LOWER($1)) LIMIT 1`, code))
 	if errors.Is(err, sql.ErrNoRows) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Case nicht gefunden"})
 		return
@@ -182,6 +189,31 @@ type handlingUnitInput struct {
 	HomeZoneID  *int64   `json:"home_zone_id"`
 	Barcode     *string  `json:"barcode"`
 	RFIDTag     *string  `json:"rfid_tag"`
+	CaseModelID *int64   `json:"case_model_id"`
+}
+
+func ListCaseModels(w http.ResponseWriter, _ *http.Request) {
+	rows, err := repository.GetSQLDB().Query(`SELECT cm.model_id,cm.name,cm.description,COUNT(c.caseID) FROM case_models cm LEFT JOIN cases c ON c.case_model_id=cm.model_id GROUP BY cm.model_id ORDER BY cm.name`)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	items := []map[string]interface{}{}
+	for rows.Next() {
+		var id int64
+		var name string
+		var description sql.NullString
+		var count int
+		if rows.Scan(&id, &name, &description, &count) == nil {
+			item := map[string]interface{}{"model_id": id, "name": name, "case_count": count}
+			if description.Valid {
+				item["description"] = description.String
+			}
+			items = append(items, item)
+		}
+	}
+	respondJSON(w, http.StatusOK, items)
 }
 
 func decodeHandlingUnitInput(r *http.Request) (handlingUnitInput, error) {
@@ -207,6 +239,12 @@ func CreateHandlingUnit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	db := repository.GetSQLDB()
+	if input.CaseModelID == nil {
+		var modelID int64
+		if err := db.QueryRow(`INSERT INTO case_models(name) VALUES($1) ON CONFLICT(LOWER(TRIM(name))) DO UPDATE SET updated_at=CURRENT_TIMESTAMP RETURNING model_id`, input.Name).Scan(&modelID); err == nil {
+			input.CaseModelID = &modelID
+		}
+	}
 	if input.ZoneID != nil {
 		if err := services.ValidateStorageDestination(db, *input.ZoneID, 1); err != nil {
 			respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -214,13 +252,10 @@ func CreateHandlingUnit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var id int64
-	err = db.QueryRow(`INSERT INTO cases(name,description,width,height,depth,weight,max_weight_kg,status,workflow_status,case_type,zone_id,home_zone_id,barcode,rfid_tag) VALUES($1,$2,$3,$4,$5,$6,$7,'free','empty',$8,$9,$10,$11,$12) RETURNING caseID`, input.Name, input.Description, input.Width, input.Height, input.Depth, input.Weight, input.MaxWeightKg, input.CaseType, input.ZoneID, input.HomeZoneID, nullableStringPtr(input.Barcode), nullableStringPtr(input.RFIDTag)).Scan(&id)
+	err = db.QueryRow(`INSERT INTO cases(name,description,width,height,depth,weight,max_weight_kg,status,workflow_status,case_type,case_model_id,zone_id,home_zone_id,barcode,rfid_tag) VALUES($1,$2,$3,$4,$5,$6,$7,'free','empty',$8,$9,$10,$11,$12,$13) RETURNING caseID`, input.Name, input.Description, input.Width, input.Height, input.Depth, input.Weight, input.MaxWeightKg, input.CaseType, input.CaseModelID, input.ZoneID, input.HomeZoneID, nullableStringPtr(input.Barcode), nullableStringPtr(input.RFIDTag)).Scan(&id)
 	if err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
-	}
-	if input.Barcode == nil || strings.TrimSpace(*input.Barcode) == "" {
-		_, _ = db.Exec(`UPDATE cases SET barcode=$1 WHERE caseID=$2`, fmt.Sprintf("CASE-%08d", id), id)
 	}
 	respondJSON(w, http.StatusCreated, map[string]interface{}{"case_id": id, "message": "Case erstellt"})
 }
@@ -242,7 +277,7 @@ func UpdateHandlingUnit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	result, err := repository.GetSQLDB().Exec(`UPDATE cases SET name=$1,description=$2,width=$3,height=$4,depth=$5,weight=$6,max_weight_kg=$7,case_type=$8,zone_id=$9,home_zone_id=$10,barcode=COALESCE($11,barcode),rfid_tag=$12 WHERE caseID=$13`, input.Name, input.Description, input.Width, input.Height, input.Depth, input.Weight, input.MaxWeightKg, input.CaseType, input.ZoneID, input.HomeZoneID, nullableStringPtr(input.Barcode), nullableStringPtr(input.RFIDTag), id)
+	result, err := repository.GetSQLDB().Exec(`UPDATE cases SET name=$1,description=$2,width=$3,height=$4,depth=$5,weight=$6,max_weight_kg=$7,case_type=$8,case_model_id=COALESCE($9,case_model_id),zone_id=$10,home_zone_id=$11,barcode=COALESCE($12,barcode),rfid_tag=$13 WHERE caseID=$14`, input.Name, input.Description, input.Width, input.Height, input.Depth, input.Weight, input.MaxWeightKg, input.CaseType, input.CaseModelID, input.ZoneID, input.HomeZoneID, nullableStringPtr(input.Barcode), nullableStringPtr(input.RFIDTag), id)
 	if err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -511,7 +546,7 @@ func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
 	}
 	var childID int64
 	var childName, childStatus string
-	err = tx.QueryRow(`SELECT caseID,name,workflow_status FROM cases WHERE LOWER(COALESCE(barcode,''))=LOWER($1) OR LOWER(COALESCE(rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||caseID::text)=LOWER($1) LIMIT 1`, code).Scan(&childID, &childName, &childStatus)
+	err = tx.QueryRow(`SELECT c.caseID,c.name,c.workflow_status FROM cases c WHERE LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='case' AND ii.entity_key=c.caseID::text AND ii.active AND LOWER(ii.code)=LOWER($1)) LIMIT 1`, code).Scan(&childID, &childName, &childStatus)
 	if err == nil {
 		if childID == caseID {
 			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ein Case kann nicht in sich selbst gepackt werden"})
