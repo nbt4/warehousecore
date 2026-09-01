@@ -88,17 +88,22 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 	createdIDs := make([]string, 0, input.Quantity)
 	providedBarcode := input.Barcode != nil && strings.TrimSpace(*input.Barcode) != ""
 	providedQRCode := input.QRCode != nil && strings.TrimSpace(*input.QRCode) != ""
+	if input.Quantity > 1 && (providedBarcode || providedQRCode) {
+		return nil, errors.New("ein manueller Barcode oder QR-Code kann nur für ein einzelnes Gerät verwendet werden")
+	}
 
 	for i := 0; i < input.Quantity; i++ {
 		serialValue := serialForIndex(input.SerialNumber, input.StartingSerial, input.IncrementSerial, i)
 
-		_, err := tx.ExecContext(ctx, `
+		var deviceID string
+		err := tx.QueryRowContext(ctx, `
 			INSERT INTO devices (
 				productID, serialnumber, status, condition_status, current_location, zone_id,
 				condition_rating, usage_hours, purchaseDate, lastmaintenance, nextmaintenance,
 				notes, barcode, qr_code
 			)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			RETURNING deviceID
 		`,
 			input.ProductID,
 			nullableString(serialValue),
@@ -114,21 +119,9 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 			nullableText(input.Notes),
 			nullableString(trimPtr(input.Barcode)),
 			nullableString(trimPtr(input.QRCode)),
-		)
+		).Scan(&deviceID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert device: %w", err)
-		}
-
-		var deviceID string
-		err = tx.QueryRowContext(ctx, `
-			SELECT deviceID
-			FROM devices
-			WHERE productID = $1
-			ORDER BY deviceID DESC
-			LIMIT 1
-		`, input.ProductID).Scan(&deviceID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch device id: %w", err)
 		}
 
 		if err := s.ensureDeviceCodes(ctx, tx, deviceID, providedBarcode, providedQRCode, regenerateCodes); err != nil {

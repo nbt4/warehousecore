@@ -174,6 +174,9 @@ func main() {
 	if err := handlers.EnsureWarehouseOperationsSchema(); err != nil {
 		log.Fatalf("Failed to initialize warehouse operations schema: %v", err)
 	}
+	if err := handlers.EnsureProductMasterSchema(); err != nil {
+		log.Fatalf("Failed to initialize product master schema: %v", err)
+	}
 	if err := handlers.EnsureDeviceStatusSchema(); err != nil {
 		log.Fatalf("Failed to initialize device status schema: %v", err)
 	}
@@ -314,6 +317,7 @@ func main() {
 	// Handling units extend legacy cases with dynamic quantity content, packing
 	// templates, nesting, sealing, dispatch and controlled return/unpacking.
 	api.HandleFunc("/handling-units", handlers.ListHandlingUnits).Methods("GET")
+	api.HandleFunc("/handling-unit-models", handlers.ListCaseModels).Methods("GET")
 	api.HandleFunc("/handling-units", handlers.CreateHandlingUnit).Methods("POST")
 	api.HandleFunc("/handling-units/scan", handlers.FindHandlingUnitByScan).Methods("GET")
 	api.HandleFunc("/handling-units/{id}", handlers.GetHandlingUnit).Methods("GET")

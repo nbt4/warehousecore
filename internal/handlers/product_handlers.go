@@ -29,32 +29,41 @@ var websiteRevalidator = services.NewRevalidatorFromEnv()
 
 // Product represents a product (item type)
 type Product struct {
-	ProductID           int      `json:"product_id"`
-	Name                string   `json:"name"`
-	CategoryID          *int     `json:"category_id"`
-	SubcategoryID       *string  `json:"subcategory_id"`
-	SubbiercategoryID   *string  `json:"subbiercategory_id"`
-	ManufacturerID      *int     `json:"manufacturer_id"`
-	BrandID             *int     `json:"brand_id"`
-	Description         *string  `json:"description"`
-	MaintenanceInterval *int     `json:"maintenance_interval"`
-	ItemCostPerDay      *float64 `json:"item_cost_per_day"`
-	Weight              *float64 `json:"weight"`
-	Height              *float64 `json:"height"`
-	Width               *float64 `json:"width"`
-	Depth               *float64 `json:"depth"`
-	PowerConsumption    *float64 `json:"power_consumption"`
-	PosInCategory       *int     `json:"pos_in_category"`
-	IsAccessory         bool     `json:"is_accessory"`
-	IsConsumable        bool     `json:"is_consumable"`
-	CountTypeID         *int     `json:"count_type_id"`
-	StockQuantity       *float64 `json:"stock_quantity"`
-	MinStockLevel       *float64 `json:"min_stock_level"`
-	GenericBarcode      *string  `json:"generic_barcode"`
-	PricePerUnit        *float64 `json:"price_per_unit"`
-	ProductType         string   `json:"product_type"`
-	TrackingMode        string   `json:"tracking_mode"`
-	LifecycleStatus     string   `json:"lifecycle_status"`
+	ProductID           int             `json:"product_id"`
+	Name                string          `json:"name"`
+	CategoryID          *int            `json:"category_id"`
+	SubcategoryID       *string         `json:"subcategory_id"`
+	SubbiercategoryID   *string         `json:"subbiercategory_id"`
+	ManufacturerID      *int            `json:"manufacturer_id"`
+	BrandID             *int            `json:"brand_id"`
+	Description         *string         `json:"description"`
+	MaintenanceInterval *int            `json:"maintenance_interval"`
+	ItemCostPerDay      *float64        `json:"item_cost_per_day"`
+	Weight              *float64        `json:"weight"`
+	Height              *float64        `json:"height"`
+	Width               *float64        `json:"width"`
+	Depth               *float64        `json:"depth"`
+	PowerConsumption    *float64        `json:"power_consumption"`
+	PosInCategory       *int            `json:"pos_in_category"`
+	IsAccessory         bool            `json:"is_accessory"`
+	IsConsumable        bool            `json:"is_consumable"`
+	CountTypeID         *int            `json:"count_type_id"`
+	StockQuantity       *float64        `json:"stock_quantity"`
+	MinStockLevel       *float64        `json:"min_stock_level"`
+	GenericBarcode      *string         `json:"generic_barcode"`
+	PricePerUnit        *float64        `json:"price_per_unit"`
+	ProductType         string          `json:"product_type"`
+	TrackingMode        string          `json:"tracking_mode"`
+	LifecycleStatus     string          `json:"lifecycle_status"`
+	ProductCode         string          `json:"product_code"`
+	ProductKind         string          `json:"product_kind"`
+	ModelNumber         *string         `json:"model_number"`
+	ManufacturerPartNo  *string         `json:"manufacturer_part_number"`
+	EAN                 *string         `json:"ean"`
+	Attributes          json.RawMessage `json:"attributes,omitempty"`
+	InitialDeviceQty    int             `json:"initial_device_quantity,omitempty"`
+	InitialZoneID       *int            `json:"initial_zone_id,omitempty"`
+	CreatedDeviceIDs    []string        `json:"created_device_ids,omitempty"`
 
 	// Joined fields for display
 	WebsiteVisible   bool     `json:"website_visible"`
@@ -122,6 +131,12 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			p.product_type,
 			p.tracking_mode,
 			p.lifecycle_status,
+			p.product_code,
+			p.product_kind,
+			p.model_number,
+			p.manufacturer_part_number,
+			p.ean,
+			p.attributes,
 			COALESCE(p.website_visible, false) as website_visible,
 			p.website_thumbnail,
 			p.website_images_json,
@@ -198,6 +213,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p Product
 		var rawImages sql.NullString
+		var rawAttributes []byte
 		err := rows.Scan(
 			&p.ProductID,
 			&p.Name,
@@ -225,6 +241,12 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			&p.ProductType,
 			&p.TrackingMode,
 			&p.LifecycleStatus,
+			&p.ProductCode,
+			&p.ProductKind,
+			&p.ModelNumber,
+			&p.ManufacturerPartNo,
+			&p.EAN,
+			&rawAttributes,
 			&p.WebsiteVisible,
 			&p.WebsiteThumbnail,
 			&rawImages,
@@ -244,6 +266,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		if rawImages.Valid && rawImages.String != "" {
 			_ = json.Unmarshal([]byte(rawImages.String), &p.WebsiteImages)
 		}
+		p.Attributes = append(json.RawMessage(nil), rawAttributes...)
 		products = append(products, p)
 	}
 
@@ -288,6 +311,12 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			p.product_type,
 			p.tracking_mode,
 			p.lifecycle_status,
+			p.product_code,
+			p.product_kind,
+			p.model_number,
+			p.manufacturer_part_number,
+			p.ean,
+			p.attributes,
 			COALESCE(p.website_visible, false) as website_visible,
 			p.website_thumbnail,
 			p.website_images_json,
@@ -311,6 +340,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 
 	var p Product
 	var rawImages sql.NullString
+	var rawAttributes []byte
 	err = db.QueryRow(query, id).Scan(
 		&p.ProductID,
 		&p.Name,
@@ -338,6 +368,12 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		&p.ProductType,
 		&p.TrackingMode,
 		&p.LifecycleStatus,
+		&p.ProductCode,
+		&p.ProductKind,
+		&p.ModelNumber,
+		&p.ManufacturerPartNo,
+		&p.EAN,
+		&rawAttributes,
 		&p.WebsiteVisible,
 		&p.WebsiteThumbnail,
 		&rawImages,
@@ -362,6 +398,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 	if rawImages.Valid && rawImages.String != "" {
 		_ = json.Unmarshal([]byte(rawImages.String), &p.WebsiteImages)
 	}
+	p.Attributes = append(json.RawMessage(nil), rawAttributes...)
 
 	respondJSON(w, http.StatusOK, p)
 }
@@ -699,6 +736,26 @@ func normalizeProductRequest(req *Product) error {
 	if req.TrackingMode == "quantity" && req.CountTypeID == nil {
 		return fmt.Errorf("A measurement unit is required for quantity-tracked products")
 	}
+	if req.ProductKind == "" {
+		if req.ProductType == "consumable" {
+			req.ProductKind = "consumable"
+		} else {
+			req.ProductKind = "standard"
+		}
+	}
+	validKinds := map[string]bool{"standard": true, "cable": true, "consumable": true, "container": true, "service": true}
+	if !validKinds[req.ProductKind] {
+		return fmt.Errorf("Invalid product class")
+	}
+	if req.InitialDeviceQty < 0 || req.InitialDeviceQty > 1000 {
+		return fmt.Errorf("Initial device quantity must be between 0 and 1000")
+	}
+	if req.InitialDeviceQty > 0 && req.TrackingMode != "individual" {
+		return fmt.Errorf("Only individually tracked products can receive devices")
+	}
+	if len(req.Attributes) > 0 && !json.Valid(req.Attributes) {
+		return fmt.Errorf("Invalid product attributes")
+	}
 
 	if req.Description != nil {
 		value := strings.TrimSpace(*req.Description)
@@ -857,10 +914,23 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	if len(req.Attributes) == 0 {
+		req.Attributes = json.RawMessage(`{}`)
+	}
 
 	initialStock := 0.0
 	if req.TrackingMode == "quantity" && req.StockQuantity != nil {
 		initialStock = *req.StockQuantity
+	}
+	if req.InitialZoneID != nil {
+		incoming := float64(req.InitialDeviceQty)
+		if req.TrackingMode == "quantity" {
+			incoming = initialStock
+		}
+		if err := services.ValidateStorageDestination(tx, int64(*req.InitialZoneID), incoming); err != nil {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	var id int64
 	err = tx.QueryRow(`
@@ -869,17 +939,19 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 			description, maintenanceinterval, itemcostperday, weight, height, width, depth,
 			powerconsumption, pos_in_category, is_accessory, is_consumable, count_type_id,
 			stock_quantity, min_stock_level, generic_barcode, price_per_unit,
-			product_type, tracking_mode, lifecycle_status, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 'active', CURRENT_TIMESTAMP)
-		RETURNING productID
+			product_type, tracking_mode, lifecycle_status, product_kind, model_number,
+			manufacturer_part_number, ean, attributes, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 'active', $25, $26, $27, $28, $29::jsonb, CURRENT_TIMESTAMP)
+		RETURNING productID, product_code, generic_barcode
 	`,
 		req.Name, req.CategoryID, req.SubcategoryID, req.SubbiercategoryID,
 		req.ManufacturerID, req.BrandID, req.Description, req.MaintenanceInterval,
 		req.ItemCostPerDay, req.Weight, req.Height, req.Width, req.Depth,
 		req.PowerConsumption, req.PosInCategory, req.IsAccessory, req.IsConsumable,
 		req.CountTypeID, 0, req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
-		req.ProductType, req.TrackingMode,
-	).Scan(&id)
+		req.ProductType, req.TrackingMode, req.ProductKind, req.ModelNumber,
+		req.ManufacturerPartNo, req.EAN, string(req.Attributes),
+	).Scan(&id, &req.ProductCode, &req.GenericBarcode)
 
 	if err != nil {
 		log.Printf("Failed to create product: %v", err)
@@ -887,10 +959,27 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.TrackingMode == "quantity" && initialStock > 0 {
-		if _, err := tx.Exec(`INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, NULL, $2)`, id, initialStock); err != nil {
+		if _, err := tx.Exec(`INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, $2, $3)`, id, req.InitialZoneID, initialStock); err != nil {
 			log.Printf("Failed to create initial stock for product %d: %v", id, err)
 			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create initial product stock"})
 			return
+		}
+	}
+	if req.TrackingMode == "individual" && req.InitialDeviceQty > 0 {
+		status := "location_unknown"
+		location := "location_unknown"
+		if req.InitialZoneID != nil {
+			status = "in_storage"
+			location = "warehouse"
+		}
+		for i := 0; i < req.InitialDeviceQty; i++ {
+			var deviceID string
+			if err := tx.QueryRow(`INSERT INTO devices(productID,status,condition_status,current_location,zone_id) VALUES($1,$2,'available',$3,$4) RETURNING deviceID`, id, status, location, req.InitialZoneID).Scan(&deviceID); err != nil {
+				log.Printf("Failed to create initial device for product %d: %v", id, err)
+				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Product and devices could not be created atomically"})
+				return
+			}
+			req.CreatedDeviceIDs = append(req.CreatedDeviceIDs, deviceID)
 		}
 	}
 
@@ -987,6 +1076,10 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var attributes interface{}
+	if len(req.Attributes) > 0 {
+		attributes = string(req.Attributes)
+	}
 	result, err := tx.Exec(`
 		UPDATE products SET
 			name = $1, categoryID = $2, subcategoryID = $3, subbiercategoryID = $4,
@@ -994,9 +1087,10 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 			itemcostperday = $9, weight = $10, height = $11, width = $12, depth = $13,
 			powerconsumption = $14, pos_in_category = $15,
 			is_accessory = $16, is_consumable = $17, count_type_id = $18,
-			min_stock_level = $19, generic_barcode = $20, price_per_unit = $21,
-			product_type = $22, tracking_mode = $23, updated_at = CURRENT_TIMESTAMP
-		WHERE productID = $24
+			min_stock_level = $19, generic_barcode = COALESCE($20,generic_barcode), price_per_unit = $21,
+			product_type = $22, tracking_mode = $23, product_kind=$24, model_number=$25,
+			manufacturer_part_number=$26, ean=$27, attributes=COALESCE($28::jsonb,attributes), updated_at = CURRENT_TIMESTAMP
+		WHERE productID = $29
 	`,
 		req.Name, req.CategoryID, req.SubcategoryID, req.SubbiercategoryID,
 		req.ManufacturerID, req.BrandID, req.Description, req.MaintenanceInterval,
@@ -1004,7 +1098,8 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		req.PowerConsumption, req.PosInCategory,
 		req.IsAccessory, req.IsConsumable, req.CountTypeID,
 		req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
-		req.ProductType, req.TrackingMode,
+		req.ProductType, req.TrackingMode, req.ProductKind, req.ModelNumber,
+		req.ManufacturerPartNo, req.EAN, attributes,
 		id,
 	)
 
@@ -1207,7 +1302,6 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 
 // CreateDevicesForProduct creates multiple devices for a product
 func CreateDevicesForProduct(w http.ResponseWriter, r *http.Request) {
-	// Extract product ID from URL path
 	vars := mux.Vars(r)
 	productID, err := strconv.Atoi(vars["id"])
 	if err != nil {
@@ -1221,36 +1315,18 @@ func CreateDevicesForProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Override ProductID with the one from URL path
-	req.ProductID = productID
-
-	log.Printf("[DEVICE CREATE] Starting device creation for product %d, quantity: %d, prefix: %v",
-		req.ProductID, req.Quantity, req.Prefix)
-
 	if req.Quantity <= 0 {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Valid quantity is required"})
 		return
 	}
 
-	if req.Quantity > 100 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Cannot create more than 100 devices at once"})
+	if req.Quantity > 1000 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Cannot create more than 1000 devices at once"})
 		return
 	}
 
-	db := repository.GetSQLDB()
-
-	// Validate product exists and has required fields for device ID generation trigger
-	var productName string
-	var abbreviation sql.NullString
-	var posInCategory sql.NullInt64
 	var trackingMode, lifecycleStatus string
-	err = db.QueryRow(`
-		SELECT p.name, s.abbreviation, p.pos_in_category, p.tracking_mode, p.lifecycle_status
-		FROM products p
-		LEFT JOIN subcategories s ON p.subcategoryID = s.subcategoryID
-		WHERE p.productID = $1
-	`, req.ProductID).Scan(&productName, &abbreviation, &posInCategory, &trackingMode, &lifecycleStatus)
-
+	err = repository.GetSQLDB().QueryRow(`SELECT tracking_mode,lifecycle_status FROM products WHERE productID=$1`, productID).Scan(&trackingMode, &lifecycleStatus)
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 		return
@@ -1267,119 +1343,21 @@ func CreateDevicesForProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": "Only individually tracked products can receive devices"})
 		return
 	}
-
-	// Check if product has required fields for device ID generation trigger
-	if !abbreviation.Valid || abbreviation.String == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "Product missing required subcategory",
-			"message": "Product must have a subcategory with an abbreviation to create devices",
-		})
-		return
-	}
-
-	// Log warning if pos_in_category is NULL but allow device creation
-	// The database trigger will set pos_in_category for new products automatically
-	// Legacy products may have NULL values but device creation should still work
-	if !posInCategory.Valid {
-		log.Printf("[DEVICE CREATE WARNING] Product %d (%s) has NULL pos_in_category - this may indicate legacy data",
-			req.ProductID, productName)
-		log.Printf("[DEVICE CREATE] Creating %d devices for product %d (%s) - Subcategory: %s, Position: NULL (legacy)",
-			req.Quantity, req.ProductID, productName, abbreviation.String)
-	} else {
-		log.Printf("[DEVICE CREATE] Creating %d devices for product %d (%s) - Subcategory: %s, Position: %d",
-			req.Quantity, req.ProductID, productName, abbreviation.String, posInCategory.Int64)
-	}
-
-	// Optional prefix: PostgreSQL doesn't support session variables like MySQL
-	// The prefix is logged but not used with PostgreSQL triggers
-	if req.Prefix != nil && *req.Prefix != "" {
-		upperPrefix := strings.ToUpper(*req.Prefix)
-		log.Printf("[DEVICE CREATE] Custom prefix requested: %s (note: PostgreSQL triggers may not use this)", upperPrefix)
-	}
-
-	existingIDs := make(map[string]struct{})
-	rows, err := db.Query("SELECT deviceID FROM devices WHERE productID = $1", req.ProductID)
-	if err == nil {
-		defer rows.Close()
-		var id string
-		for rows.Next() {
-			if err := rows.Scan(&id); err == nil {
-				existingIDs[id] = struct{}{}
-			}
-		}
-	}
-
-	log.Printf("[DEVICE CREATE] Found %d existing devices for product %d", len(existingIDs), req.ProductID)
-
-	// Create devices one by one and track failures
-	failedCount := 0
-	for i := 0; i < req.Quantity; i++ {
-		if _, err := db.Exec("INSERT INTO devices (productID, status, current_location) VALUES ($1, 'location_unknown', 'location_unknown')", req.ProductID); err != nil {
-			log.Printf("[DEVICE CREATE ERROR] Failed to create device %d/%d for product %d: %v", i+1, req.Quantity, req.ProductID, err)
-			failedCount++
-		}
-	}
-
-	if failedCount > 0 {
-		log.Printf("[DEVICE CREATE WARNING] %d/%d device insertions failed", failedCount, req.Quantity)
-	}
-
-	createdDeviceIDs := make([]string, 0, req.Quantity)
-	rowsNew, err := db.Query("SELECT deviceID FROM devices WHERE productID = $1", req.ProductID)
+	autoLabel := true
+	devices, err := services.NewDeviceAdminService().CreateDevices(r.Context(), &models.DeviceCreateInput{
+		ProductID: productID, Quantity: req.Quantity, AutoGenerateLabel: &autoLabel,
+	})
 	if err != nil {
-		log.Printf("Failed to fetch generated device IDs: %v", err)
-	} else {
-		defer rowsNew.Close()
-		var id string
-		for rowsNew.Next() {
-			if err := rowsNew.Scan(&id); err != nil {
-				log.Printf("Failed to scan device id: %v", err)
-				continue
-			}
-			if _, existed := existingIDs[id]; !existed {
-				createdDeviceIDs = append(createdDeviceIDs, id)
-			}
-		}
-	}
-
-	sort.Strings(createdDeviceIDs)
-
-	log.Printf("[DEVICE CREATE] Successfully created %d devices: %v", len(createdDeviceIDs), createdDeviceIDs)
-
-	// Auto-generate labels for all created devices in the background
-	// This prevents blocking the API response if label generation is slow or fails
-	go func() {
-		labelService := services.NewLabelService()
-		for _, deviceID := range createdDeviceIDs {
-			if err := labelService.AutoGenerateDeviceLabel(deviceID); err != nil {
-				log.Printf("[LABEL CREATE ERROR] Failed to generate label for device %s: %v", deviceID, err)
-			} else {
-				log.Printf("[LABEL CREATE SUCCESS] Generated label for device %s using default template", deviceID)
-			}
-		}
-	}()
-
-	// Return error if no devices were created despite requesting them
-	if len(createdDeviceIDs) == 0 {
-		var posMsg string
-		if posInCategory.Valid {
-			posMsg = fmt.Sprintf("pos_in_category: %d", posInCategory.Int64)
-		} else {
-			posMsg = "pos_in_category: NULL (legacy product)"
-		}
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
-			"error":   "Failed to create devices",
-			"message": fmt.Sprintf("Device creation failed. Check that product has subcategory (%s) and %s.", abbreviation.String, posMsg),
-		})
+		log.Printf("[DEVICE CREATE] Atomic creation failed for product %d: %v", productID, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-
-	response := DeviceCreateResponse{
-		CreatedCount: len(createdDeviceIDs),
-		DeviceIDs:    createdDeviceIDs,
+	createdDeviceIDs := make([]string, 0, len(devices))
+	for _, device := range devices {
+		createdDeviceIDs = append(createdDeviceIDs, device.DeviceID)
 	}
-
-	respondJSON(w, http.StatusCreated, response)
+	sort.Strings(createdDeviceIDs)
+	respondJSON(w, http.StatusCreated, DeviceCreateResponse{CreatedCount: len(createdDeviceIDs), DeviceIDs: createdDeviceIDs})
 }
 
 // GetProductDevices retrieves all devices for a specific product

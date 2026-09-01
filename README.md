@@ -13,7 +13,9 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 ## Features
 
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
-- **Sichere Produktstammdaten** — Explizite Produkttypen und Trackingarten, serverseitige Plausibilitätsprüfungen, revisionssichere Archivierung statt kaskadierendem Löschen und Audit-Protokoll für Stammdatenänderungen
+- **Produktstammdaten 2.0** — Produktklasse, Zubehörrolle und Trackingart sind getrennt. Produkt, initiale Devices, Lagerzuordnung und automatisch erzeugte Kennungen entstehen transaktional; Modellnummer, Herstellerartikelnummer und EAN bleiben eigene Felder
+- **Unveränderliche Scan-IDs** — Produkte (`PRD-…`), Devices (`DEV-…`) und Cases (`CAS-…`) erhalten automatisch globale Barcodes. Bestehende Gerätekennungen bleiben als Scan-Aliase gültig, während fehlende Barcodes und QR-Codes beim Upgrade sicher ergänzt werden
+- **Typisierte Produktbeziehungen** — Benötigtes, empfohlenes, kompatibles, verbrauchtes, alternatives oder enthaltenes Zubehör wird mit Standardmenge gepflegt; feste Device-Komponenten können zusätzlich einem konkreten Exemplar zugewiesen werden
 - **Konsistente Mengenbestände** — Lagerzonen sind die führende Bestandsquelle; Produktsummen werden automatisch aus `product_locations` synchronisiert und verteilte Bestände ausschließlich über Lager- und Scanabläufe korrigiert
 - **Professionelle Lagersteuerung** — Hierarchische Standorte, Bereiche, Gänge, Regale, Ebenen und Fächer mit getrennter Bauart/Prozessfunktion, Sperrstatus, Pick-Reihenfolge, Kapazität, Arbeitsvorrat und sicherem Archivieren nur leerer Orte
 - **Live-Lagercockpit** — Handlungsorientiertes Dashboard mit priorisierten Aufgaben, Einsatzbereitschaft, Materialfluss, Tagesbewegungen, aktiven Jobs, Case-Prozessen, technischen Risiken und direktem Einstieg in Scanner und Lageraktionen
@@ -177,6 +179,8 @@ Geräte verwenden zwei voneinander unabhängige Statusdimensionen. Der Lagerstat
 | `DELETE` | `/api/v1/admin/products/:id`          | Produkt sicher archivieren (🔒 Admin)              |
 | `PUT`    | `/api/v1/admin/products/:id/restore`  | Archiviertes Produkt wiederherstellen (🔒 Admin)  |
 
+`POST /api/v1/admin/products` akzeptiert zusätzlich `product_kind`, `model_number`, `manufacturer_part_number`, `ean`, `initial_device_quantity` und `initial_zone_id`. Bei Einzelverfolgung werden Produkt und Anfangsexemplare in einer Transaktion angelegt. Die Zubehörendpunkte `/api/v1/admin/products/:id/dependencies` verwenden `relation_type` (`required`, `recommended`, `compatible`, `consumes`, `alternative`, `included`) und `assignment_scope`.
+
 `GET /api/v1/admin/products` akzeptiert `lifecycle_status=active|archived|all`. Mengenbestände werden aus `product_locations` berechnet; bei auf Lagerzonen verteiltem Bestand erfolgen Korrekturen über Zonen- oder Scanabläufe.
 
 ### Produktpakete
@@ -231,6 +235,7 @@ Die bisherigen `/cases`-Endpunkte bleiben kompatibel. Die UI verwendet zusätzli
 | Methode | Pfad                                                        | Beschreibung |
 |---------|-------------------------------------------------------------|--------------|
 | `GET`   | `/api/v1/handling-units`                                    | Cases mit Typ, Workflow, Ort und Inhaltskennzahlen |
+| `GET`   | `/api/v1/handling-unit-models`                              | Case-Modelle und Anzahl physischer Exemplare |
 | `POST`  | `/api/v1/handling-units`                                    | Dynamisches, festes oder hybrides Case erstellen |
 | `GET`   | `/api/v1/handling-units/scan?scan_code=…`                   | Case über Barcode, RFID oder Case-ID finden |
 | `GET`   | `/api/v1/handling-units/:id/inventory`                      | Ist-Inhalt, Soll-Inhalt und Untercases |
@@ -286,6 +291,8 @@ Die Migration `034_label_studio_and_direct_print.sql` ergänzt Templates um Ziel
 Die Migration `038_device_status_lifecycle.sql` trennt Jobabschluss und physische Rückgabe. Ausgegebene Geräte abgeschlossener oder stornierter Jobs wechseln zu `return_pending`, bis ein Einlagerungsscan Lagerplatz und Rückgabe bestätigt. Nicht belegbare alte `on_job`-Werte werden je nach bekanntem Lagerkontext zu `in_storage` oder `location_unknown` normalisiert.
 
 Die Migration `039_warehouse_operations_and_handling_units.sql` erweitert Lagerorte um Prozessrollen, Betriebszustände, Kapazitäts- und Inventursteuerung. Sie ergänzt dynamische/feste/hybride Handling Units, Mengen- und Untercase-Inhalte, Ereignisprotokolle, Lageraufgaben und scannerbasierte Zählinventuren. Die Migration verändert keine bestehenden Geräte-Lagerplatzzuordnungen automatisch.
+
+Die Migration `041_product_master_v2.sql` ergänzt das unveränderliche Kennungssystem, Scan-Aliase, Produktklassen, technische Artikelnummern, typisierte Beziehungen, konkrete Device-Komponenten und Case-Modelle. Bestehende Produkte, Devices und Cases werden idempotent nachgezogen. Vorhandene Device-IDs bleiben erhalten; bisherige Cases mit Geräteinhalt werden als feste Cases klassifiziert und ihr Ist-Inhalt als Soll-Inhalt übernommen. Kabelprodukte werden automatisch unter „Kabel & Adapter“ einsortiert.
 
 🔒 = Authentifizierung via `session_id` Cookie erforderlich
 

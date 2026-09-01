@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Package, Box, Building2 } from 'lucide-react';
+import { Package, Box, Building2, Tags, Factory } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ProductsTab } from '../components/admin/ProductsTab';
 import { ProductPackagesTab } from '../components/admin/ProductPackagesTab';
 import { RentedProductsTab } from '../components/admin/RentedProductsTab';
+import { CategoriesTab } from '../components/admin/CategoriesTab';
+import { BrandsManufacturersTab } from '../components/admin/BrandsManufacturersTab';
 
-type TabType = 'products' | 'packages' | 'rented';
+type TabType = 'products' | 'categories' | 'brands' | 'packages' | 'rented';
 
 export function ProductsPage() {
   const { t } = useTranslation();
@@ -13,6 +15,8 @@ export function ProductsPage() {
 
   const tabs = [
     { id: 'products' as TabType, label: 'Produkte', icon: Package },
+	{ id: 'categories' as TabType, label: 'Kategorien', icon: Tags },
+	{ id: 'brands' as TabType, label: 'Marken & Hersteller', icon: Factory },
     { id: 'packages' as TabType, label: 'Produktpakete', icon: Box },
     { id: 'rented' as TabType, label: 'Mietprodukte', icon: Building2 },
   ];
@@ -53,6 +57,8 @@ export function ProductsPage() {
       {/* Tab Content */}
       <div className="glass-dark rounded-2xl p-6">
         {activeTab === 'products' && <ProductsTab />}
+		{activeTab === 'categories' && <CategoriesTab />}
+		{activeTab === 'brands' && <BrandsManufacturersTab />}
         {activeTab === 'packages' && <ProductPackagesTab />}
         {activeTab === 'rented' && <RentedProductsTab />}
       </div>

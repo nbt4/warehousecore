@@ -63,7 +63,12 @@ interface Product {
   device_count?: number;
 	product_type: 'equipment' | 'accessory' | 'consumable';
 	tracking_mode: 'individual' | 'quantity' | 'none';
-	lifecycle_status: 'active' | 'archived';
+  lifecycle_status: 'active' | 'archived';
+	product_code: string;
+	product_kind: 'standard' | 'cable' | 'consumable' | 'container' | 'service';
+	model_number?: string | null;
+	manufacturer_part_number?: string | null;
+	ean?: string | null;
 }
 
 interface Category {
@@ -123,6 +128,10 @@ interface ProductFormData {
   price_per_unit?: number;
 	product_type: 'equipment' | 'accessory' | 'consumable';
 	tracking_mode: 'individual' | 'quantity' | 'none';
+	product_kind: 'standard' | 'cable' | 'consumable' | 'container' | 'service';
+	model_number?: string;
+	manufacturer_part_number?: string;
+	ean?: string;
 }
 
 interface CountType {
@@ -137,6 +146,7 @@ const initialFormData: ProductFormData = {
   description: '',
 	product_type: 'equipment',
 	tracking_mode: 'individual',
+	product_kind: 'standard',
 };
 
 const parseNumber = (value: string): number | undefined => {
@@ -399,6 +409,10 @@ export function ProductsTab() {
       price_per_unit: product.price_per_unit ?? undefined,
 	  product_type: product.product_type ?? (product.is_consumable ? 'consumable' : product.is_accessory ? 'accessory' : 'equipment'),
 	  tracking_mode: product.tracking_mode ?? ((product.is_accessory || product.is_consumable) ? 'quantity' : 'individual'),
+	  product_kind: product.product_kind ?? (product.is_consumable ? 'consumable' : 'standard'),
+	  model_number: product.model_number ?? '',
+	  manufacturer_part_number: product.manufacturer_part_number ?? '',
+	  ean: product.ean ?? '',
     }),
     []
   );
@@ -548,28 +562,21 @@ export function ProductsTab() {
       price_per_unit: formData.price_per_unit ?? null,
 	  product_type: formData.product_type,
 	  tracking_mode: formData.tracking_mode,
+	  product_kind: formData.product_kind,
+	  model_number: formData.model_number?.trim() || null,
+	  manufacturer_part_number: formData.manufacturer_part_number?.trim() || null,
+	  ean: formData.ean?.trim() || null,
+	  initial_device_quantity: editingProduct ? 0 : (formData.device_quantity ?? 0),
     };
 
     try {
-      let productId = editingProduct;
-
       if (editingProduct) {
         await api.put(`/admin/products/${editingProduct}`, payload);
       } else {
-        const { data } = await api.post<Product>('/admin/products', payload);
-        productId = data.product_id;
+		await api.post<Product>('/admin/products', payload);
 
-        if (formData.tracking_mode === 'individual' && formData.device_quantity && formData.device_quantity > 0 && productId) {
-          try {
-            await api.post(`/admin/products/${productId}/devices`, {
-              product_id: productId,
-              quantity: formData.device_quantity,
-            });
-          } catch (deviceError) {
-            toast.error('Failed to create devices:' + " " + String(deviceError));
-            window.alert('Produkt erstellt, aber Geräte konnten nicht angelegt werden.');
-          }
-        }
+		// Produkt, initiale Devices und Barcodes werden serverseitig in einer
+		// gemeinsamen Transaktion erzeugt.
       }
 
       await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
@@ -788,6 +795,7 @@ export function ProductsTab() {
                     <td className="px-4 py-3 align-top">
                       <div className="flex flex-col">
                         <span className="text-white font-medium">{product.name}</span>
+						<div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{product.product_code}</div>
                         <span className="text-xs text-gray-500">
                           ID: {product.product_id}
                           {product.pos_in_category != null
@@ -883,7 +891,7 @@ export function ProductsTab() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-center gap-2 min-w-0">
-                    <h3 className="text-lg font-semibold text-white break-words leading-tight">{product.name}</h3>
+                    <div><h3 className="text-lg font-semibold text-white break-words leading-tight">{product.name}</h3><div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{product.product_code}</div></div>
                     <span className="rounded-md bg-white/10 px-2 py-0.5 text-xs text-gray-300 whitespace-nowrap">
                       #{product.product_id}
                     </span>
@@ -1016,6 +1024,35 @@ export function ProductsTab() {
                   />
                 </div>
 
+				<div className="suite-card p-4">
+				  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>1 · Stammdaten</h3>
+				  <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>Produktklasse, Marke und Hersteller beschreiben den Artikel; die Bestandsführung wird separat gewählt.</p>
+				  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+					<div>
+					  <label className="mb-2 block text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Produktklasse</label>
+					  <select value={formData.product_kind} onChange={event => setFormData({...formData, product_kind: event.target.value as ProductFormData['product_kind']})} className="w-full">
+						<option value="standard">Standardprodukt</option>
+						<option value="cable">Kabel / Adapter</option>
+						<option value="consumable">Verbrauchsmaterial</option>
+						<option value="container">Behälter / Case</option>
+						<option value="service">Dienstleistung</option>
+					  </select>
+					</div>
+					<div>
+					  <label className="mb-2 block text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Modellbezeichnung</label>
+					  <input value={formData.model_number || ''} onChange={event => setFormData({...formData, model_number: event.target.value})} placeholder="z. B. SM58-LCE" className="w-full" />
+					</div>
+					<div>
+					  <label className="mb-2 block text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Hersteller-Artikelnummer</label>
+					  <input value={formData.manufacturer_part_number || ''} onChange={event => setFormData({...formData, manufacturer_part_number: event.target.value})} className="w-full" />
+					</div>
+					<div>
+					  <label className="mb-2 block text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>EAN / GTIN</label>
+					  <input value={formData.ean || ''} onChange={event => setFormData({...formData, ean: event.target.value})} inputMode="numeric" className="w-full font-mono" />
+					</div>
+				  </div>
+				</div>
+
 				<div className="space-y-4 rounded-xl border border-white/10 p-4">
 				  <div>
 					<h3 className="text-sm font-semibold text-white">Produkttyp und Bestandsführung</h3>
@@ -1033,8 +1070,8 @@ export function ProductsTab() {
 						}}
 						className="w-full rounded-lg border border-white/20 bg-gray-900 px-3 py-2 text-white outline-none transition focus:border-accent-red"
 					  >
-						<option className="bg-gray-900 text-white" value="equipment">Gerät / Equipment</option>
-						<option className="bg-gray-900 text-white" value="accessory">Zubehör</option>
+						<option className="bg-gray-900 text-white" value="equipment">Vermiet-/Betriebsmittel</option>
+						<option className="bg-gray-900 text-white" value="accessory">Zubehörrolle</option>
 						<option className="bg-gray-900 text-white" value="consumable">Verbrauchsmaterial</option>
 					  </select>
 					</div>
@@ -1130,7 +1167,7 @@ export function ProductsTab() {
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-white">Brand</label>
+                    <label className="mb-2 block text-sm font-semibold text-white">Marke</label>
                     <select
                       value={formData.brand_id ?? ''}
                       onChange={event => {
@@ -1161,7 +1198,7 @@ export function ProductsTab() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-white">Manufacturer</label>
+                    <label className="mb-2 block text-sm font-semibold text-white">Hersteller</label>
                     <select
                       value={formData.manufacturer_id ?? ''}
                       onChange={event => {
@@ -1320,16 +1357,16 @@ export function ProductsTab() {
 
                       <div>
                         <label className="mb-2 block text-sm font-semibold text-white">
-						  Gemeinsamer Barcode
+						  Interner Produktbarcode
                         </label>
                         <input
                           type="text"
                           value={formData.generic_barcode || ''}
-                          onChange={e => setFormData({ ...formData, generic_barcode: e.target.value })}
-						  placeholder="z. B. ACC-SAFE40"
+						  readOnly
+						  placeholder="wird automatisch erzeugt"
                           className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-500 outline-none transition focus:border-accent-red"
                         />
-						<p className="text-xs text-gray-400 mt-1">Ein Barcode für alle Einheiten dieses Produkts</p>
+						<p className="text-xs text-gray-400 mt-1">Wird unveränderlich erzeugt; Hersteller-EAN steht in den Stammdaten.</p>
                       </div>
 
                       <div>
@@ -1464,7 +1501,7 @@ export function ProductsTab() {
                   )}
 
                   <p className="text-xs text-gray-400">
-                    Präfix und Nummerierung werden automatisch aus der Subkategorie generiert (z. B. LGT3001).
+                    Geräte-ID, Barcode und QR-Code werden automatisch und unabhängig von der Kategorie erzeugt.
                   </p>
                 </div>
 				)}
