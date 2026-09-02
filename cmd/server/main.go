@@ -134,6 +134,7 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 	// without protocol or port - the frontend will add the protocol
 	rentalCoreDomain := os.Getenv("RENTALCORE_DOMAIN")
 	warehouseCoreDomain := os.Getenv("WAREHOUSECORE_DOMAIN")
+	procurementCoreURL := os.Getenv("PROCUREMENTCORE_PUBLIC_URL")
 
 	// Resolve company branding
 	companyName := "WarehouseCore"
@@ -142,9 +143,10 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 		companyName = cfg.CompanyName
 		// Build full config script
 		configScript := fmt.Sprintf(
-			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
+			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",procurementCoreURL:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
 			template.JSEscapeString(rentalCoreDomain),
 			template.JSEscapeString(warehouseCoreDomain),
+			template.JSEscapeString(procurementCoreURL),
 			template.JSEscapeString(companyName),
 			template.JSEscapeString(cfg.CompanyName),
 			template.JSEscapeString(cfg.BrandName),
@@ -166,9 +168,10 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback: old format
 	configScript := fmt.Sprintf(
-		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",companyName:"%s"};</script>`,
+		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",procurementCoreURL:"%s",companyName:"%s"};</script>`,
 		template.JSEscapeString(rentalCoreDomain),
 		template.JSEscapeString(warehouseCoreDomain),
+		template.JSEscapeString(procurementCoreURL),
 		template.JSEscapeString(companyName),
 	)
 
@@ -444,6 +447,8 @@ func main() {
 	adminRead.HandleFunc("/manufacturers", handlers.GetManufacturers).Methods("GET")
 	adminRead.HandleFunc("/products", handlers.GetProducts).Methods("GET")
 	adminRead.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
+	adminRead.HandleFunc("/product-links", handlers.ListProductProcurementLinks).Methods("GET")
+	adminRead.HandleFunc("/procurement/products/{id}/import-preview", handlers.GetProcurementProductPreview).Methods("GET")
 	adminRead.HandleFunc("/products/{id}/pictures", handlers.GetProductPictures).Methods("GET")
 	adminRead.HandleFunc("/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
 	adminRead.HandleFunc("/product-packages", handlers.GetProductPackages).Methods("GET")
@@ -500,6 +505,9 @@ func main() {
 	admin.HandleFunc("/manufacturers/{id}", handlers.DeleteManufacturer).Methods("DELETE")
 	admin.HandleFunc("/products", handlers.CreateProduct).Methods("POST")
 	admin.HandleFunc("/products/{id}", handlers.UpdateProduct).Methods("PUT")
+	admin.HandleFunc("/products/{id}/procurement-link", handlers.LinkProductToProcurement).Methods("POST")
+	admin.HandleFunc("/products/{id}/procurement-link", handlers.UnlinkProductFromProcurement).Methods("DELETE")
+	admin.HandleFunc("/products/{id}/procurement-requisitions", handlers.CreateProductRequisition).Methods("POST")
 	admin.HandleFunc("/products/{id}", handlers.DeleteProduct).Methods("DELETE")
 	admin.HandleFunc("/products/{id}/restore", handlers.RestoreProduct).Methods("PUT")
 	admin.HandleFunc("/products/{id}/website", handlers.UpdateProductWebsite).Methods("PUT")

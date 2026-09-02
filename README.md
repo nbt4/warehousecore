@@ -14,6 +14,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Produktstammdaten 2.0** — Produktklasse, Zubehörrolle und Trackingart sind getrennt. Produkt, initiale Devices, Lagerzuordnung und automatisch erzeugte Kennungen entstehen transaktional; Modellnummer, Herstellerartikelnummer und EAN bleiben eigene Felder
+- **ProcurementCore-Verknüpfung** — Bestehende Produktstämme lassen sich automatisch vorgeschlagen oder manuell eindeutig verbinden. Procurement-Artikel öffnen den vollständigen Warehouse-Produktdialog mit bearbeitbaren Vorbelegungen; Warehouse meldet daraus direkt einen Procurement-Bedarfsentwurf
 - **Unveränderliche Scan-IDs** — Produkte (`PRD-…`), Devices (`DEV-…`) und Cases (`CAS-…`) erhalten automatisch globale Barcodes. Bestehende Gerätekennungen bleiben als Scan-Aliase gültig, während fehlende Barcodes und QR-Codes beim Upgrade sicher ergänzt werden
 - **Typisierte Produktbeziehungen** — Benötigtes, empfohlenes, kompatibles, verbrauchtes, alternatives oder enthaltenes Zubehör wird mit Standardmenge gepflegt; feste Device-Komponenten können zusätzlich einem konkreten Exemplar zugewiesen werden
 - **Konsistente Mengenbestände** — Lagerzonen sind die führende Bestandsquelle; Produktsummen werden automatisch aus `product_locations` synchronisiert und verteilte Bestände ausschließlich über Lager- und Scanabläufe korrigiert
@@ -201,6 +202,8 @@ Job- und Lagerstatus bleiben ebenfalls getrennt. WarehouseCore zeigt für Vorber
 | `PUT`    | `/api/v1/admin/products/:id/restore`  | Archiviertes Produkt wiederherstellen (🔒 Admin)  |
 
 `POST /api/v1/admin/products` akzeptiert zusätzlich `product_kind`, `model_number`, `manufacturer_part_number`, `ean`, `initial_device_quantity` und `initial_zone_id`. Bei Einzelverfolgung werden Produkt und Anfangsexemplare in einer Transaktion angelegt. Die Zubehörendpunkte `/api/v1/admin/products/:id/dependencies` verwenden `relation_type` (`required`, `recommended`, `compatible`, `consumes`, `alternative`, `included`) und `assignment_scope`.
+
+Die Admin-Registerkarte **Beschaffung** gleicht Warehouse-Produkte anhand stabiler Artikelmerkmale mit ProcurementCore ab. `GET /api/v1/admin/product-links` liefert Verknüpfungen und Vorschläge, `/products/:id/procurement-link` bestätigt oder löst eine Zuordnung und `/products/:id/procurement-requisitions` erzeugt einen Procurement-Bedarfsentwurf. Eine Neuanlage mit `procurement_product_id` speichert Warehouse-Produkt, automatisch erzeugte Produkt-/Device-IDs und die eindeutige Core-Verknüpfung gemeinsam in einer Transaktion. `PROCUREMENTCORE_PUBLIC_URL` steuert die serviceübergreifende Navigation.
 
 `GET /api/v1/admin/products` akzeptiert `lifecycle_status=active|archived|all`. Mengenbestände werden aus `product_locations` berechnet; bei auf Lagerzonen verteiltem Bestand erfolgen Korrekturen über Zonen- oder Scanabläufe.
 

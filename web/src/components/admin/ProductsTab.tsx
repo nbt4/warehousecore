@@ -69,6 +69,7 @@ interface Product {
 	model_number?: string | null;
 	manufacturer_part_number?: string | null;
 	ean?: string | null;
+	attributes?: Record<string, unknown>;
 }
 
 interface Category {
@@ -132,6 +133,17 @@ interface ProductFormData {
 	model_number?: string;
 	manufacturer_part_number?: string;
 	ean?: string;
+	attributes?: Record<string, unknown>;
+	procurement_product_id?: number;
+	manufacturer_name_input?: string;
+}
+
+interface ProcurementImportPreview extends Partial<ProductFormData> {
+  procurement_product_id: number;
+  procurement_sku: string;
+  source_name: string;
+  manufacturer_suggestion?: string;
+  manufacturer_name?: string;
 }
 
 interface CountType {
@@ -186,6 +198,7 @@ export function ProductsTab() {
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [dependenciesModal, setDependenciesModal] = useState<{ productId: number; productName: string } | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(initialFormData);
+  const [procurementImport, setProcurementImport] = useState<ProcurementImportPreview | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [subbiercategories, setSubbiercategories] = useState<Subbiercategory[]>([]);
@@ -319,6 +332,30 @@ export function ProductsTab() {
     loadMetadata();
   }, [loadMetadata]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const procurementID = Number(params.get('procurement_product_id'));
+    const productID = Number(params.get('product_id'));
+    if (procurementID > 0) {
+      void (async () => {
+        try {
+          await ensureMetadataLoaded();
+          const { data } = await api.get<ProcurementImportPreview>(`/admin/procurement/products/${procurementID}/import-preview`);
+          setProcurementImport(data);
+          setFormData({ ...initialFormData, ...data, name: data.name || data.source_name, description: data.description || '', procurement_product_id: data.procurement_product_id });
+          setEditingProduct(null);
+          setModalOpen(true);
+          navigate('/products', { replace: true });
+        } catch (error) {
+          toast.error('Procurement-Produkt konnte nicht vorbereitet werden: ' + String(error));
+        }
+      })();
+    } else if (productID > 0) {
+      void api.get<Product>(`/admin/products/${productID}`).then(({ data }) => setViewProduct(data)).catch(error => toast.error('Produkt konnte nicht geladen werden: ' + String(error)));
+      navigate('/products', { replace: true });
+    }
+  }, [ensureMetadataLoaded, navigate]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
@@ -413,6 +450,7 @@ export function ProductsTab() {
 	  model_number: product.model_number ?? '',
 	  manufacturer_part_number: product.manufacturer_part_number ?? '',
 	  ean: product.ean ?? '',
+	  attributes: product.attributes ?? {},
     }),
     []
   );
@@ -448,6 +486,7 @@ export function ProductsTab() {
     setModalOpen(false);
     setEditingProduct(null);
     setFormData(initialFormData);
+    setProcurementImport(null);
     setProductDevices([]);
   }, []);
 
@@ -566,6 +605,9 @@ export function ProductsTab() {
 	  model_number: formData.model_number?.trim() || null,
 	  manufacturer_part_number: formData.manufacturer_part_number?.trim() || null,
 	  ean: formData.ean?.trim() || null,
+	  attributes: formData.attributes || {},
+	  procurement_product_id: editingProduct ? null : (formData.procurement_product_id ?? null),
+	  manufacturer_name_input: editingProduct ? null : (formData.manufacturer_name_input?.trim() || null),
 	  initial_device_quantity: editingProduct ? 0 : (formData.device_quantity ?? 0),
     };
 
@@ -1001,6 +1043,15 @@ export function ProductsTab() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
+                {procurementImport && (
+                  <div className="rounded-xl border p-4" style={{ borderColor: 'var(--color-info)', background: 'var(--surface-2)' }}>
+                    <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>Aus ProcurementCore vorausgefüllt</div>
+                    <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {procurementImport.procurement_sku} · Alle Werte bleiben vor dem Speichern bearbeitbar.
+                      {procurementImport.manufacturer_suggestion ? ` Hersteller „${procurementImport.manufacturer_suggestion}“ ist im Warehouse noch nicht angelegt und wird beim Speichern automatisch angelegt.` : ''}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-white">
                     Name <span className="text-accent-red">*</span>
@@ -1165,6 +1216,25 @@ export function ProductsTab() {
                   </div>
                 </div>
 
+                {procurementImport && Object.keys(formData.attributes || {}).length > 0 && (
+                  <div className="suite-card p-4">
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Technische Merkmale aus ProcurementCore</h3>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>Die übernommenen Werte werden als Warehouse-Produktattribute gespeichert und können vorab geändert werden.</p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {Object.entries(formData.attributes || {}).map(([key, value]) => (
+                        <label key={key} className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          {key}
+                          <input
+                            value={typeof value === 'string' ? value : JSON.stringify(value)}
+                            onChange={event => setFormData({ ...formData, attributes: { ...(formData.attributes || {}), [key]: event.target.value } })}
+                            className="mt-1 w-full"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-white">Marke</label>
@@ -1217,6 +1287,17 @@ export function ProductsTab() {
                         </option>
                       ))}
                     </select>
+                    {procurementImport && !formData.manufacturer_id && (
+                      <label className="mt-3 block text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        Neuer Hersteller aus ProcurementCore
+                        <input
+                          value={formData.manufacturer_name_input || ''}
+                          onChange={event => setFormData({ ...formData, manufacturer_name_input: event.target.value })}
+                          className="mt-1 w-full"
+                          placeholder="Herstellername"
+                        />
+                      </label>
+                    )}
                   </div>
                 </div>
 

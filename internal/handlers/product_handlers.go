@@ -33,41 +33,43 @@ func warehouseProductSearchTerms(value string) []string {
 
 // Product represents a product (item type)
 type Product struct {
-	ProductID           int             `json:"product_id"`
-	Name                string          `json:"name"`
-	CategoryID          *int            `json:"category_id"`
-	SubcategoryID       *string         `json:"subcategory_id"`
-	SubbiercategoryID   *string         `json:"subbiercategory_id"`
-	ManufacturerID      *int            `json:"manufacturer_id"`
-	BrandID             *int            `json:"brand_id"`
-	Description         *string         `json:"description"`
-	MaintenanceInterval *int            `json:"maintenance_interval"`
-	ItemCostPerDay      *float64        `json:"item_cost_per_day"`
-	Weight              *float64        `json:"weight"`
-	Height              *float64        `json:"height"`
-	Width               *float64        `json:"width"`
-	Depth               *float64        `json:"depth"`
-	PowerConsumption    *float64        `json:"power_consumption"`
-	PosInCategory       *int            `json:"pos_in_category"`
-	IsAccessory         bool            `json:"is_accessory"`
-	IsConsumable        bool            `json:"is_consumable"`
-	CountTypeID         *int            `json:"count_type_id"`
-	StockQuantity       *float64        `json:"stock_quantity"`
-	MinStockLevel       *float64        `json:"min_stock_level"`
-	GenericBarcode      *string         `json:"generic_barcode"`
-	PricePerUnit        *float64        `json:"price_per_unit"`
-	ProductType         string          `json:"product_type"`
-	TrackingMode        string          `json:"tracking_mode"`
-	LifecycleStatus     string          `json:"lifecycle_status"`
-	ProductCode         string          `json:"product_code"`
-	ProductKind         string          `json:"product_kind"`
-	ModelNumber         *string         `json:"model_number"`
-	ManufacturerPartNo  *string         `json:"manufacturer_part_number"`
-	EAN                 *string         `json:"ean"`
-	Attributes          json.RawMessage `json:"attributes,omitempty"`
-	InitialDeviceQty    int             `json:"initial_device_quantity,omitempty"`
-	InitialZoneID       *int            `json:"initial_zone_id,omitempty"`
-	CreatedDeviceIDs    []string        `json:"created_device_ids,omitempty"`
+	ProductID             int             `json:"product_id"`
+	Name                  string          `json:"name"`
+	CategoryID            *int            `json:"category_id"`
+	SubcategoryID         *string         `json:"subcategory_id"`
+	SubbiercategoryID     *string         `json:"subbiercategory_id"`
+	ManufacturerID        *int            `json:"manufacturer_id"`
+	BrandID               *int            `json:"brand_id"`
+	Description           *string         `json:"description"`
+	MaintenanceInterval   *int            `json:"maintenance_interval"`
+	ItemCostPerDay        *float64        `json:"item_cost_per_day"`
+	Weight                *float64        `json:"weight"`
+	Height                *float64        `json:"height"`
+	Width                 *float64        `json:"width"`
+	Depth                 *float64        `json:"depth"`
+	PowerConsumption      *float64        `json:"power_consumption"`
+	PosInCategory         *int            `json:"pos_in_category"`
+	IsAccessory           bool            `json:"is_accessory"`
+	IsConsumable          bool            `json:"is_consumable"`
+	CountTypeID           *int            `json:"count_type_id"`
+	StockQuantity         *float64        `json:"stock_quantity"`
+	MinStockLevel         *float64        `json:"min_stock_level"`
+	GenericBarcode        *string         `json:"generic_barcode"`
+	PricePerUnit          *float64        `json:"price_per_unit"`
+	ProductType           string          `json:"product_type"`
+	TrackingMode          string          `json:"tracking_mode"`
+	LifecycleStatus       string          `json:"lifecycle_status"`
+	ProductCode           string          `json:"product_code"`
+	ProductKind           string          `json:"product_kind"`
+	ModelNumber           *string         `json:"model_number"`
+	ManufacturerPartNo    *string         `json:"manufacturer_part_number"`
+	EAN                   *string         `json:"ean"`
+	Attributes            json.RawMessage `json:"attributes,omitempty"`
+	InitialDeviceQty      int             `json:"initial_device_quantity,omitempty"`
+	InitialZoneID         *int            `json:"initial_zone_id,omitempty"`
+	CreatedDeviceIDs      []string        `json:"created_device_ids,omitempty"`
+	ProcurementProductID  *int64          `json:"procurement_product_id,omitempty"`
+	ManufacturerNameInput *string         `json:"manufacturer_name_input,omitempty"`
 
 	// Joined fields for display
 	WebsiteVisible   bool     `json:"website_visible"`
@@ -926,6 +928,15 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	if req.ManufacturerID == nil && req.ManufacturerNameInput != nil && strings.TrimSpace(*req.ManufacturerNameInput) != "" {
+		name := strings.TrimSpace(*req.ManufacturerNameInput)
+		var manufacturerID int
+		if err := tx.QueryRow(`INSERT INTO manufacturer(name) VALUES($1) ON CONFLICT(LOWER(TRIM(name))) DO UPDATE SET name=EXCLUDED.name RETURNING manufacturerid`, name).Scan(&manufacturerID); err != nil {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Hersteller konnte nicht übernommen werden"})
+			return
+		}
+		req.ManufacturerID = &manufacturerID
+	}
 	if len(req.Attributes) == 0 {
 		req.Attributes = json.RawMessage(`{}`)
 	}
@@ -969,6 +980,21 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to create product: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
 		return
+	}
+	if req.ProcurementProductID != nil {
+		var procurementExists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proc_products WHERE id=$1 AND active=TRUE)`, *req.ProcurementProductID).Scan(&procurementExists); err != nil || !procurementExists {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Procurement-Produkt wurde nicht gefunden oder ist deaktiviert"})
+			return
+		}
+		linkedBy, linkedName := int64(0), ""
+		if user, ok := middleware.GetUserFromContext(r); ok && user != nil {
+			linkedBy, linkedName = int64(user.UserID), user.Username
+		}
+		if _, err := tx.Exec(`INSERT INTO core_product_links(procurement_product_id,warehouse_product_id,link_method,linked_by,linked_by_name) VALUES($1,$2,'import',$3,$4)`, *req.ProcurementProductID, id, linkedBy, linkedName); err != nil {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Procurement-Produkt oder Warehouse-Produkt ist bereits verknüpft"})
+			return
+		}
 	}
 	if req.TrackingMode == "quantity" && initialStock > 0 {
 		if _, err := tx.Exec(`INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, $2, $3)`, id, req.InitialZoneID, initialStock); err != nil {
