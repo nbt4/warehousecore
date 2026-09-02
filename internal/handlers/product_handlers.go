@@ -1391,7 +1391,7 @@ func GetProductDevices(w http.ResponseWriter, r *http.Request) {
 		)
 		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status,
 		       d.current_location, d.zone_id,
-		       d.condition_rating, d.usage_hours, d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
+		       COALESCE(d.condition_rating,5), COALESCE(d.usage_hours,0), d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
 		       COALESCE(p.name, '') AS product_name,
 		       COALESCE(cat.name, '') AS product_category,

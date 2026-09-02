@@ -102,7 +102,7 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 				condition_rating, usage_hours, purchaseDate, lastmaintenance, nextmaintenance,
 				notes, barcode, qr_code
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7,5), COALESCE($8,0), $9, $10, $11, $12, $13, $14)
 			RETURNING deviceID
 		`,
 			input.ProductID,
@@ -453,7 +453,7 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 	err := s.db.QueryRowContext(ctx, `
 		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
 		       d.current_location, d.zone_id,
-		       d.condition_rating, d.usage_hours, d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
+		       COALESCE(d.condition_rating,5), COALESCE(d.usage_hours,0), d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
 		       COALESCE(p.name, '') AS product_name,
 		       COALESCE(cat.name, '') AS product_category,

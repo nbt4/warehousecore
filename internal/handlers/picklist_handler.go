@@ -57,7 +57,7 @@ func GetJobPicklist(w http.ResponseWriter, r *http.Request) {
 		PositionID  int              `json:"position_id"`
 		ProductID   *int             `json:"product_id"`
 		ProductName string           `json:"product_name"`
-		Needed      int              `json:"needed"`
+		Needed      float64          `json:"needed"`
 		Scanned     int              `json:"scanned"`
 		Fulfilled   bool             `json:"fulfilled"`
 		Devices     []PicklistDevice `json:"devices"`
@@ -84,7 +84,7 @@ func GetJobPicklist(w http.ResponseWriter, r *http.Request) {
 			id := int(productID.Int64)
 			pos.ProductID = &id
 		}
-		pos.Fulfilled = pos.Scanned >= pos.Needed
+		pos.Fulfilled = float64(pos.Scanned) >= pos.Needed
 		pos.Devices = []PicklistDevice{}
 		positions = append(positions, pos)
 	}
