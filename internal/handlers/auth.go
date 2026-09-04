@@ -138,6 +138,16 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cores_token",
+		Value:    "",
+		Path:     "/",
+		Domain:   cookieDomain,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   cookieDomain != "",
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

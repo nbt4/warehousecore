@@ -135,6 +135,7 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 	rentalCoreDomain := os.Getenv("RENTALCORE_DOMAIN")
 	warehouseCoreDomain := os.Getenv("WAREHOUSECORE_DOMAIN")
 	procurementCoreURL := os.Getenv("PROCUREMENTCORE_PUBLIC_URL")
+	dashboardURL := os.Getenv("DASHBOARD_URL")
 
 	// Resolve company branding
 	companyName := "WarehouseCore"
@@ -143,10 +144,11 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 		companyName = cfg.CompanyName
 		// Build full config script
 		configScript := fmt.Sprintf(
-			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",procurementCoreURL:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
+			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",procurementCoreURL:"%s",dashboardURL:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
 			template.JSEscapeString(rentalCoreDomain),
 			template.JSEscapeString(warehouseCoreDomain),
 			template.JSEscapeString(procurementCoreURL),
+			template.JSEscapeString(dashboardURL),
 			template.JSEscapeString(companyName),
 			template.JSEscapeString(cfg.CompanyName),
 			template.JSEscapeString(cfg.BrandName),
@@ -168,10 +170,11 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback: old format
 	configScript := fmt.Sprintf(
-		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",procurementCoreURL:"%s",companyName:"%s"};</script>`,
+		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",procurementCoreURL:"%s",dashboardURL:"%s",companyName:"%s"};</script>`,
 		template.JSEscapeString(rentalCoreDomain),
 		template.JSEscapeString(warehouseCoreDomain),
 		template.JSEscapeString(procurementCoreURL),
+		template.JSEscapeString(dashboardURL),
 		template.JSEscapeString(companyName),
 	)
 
@@ -263,7 +266,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.70")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.72")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")

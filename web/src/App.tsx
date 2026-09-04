@@ -3,7 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { RoleGuard } from './components/RoleGuard';
-import { Login } from './pages/Login';
+import { CentralLoginRedirect } from './components/CentralLoginRedirect';
 import { ChangePassword } from './pages/ChangePassword';
 import { Dashboard } from './pages/Dashboard';
 import { ScanPage } from './pages/ScanPage';
@@ -26,7 +26,7 @@ function App() {
         <ToastContainer />
         <Routes>
           {/* Public route */}
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<CentralLoginRedirect />} />
           <Route path="/profile" element={<Navigate to="/" replace />} />
 
           {/* Password change route (requires auth but bypasses force check) */}

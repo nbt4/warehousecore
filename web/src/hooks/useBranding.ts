@@ -44,8 +44,8 @@ function applyDocumentBranding(value: BrandingConfig) {
     link.href = href;
     if (rel === 'icon') link.type = href.toLowerCase().includes('.png') ? 'image/png' : 'image/svg+xml';
   };
-  setLink("link[rel~='icon']", 'icon', appAssetPath(value.assets.favicon));
-  setLink("link[rel='apple-touch-icon']", 'apple-touch-icon', appAssetPath(value.assets.appIcon));
+  setLink("link[rel~='icon']", 'icon', value.assets.favicon);
+  setLink("link[rel='apple-touch-icon']", 'apple-touch-icon', value.assets.appIcon);
 }
 
 async function refresh() {
