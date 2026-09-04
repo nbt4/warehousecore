@@ -4,6 +4,7 @@ import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
 import { toast } from '../lib/toast';
 import { formatStatus } from '../lib/utils';
+import { appPath } from '../lib/app-paths';
 
 interface Device {
   device_id: string;
@@ -63,7 +64,7 @@ export function DeviceTreeModal({ isOpen, onClose, onConfirm, zoneId }: DeviceTr
   const loadDeviceTree = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/devices/tree');
+      const response = await fetch(appPath('/api/v1/devices/tree'));
       const data = await response.json();
       setTreeData(data.treeData || []);
     } catch (error) {

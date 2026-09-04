@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../lib/toast';
+import { appPath } from '../lib/app-paths';
 
 interface LowStockAlert {
   product_id: number;
@@ -28,7 +29,7 @@ export function LowStockAlertsWidget() {
   const loadLowStockAlerts = useCallback(async (notify = false) => {
     try {
       setLoading(true);
-      const response = await fetch('/api/v1/inventory/low-stock');
+      const response = await fetch(appPath('/api/v1/inventory/low-stock'));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data: LowStockResponse = await response.json();
       setAlerts(data.alerts || []);

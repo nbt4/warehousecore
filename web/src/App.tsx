@@ -3,7 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { RoleGuard } from './components/RoleGuard';
-import { Login } from './pages/Login';
+import { CentralLoginRedirect } from './components/CentralLoginRedirect';
 import { ChangePassword } from './pages/ChangePassword';
 import { Dashboard } from './pages/Dashboard';
 import { ScanPage } from './pages/ScanPage';
@@ -17,15 +17,16 @@ import { CablesPage } from './pages/CablesPage';
 import LabelDesignerPage from './pages/LabelDesignerPage';
 import { JobPicklistPage } from './pages/JobPicklistPage';
 import ToastContainer from './components/ToastContainer';
+import { appBasePath } from './lib/app-paths';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={appBasePath || undefined}>
       <AuthProvider>
         <ToastContainer />
         <Routes>
           {/* Public route */}
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<CentralLoginRedirect />} />
           <Route path="/profile" element={<Navigate to="/" replace />} />
 
           {/* Password change route (requires auth but bypasses force check) */}

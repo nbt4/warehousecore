@@ -106,6 +106,11 @@ warehousecore:
 
 ### Auth & Health
 
+Die WarehouseCore-Oberfläche leitet bei fehlender Sitzung zum zentralen
+Cores-Login weiter und kehrt nach lokaler oder Microsoft-Anmeldung zur
+ursprünglichen Warehouse-Ansicht zurück. Die Auth-Endpunkte bleiben für
+kompatible API-Clients bestehen.
+
 | Methode | Pfad                          | Beschreibung                              |
 |---------|-------------------------------|-------------------------------------------|
 | `POST`  | `/api/v1/auth/login`          | Benutzer-Login                            |

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,6 +36,10 @@ var brandingSvc *services.BrandingService
 
 // spaHandler serves the SPA and falls back to index.html for client-side routes
 func spaHandler(w http.ResponseWriter, r *http.Request) {
+	requestPath := r.URL.Path
+	if strings.HasPrefix(requestPath, "/warehousecore/") {
+		requestPath = strings.TrimPrefix(requestPath, "/warehousecore")
+	}
 	if r.URL.Path == "/sw.js" {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
@@ -52,7 +57,7 @@ func spaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build file path
-	path := "./web/dist" + r.URL.Path
+	path := "./web/dist" + requestPath
 
 	// Check if file exists
 	fileInfo, err := os.Stat(path)
@@ -69,7 +74,9 @@ func spaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// File exists and is not a directory - serve it
-	http.FileServer(http.Dir("./web/dist")).ServeHTTP(w, r)
+	request := r.Clone(r.Context())
+	request.URL.Path = requestPath
+	http.FileServer(http.Dir("./web/dist")).ServeHTTP(w, request)
 }
 
 // brandingLogoHandler prefers centrally managed branding files and falls back
@@ -107,6 +114,7 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 	// without protocol or port - the frontend will add the protocol
 	rentalCoreDomain := os.Getenv("RENTALCORE_DOMAIN")
 	warehouseCoreDomain := os.Getenv("WAREHOUSECORE_DOMAIN")
+	dashboardURL := os.Getenv("DASHBOARD_URL")
 
 	// Resolve company branding
 	companyName := "WarehouseCore"
@@ -115,9 +123,10 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 		companyName = cfg.CompanyName
 		// Build full config script
 		configScript := fmt.Sprintf(
-			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
+			`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",dashboardURL:"%s",companyName:"%s",branding:{companyName:"%s",brandName:"%s",sidebarLogo:"%s",loginLogo:"%s",favicon:"%s",logoSizeSidebar:%d,logoSizeLogin:%d}};</script>`,
 			template.JSEscapeString(rentalCoreDomain),
 			template.JSEscapeString(warehouseCoreDomain),
+			template.JSEscapeString(dashboardURL),
 			template.JSEscapeString(companyName),
 			template.JSEscapeString(cfg.CompanyName),
 			template.JSEscapeString(cfg.BrandName),
@@ -139,9 +148,10 @@ func serveIndexWithConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback: old format
 	configScript := fmt.Sprintf(
-		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",companyName:"%s"};</script>`,
+		`<script>window.__APP_CONFIG__={rentalCoreDomain:"%s",warehouseCoreDomain:"%s",dashboardURL:"%s",companyName:"%s"};</script>`,
 		template.JSEscapeString(rentalCoreDomain),
 		template.JSEscapeString(warehouseCoreDomain),
+		template.JSEscapeString(dashboardURL),
 		template.JSEscapeString(companyName),
 	)
 
@@ -227,7 +237,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.60")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.71")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
