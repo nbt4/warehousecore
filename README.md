@@ -353,7 +353,18 @@ Die Migration `041_product_master_v2.sql` ergänzt das unveränderliche Kennungs
 | `WAREHOUSE_ID`          | Lagerzonen-Code (z. B. `MAIN`)                        | `MAIN`                 |
 | `RENTALCORE_DOMAIN`     | RentalCore-Domain für Cross-Navigation                | –                      |
 | `WAREHOUSECORE_DOMAIN`  | Eigene öffentliche Domain für Cross-Navigation        | –                      |
+| `PROCUREMENTCORE_PUBLIC_URL` | Öffentliche ProcurementCore-URL                  | –                      |
+| `DASHBOARD_URL`         | Öffentliche URL des zentralen Cores-Dashboards         | automatisch erkannt    |
 
 ---
 
 [Quellcode](https://github.com/nbt4/warehousecore) | [Monorepo](https://github.com/nbt4/cores) | `nobentie/warehousecore:latest`
+
+# Release 5.9.72
+
+Der Release führt die vollständige Main-Historie wieder mit der zentralen
+Login-Weiterleitung aus `5.9.71` zusammen. Dadurch sind insbesondere die
+ProcurementCore-Verknüpfung, die kontextuelle Suche über technische Parameter,
+die Wartungsabläufe, automatische Lagerplatz-Barcodes und die bestätigten
+Ausgabe-Workflows wieder gemeinsam enthalten. Das Image wird ausschließlich
+aus diesem zusammengeführten Main-Stand gebaut.
