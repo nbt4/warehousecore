@@ -655,7 +655,9 @@ func (s *LabelService) renderLabelsWithHeadlessBrowser(htmlContents []string) ([
 	return labels, nil
 }
 
-func (s *LabelService) renderHTMLToPDF(htmlContent string, widthMM, heightMM float64) ([]byte, error) {
+// RenderHTMLToPDF renders a self-contained HTML document to a PDF. The HTML
+// must set window.pdfReady once images and fonts needed for printing are ready.
+func (s *LabelService) RenderHTMLToPDF(htmlContent string, widthMM, heightMM float64) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -709,4 +711,9 @@ func (s *LabelService) renderHTMLToPDF(htmlContent string, widthMM, heightMM flo
 		return nil, fmt.Errorf("label PDF renderer returned invalid data")
 	}
 	return pdfData, nil
+}
+
+// renderHTMLToPDF keeps the established internal API used by label tests.
+func (s *LabelService) renderHTMLToPDF(htmlContent string, widthMM, heightMM float64) ([]byte, error) {
+	return s.RenderHTMLToPDF(htmlContent, widthMM, heightMM)
 }

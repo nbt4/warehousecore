@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList, ScanLine } from 'lucide-react';
+import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList, ScanLine, Download, RefreshCw } from 'lucide-react';
 import { jobsApi, scansApi, ledApi } from '../lib/api';
 import type { Job, JobSummary, JobDevice, LEDStatus, JobRequirement } from '../lib/api';
 import { toast } from '../lib/toast';
@@ -31,6 +31,7 @@ export function JobsPage() {
   // Packliste state
   const [requirements, setRequirements] = useState<JobRequirement[]>([]);
   const [requirementsLoading, setRequirementsLoading] = useState(false);
+  const [packingListLoading, setPackingListLoading] = useState<'download' | 'regenerate' | null>(null);
 
   // Load open jobs and LED status on mount
   useEffect(() => {
@@ -303,6 +304,30 @@ export function JobsPage() {
     }
   };
 
+  const downloadPackingList = async (regenerate: boolean) => {
+    if (!selectedJob) return;
+    setPackingListLoading(regenerate ? 'regenerate' : 'download');
+    try {
+      const response = regenerate
+        ? await jobsApi.regeneratePackingList(selectedJob.job_id)
+        : await jobsApi.getPackingList(selectedJob.job_id);
+      const objectURL = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = objectURL;
+      link.download = `${selectedJob.job_code || `JOB${selectedJob.job_id}`}-Packliste.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectURL);
+      toast.success(regenerate ? 'Packliste aktualisiert und gespeichert.' : 'Packliste heruntergeladen.');
+    } catch (error: unknown) {
+      const candidate = error as { response?: { data?: { error?: string } } };
+      toast.error(candidate.response?.data?.error || 'Packliste konnte nicht erstellt werden.');
+    } finally {
+      setPackingListLoading(null);
+    }
+  };
+
   const getDeviceStats = (devices: JobDevice[]) => {
     const total = devices.length;
     const scanned = devices.filter(d => d.scanned).length;
@@ -428,6 +453,22 @@ export function JobsPage() {
                 )}
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => downloadPackingList(false)}
+                  disabled={packingListLoading !== null}
+                  className="suite-button suite-button--secondary suite-button--sm"
+                  title="Gespeicherte Packliste herunterladen"
+                >
+                  <Download className="w-4 h-4" /> Packliste
+                </button>
+                <button
+                  onClick={() => downloadPackingList(true)}
+                  disabled={packingListLoading !== null}
+                  className="suite-button suite-button--ghost suite-button--sm"
+                  title="Packliste aus aktuellen Jobdaten neu erzeugen"
+                >
+                  <RefreshCw className={`w-4 h-4 ${packingListLoading === 'regenerate' ? 'animate-spin' : ''}`} /> Aktualisieren
+                </button>
                 <button
                   onClick={() => navigate(`/jobs/${selectedJob.job_id}/picklist`)}
                   className="flex items-center gap-2 px-4 py-2 bg-accent-red/10 hover:bg-accent-red/20 text-accent-red rounded-lg text-sm font-medium transition-colors"

@@ -286,7 +286,10 @@ func main() {
 
 	// Scan endpoints (CRITICAL - core functionality)
 	protected.HandleFunc("/scans", handlers.HandleScan).Methods("POST")
+	protected.HandleFunc("/scans/resolve", handlers.ResolveScan).Methods("GET")
 	protected.HandleFunc("/scans/history", handlers.GetScanHistory).Methods("GET")
+	protected.HandleFunc("/jobs/{id}/packing-list.pdf", handlers.GetJobPackingList).Methods("GET")
+	protected.HandleFunc("/jobs/{id}/packing-list", handlers.RegenerateJobPackingList).Methods("POST")
 
 	// Device endpoints
 	api.HandleFunc("/devices", handlers.GetDevices).Methods("GET")
@@ -373,6 +376,7 @@ func main() {
 	api.HandleFunc("/handling-units/{id}/unseal", handlers.UnsealHandlingUnit).Methods("POST")
 	api.HandleFunc("/handling-units/{id}/dispatch", handlers.DispatchHandlingUnit).Methods("POST")
 	api.HandleFunc("/handling-units/{id}/return", handlers.ReturnHandlingUnit).Methods("POST")
+	api.HandleFunc("/handling-units/{id}/move", handlers.MoveHandlingUnit).Methods("POST")
 	api.HandleFunc("/handling-units/{id}/unpack", handlers.UnpackHandlingUnit).Methods("POST")
 	api.HandleFunc("/handling-units/{id}/events", handlers.GetHandlingUnitEvents).Methods("GET")
 

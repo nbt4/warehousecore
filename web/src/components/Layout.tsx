@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Boxes, Tag, Cable, ChevronDown, LayoutDashboard } from 'lucide-react';
+import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Boxes, Tag, Cable, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useBranding } from '../hooks/useBranding';
@@ -8,6 +8,7 @@ import { suiteGreetingName } from '../lib/cores-design';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 import { coresDashboardURL } from '../lib/suite-auth';
+import { SuiteCoreNavigation } from './SuiteCoreNavigation';
 
 interface LayoutProps {
   children: ReactNode;
@@ -188,15 +189,6 @@ export function Layout({ children }: LayoutProps) {
           className="flex-1 overflow-y-auto p-3 space-y-1"
           style={{ scrollbarWidth: 'none' }}
         >
-          {/* Cores Dashboard link */}
-          <a
-            href={dashboardURL}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-accent-red hover:bg-accent-red/10 transition-colors mb-2"
-          >
-            <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
-            {(sidebarOpen || isMobile) && <span>← Cores</span>}
-          </a>
-
           {/* Main nav items */}
           {['dashboard', 'scan'].map((key) => {
             const item = navIndex.get(key);
@@ -320,6 +312,8 @@ export function Layout({ children }: LayoutProps) {
               </Link>
             );
           })}
+
+          <SuiteCoreNavigation current="warehouse" dashboardURL={dashboardURL} compact={!sidebarOpen && !isMobile} />
 
         </nav>
 

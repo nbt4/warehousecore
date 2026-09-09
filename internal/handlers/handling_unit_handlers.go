@@ -872,6 +872,56 @@ type returnInput struct {
 	Mode              string `json:"mode"`
 }
 
+type moveHandlingUnitInput struct {
+	DestinationZoneID int64 `json:"destination_zone_id"`
+}
+
+// MoveHandlingUnit assigns an entire in-storage case tree to a scanned zone.
+// Devices and quantities remain packed and therefore inherit the root case's
+// physical location.
+func MoveHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	caseID, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
+		return
+	}
+	var input moveHandlingUnitInput
+	if json.NewDecoder(r.Body).Decode(&input) != nil || input.DestinationZoneID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Lagerplatz ist erforderlich"})
+		return
+	}
+	db := repository.GetSQLDB()
+	if err := services.ValidateStorageDestination(db, input.DestinationZoneID, 1); err != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer tx.Rollback()
+	var status string
+	if err = tx.QueryRow(`SELECT workflow_status FROM cases WHERE caseID=$1 FOR UPDATE`, caseID).Scan(&status); err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Case nicht gefunden"})
+		return
+	}
+	if status == "on_job" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Ausgegebenes Case muss über den Rücklauf eingelagert werden"})
+		return
+	}
+	if _, err = tx.Exec(`UPDATE cases SET zone_id=$1,status='free',updated_at=CURRENT_TIMESTAMP WHERE caseID=$2`, input.DestinationZoneID, caseID); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	_, _ = tx.Exec(`INSERT INTO case_events(case_id,event_type,zone_id) VALUES($1,'move',$2)`, caseID, input.DestinationZoneID)
+	if err = tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Case vollständig auf Lagerplatz gebucht"})
+}
+
 func ReturnHandlingUnit(w http.ResponseWriter, r *http.Request) {
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	var input returnInput

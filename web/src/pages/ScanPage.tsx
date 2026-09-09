@@ -4,6 +4,7 @@ import {
   BriefcaseBusiness,
   CheckCircle,
   MapPin,
+  PackageOpen,
   PackageCheck,
   PackageMinus,
   RotateCcw,
@@ -12,14 +13,15 @@ import {
   ShieldAlert,
   XCircle,
 } from 'lucide-react';
-import { devicesApi, jobsApi, scansApi, warehouseApi, zonesApi } from '../lib/api';
-import type { Device, JobSummary, ScanResponse, WarehouseLocation } from '../lib/api';
+import { devicesApi, handlingUnitsApi, jobsApi, scansApi, warehouseApi, zonesApi } from '../lib/api';
+import type { Device, HandlingUnit, JobSummary, ScanResolution, ScanResolutionProduct, ScanResponse, WarehouseLocation } from '../lib/api';
 import { formatStatus } from '../lib/utils';
 import { toast } from '../lib/toast';
 import { isDispatchableJob } from '../lib/job-status';
 
-type ScanAction = 'check' | 'intake' | 'outtake';
+type ScanAction = 'smart' | 'check' | 'intake' | 'outtake' | 'case_pack';
 type ScanStep = 'job' | 'device' | 'zone';
+type ScanJob = Pick<JobSummary, 'job_id' | 'job_code' | 'status_id' | 'status'>;
 
 const actionOptions: Array<{
   value: ScanAction;
@@ -27,9 +29,11 @@ const actionOptions: Array<{
   description: string;
   icon: typeof Search;
 }> = [
+  { value: 'smart', label: 'Automatisch', description: 'Lagerplatz oder Job startet den Ablauf', icon: ScanLine },
   { value: 'check', label: 'Prüfen', description: 'Status und Standort anzeigen', icon: Search },
   { value: 'intake', label: 'Einlagern', description: 'Artikel und danach Lagerplatz scannen', icon: PackageCheck },
   { value: 'outtake', label: 'Auslagern', description: 'Job und danach Artikel scannen', icon: PackageMinus },
+  { value: 'case_pack', label: 'Case packen', description: 'Dynamisches Case und Inhalt scannen', icon: PackageOpen },
 ];
 
 const firstStep = (action: ScanAction): ScanStep => (action === 'outtake' ? 'job' : 'device');
@@ -42,13 +46,17 @@ function requestError(error: unknown, fallback: string): string {
 export function ScanPage() {
   const [searchParams] = useSearchParams();
   const returnMode = searchParams.get('mode') === 'returns';
-  const [action, setAction] = useState<ScanAction>(() => returnMode ? 'intake' : 'check');
+  const [action, setAction] = useState<ScanAction>(() => returnMode ? 'intake' : 'smart');
   const [step, setStep] = useState<ScanStep>('device');
   const [scanCode, setScanCode] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [result, setResult] = useState<ScanResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
+  const [selectedJob, setSelectedJob] = useState<ScanJob | null>(null);
+  const [selectedZone, setSelectedZone] = useState<{ zone_id: number; code: string; name: string } | null>(null);
+  const [selectedCase, setSelectedCase] = useState<HandlingUnit | null>(null);
+  const [productDetails, setProductDetails] = useState<ScanResolutionProduct | null>(null);
+  const [pendingQuantity, setPendingQuantity] = useState<{ code: string; resolution: ScanResolution } | null>(null);
   const [pendingItemCode, setPendingItemCode] = useState('');
   const [pendingItem, setPendingItem] = useState<ScanResponse | null>(null);
   const [returnDevices, setReturnDevices] = useState<Device[]>([]);
@@ -84,11 +92,16 @@ export function ScanPage() {
   }, [action, step, loading]);
 
   const prompt = useMemo(() => {
+    if (action === 'smart' && selectedZone) return `Artikel für ${selectedZone.code} scannen`;
+    if (action === 'smart' && selectedJob) return `Artikel für ${selectedJob.job_code} scannen`;
+    if (action === 'smart') return 'Lagerplatz, Job oder Artikel scannen';
+    if (action === 'case_pack' && selectedCase) return `Inhalt für ${selectedCase.name} scannen`;
+    if (action === 'case_pack') return 'Dynamisches Case scannen';
     if (step === 'job') return 'Job-Code scannen';
     if (step === 'zone') return 'Lagerplatz scannen';
     if (action === 'outtake' && selectedJob) return `Artikel für ${selectedJob.job_code} scannen`;
     return 'Barcode, QR-Code oder Geräte-ID scannen';
-  }, [action, selectedJob, step]);
+  }, [action, selectedCase, selectedJob, selectedZone, step]);
 
   const resetWorkflow = (nextAction = action) => {
     setStep(firstStep(nextAction));
@@ -96,6 +109,9 @@ export function ScanPage() {
     setQuantity(1);
     setResult(null);
     setSelectedJob(null);
+    setSelectedZone(null);
+    setSelectedCase(null);
+    setPendingQuantity(null);
     setPendingItemCode('');
     setPendingItem(null);
   };
@@ -107,10 +123,10 @@ export function ScanPage() {
 
   const selectJob = async (code: string) => {
     const { data: job } = await jobsApi.getByScan(code);
-	if (!isDispatchableJob(job.status_id)) {
+    if (!isDispatchableJob(job.status_id)) {
       setResult({
         success: false,
-		message: `${job.job_code} hat den Status ${job.status}. Ausgaben sind nur für bestätigte Jobs möglich.`,
+        message: `${job.job_code} hat den Status ${job.status}. Ausgaben sind nur für bestätigte Jobs möglich.`,
         action: 'outtake',
         duplicate: false,
       });
@@ -155,6 +171,156 @@ export function ScanPage() {
     await loadReturns();
   };
 
+  const messageResult = (success: boolean, message: string, resultAction: string = action) => {
+    setResult({ success, message, action: resultAction, duplicate: false });
+    setScanCode('');
+  };
+
+  const processContextItem = async (code: string, resolution: ScanResolution, requested = 1) => {
+    if (selectedCase) {
+      const { data } = await handlingUnitsApi.packScan(selectedCase.case_id, { scan_code: code, quantity: requested });
+      messageResult(true, data.message, 'case_pack');
+      return;
+    }
+    if (selectedZone) {
+      if (resolution.kind === 'case' && resolution.case) {
+        if (resolution.case.workflow_status === 'on_job') {
+          const { data } = await handlingUnitsApi.returnCase(resolution.case.case_id, selectedZone.zone_id, 'sealed');
+          messageResult(true, data.message || `${resolution.case.name} eingelagert`, 'intake');
+        } else {
+          const { data } = await handlingUnitsApi.move(resolution.case.case_id, selectedZone.zone_id);
+          messageResult(true, data.message || `${resolution.case.name} umgelagert`, 'intake');
+        }
+        return;
+      }
+      if (resolution.kind === 'product' && resolution.product?.tracking_mode === 'individual') {
+        setProductDetails(resolution.product);
+        messageResult(false, 'Dieses Produkt wird einzeln verfolgt. Bitte eine konkrete Geräte-ID scannen.', 'intake');
+        return;
+      }
+      const { data } = await scansApi.process({ scan_code: code, action: 'intake', zone_id: selectedZone.zone_id, quantity: requested });
+      setResult(data);
+      setScanCode('');
+      if (data.success) await loadReturns();
+      return;
+    }
+    if (selectedJob) {
+      if (resolution.kind === 'case' && resolution.case) {
+        const { data } = await handlingUnitsApi.dispatch(resolution.case.case_id, selectedJob.job_id, true);
+        messageResult(true, data.message || `${resolution.case.name} ausgegeben`, 'outtake');
+        return;
+      }
+      if (resolution.kind === 'product' && resolution.product?.tracking_mode === 'individual') {
+        setProductDetails(resolution.product);
+        messageResult(false, 'Dieses Produkt wird einzeln verfolgt. Bitte eine konkrete Geräte-ID scannen.', 'outtake');
+        return;
+      }
+      const { data } = await scansApi.process({ scan_code: code, action: 'outtake', job_id: selectedJob.job_id, quantity: requested });
+      setResult(data);
+      setScanCode('');
+      return;
+    }
+    messageResult(false, 'Bitte zuerst Lagerplatz, Job oder Case scannen.');
+  };
+
+  const processAutomaticScan = async (code: string) => {
+    const { data: resolution } = await scansApi.resolve(code);
+    if (!selectedZone && !selectedJob) {
+      if (resolution.kind === 'zone' && resolution.zone) {
+        setSelectedZone(resolution.zone);
+        messageResult(true, `${resolution.zone.code} · ${resolution.zone.name} ausgewählt – jetzt Geräte, Mengenartikel oder Cases scannen.`, 'intake');
+        return;
+      }
+      if (resolution.kind === 'job' && resolution.job) {
+        if (!isDispatchableJob(resolution.job.status_id)) {
+          messageResult(false, `${resolution.job.job_code} hat den Status ${resolution.job.status}. Ausgaben sind nur für bestätigte Jobs möglich.`, 'outtake');
+          return;
+        }
+        setSelectedJob(resolution.job);
+        messageResult(true, `${resolution.job.job_code} ausgewählt – jetzt Geräte, Mengenartikel oder Cases scannen.`, 'outtake');
+        return;
+      }
+      if (resolution.kind === 'product' && resolution.product) {
+        setProductDetails(resolution.product);
+        messageResult(true, `${resolution.product.name} erkannt.`, 'check');
+        return;
+      }
+      if (resolution.kind === 'device') {
+        const { data } = await scansApi.process({ scan_code: code, action: 'check' });
+        setResult(data);
+        setScanCode('');
+        return;
+      }
+      if (resolution.kind === 'case' && resolution.case) {
+        messageResult(true, `${resolution.case.name}: ${resolution.case.device_count} Geräte, ${resolution.case.product_quantity} Mengenartikel, Status ${resolution.case.workflow_status}.`, 'check');
+        return;
+      }
+    }
+    if (resolution.kind === 'zone' && resolution.zone) {
+      setSelectedJob(null);
+      setSelectedZone(resolution.zone);
+      messageResult(true, `${resolution.zone.code} · ${resolution.zone.name} ausgewählt.`, 'intake');
+      return;
+    }
+    if (resolution.kind === 'job' && resolution.job) {
+      if (!isDispatchableJob(resolution.job.status_id)) {
+        messageResult(false, `${resolution.job.job_code} ist nicht für die Ausgabe freigegeben.`, 'outtake');
+        return;
+      }
+      setSelectedZone(null);
+      setSelectedJob(resolution.job);
+      messageResult(true, `${resolution.job.job_code} ausgewählt.`, 'outtake');
+      return;
+    }
+    if (resolution.kind === 'product' && resolution.product?.tracking_mode === 'quantity') {
+      setPendingQuantity({ code, resolution });
+      setQuantity(1);
+      setScanCode('');
+      return;
+    }
+    await processContextItem(code, resolution, 1);
+  };
+
+  const processCasePackScan = async (code: string) => {
+    const { data: resolution } = await scansApi.resolve(code);
+    if (!selectedCase) {
+      if (resolution.kind !== 'case' || !resolution.case) {
+        messageResult(false, 'Bitte zuerst ein dynamisches Case scannen.', 'case_pack');
+        return;
+      }
+      if (resolution.case.case_type === 'fixed') {
+        messageResult(false, 'Feste Cases werden über ihre Soll-Inhaltsliste gepflegt. Bitte ein dynamisches oder hybrides Case scannen.', 'case_pack');
+        return;
+      }
+      setSelectedCase(resolution.case);
+      messageResult(true, `${resolution.case.name} ausgewählt – jetzt Geräte, Mengenartikel oder Untercases scannen.`, 'case_pack');
+      return;
+    }
+    if (resolution.kind === 'product' && resolution.product?.tracking_mode === 'quantity') {
+      setPendingQuantity({ code, resolution });
+      setQuantity(1);
+      setScanCode('');
+      return;
+    }
+    await processContextItem(code, resolution, 1);
+  };
+
+  const confirmQuantity = async () => {
+    if (!pendingQuantity || quantity <= 0) return;
+    setLoading(true);
+    try {
+      await processContextItem(pendingQuantity.code, pendingQuantity.resolution, quantity);
+      setPendingQuantity(null);
+      setQuantity(1);
+    } catch (error) {
+      const message = requestError(error, 'Mengenbuchung fehlgeschlagen');
+      toast.error(message);
+      messageResult(false, message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const code = scanCode.trim();
@@ -162,7 +328,11 @@ export function ScanPage() {
     setLoading(true);
 
     try {
-      if (step === 'job') {
+      if (action === 'smart') {
+        await processAutomaticScan(code);
+      } else if (action === 'case_pack') {
+        await processCasePackScan(code);
+      } else if (step === 'job') {
         await selectJob(code);
       } else if (action === 'intake' && step === 'device') {
         await checkItemForIntake(code);
@@ -197,7 +367,8 @@ export function ScanPage() {
     }
   };
 
-  const currentStepNumber = action === 'check' ? 1 : step === firstStep(action) ? 1 : 2;
+  const hasContext = Boolean(selectedJob || selectedZone || selectedCase);
+  const currentStepNumber = action === 'check' ? 1 : hasContext || step !== firstStep(action) ? 2 : 1;
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 p-3 sm:space-y-6 sm:p-6">
@@ -206,7 +377,7 @@ export function ScanPage() {
         <p className="mt-1 text-sm text-gray-400">Geführte Ein- und Auslagerung mit eindeutiger Statusprüfung</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {actionOptions.map((option) => {
           const Icon = option.icon;
           const active = option.value === action;
@@ -246,7 +417,7 @@ export function ScanPage() {
               <h2 className="text-xl font-bold text-white">{prompt}</h2>
             </div>
           </div>
-          {(selectedJob || pendingItemCode) && (
+          {(hasContext || pendingItemCode) && (
             <button
               type="button"
               onClick={() => resetWorkflow()}
@@ -264,6 +435,26 @@ export function ScanPage() {
               <div className="font-semibold text-white">{selectedJob.job_code} · {selectedJob.status}</div>
             </div>
             <BriefcaseBusiness className="h-5 w-5 text-blue-300" />
+          </div>
+        )}
+
+        {selectedZone && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-blue-500/30 bg-blue-500/10 p-3">
+            <div>
+              <div className="text-xs text-blue-300">Gewählter Lagerplatz</div>
+              <div className="font-semibold text-white">{selectedZone.code} · {selectedZone.name}</div>
+            </div>
+            <MapPin className="h-5 w-5 text-blue-300" />
+          </div>
+        )}
+
+        {selectedCase && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-blue-500/30 bg-blue-500/10 p-3">
+            <div>
+              <div className="text-xs text-blue-300">Case-Packmodus</div>
+              <div className="font-semibold text-white">{selectedCase.name} · {selectedCase.case_type}</div>
+            </div>
+            <PackageOpen className="h-5 w-5 text-blue-300" />
           </div>
         )}
 
@@ -288,7 +479,7 @@ export function ScanPage() {
             className="w-full rounded-xl border-2 border-white/20 bg-white/10 px-4 py-4 text-lg text-white placeholder-gray-500 outline-none transition-colors focus:border-accent-red sm:px-6 sm:text-xl"
           />
 
-          {action !== 'check' && step === 'device' && (
+          {action !== 'check' && action !== 'smart' && action !== 'case_pack' && step === 'device' && (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
               <label htmlFor="scan-quantity" className="text-sm font-medium text-gray-300">Menge</label>
               <div>
@@ -308,12 +499,24 @@ export function ScanPage() {
 
           <button
             type="submit"
-            disabled={loading || !scanCode.trim() || quantity <= 0}
-            className="w-full rounded-xl bg-gradient-to-r from-accent-red to-red-700 py-4 text-base font-bold text-white transition-all hover:shadow-lg hover:shadow-accent-red/40 disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg"
+            disabled={loading || Boolean(pendingQuantity) || !scanCode.trim() || quantity <= 0}
+            className="suite-button suite-button--primary w-full py-4 text-base sm:text-lg"
           >
             {loading ? 'Verarbeite Scan…' : prompt}
           </button>
         </form>
+
+        {pendingQuantity?.resolution.product && (
+          <div className="mt-4 rounded-xl border p-4" style={{ borderColor: 'var(--color-warning)', background: 'var(--color-warning-bg)' }}>
+            <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>Menge für {pendingQuantity.resolution.product.name}</div>
+            <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>Bitte die tatsächlich bewegte Anzahl in {pendingQuantity.resolution.product.unit} bestätigen.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input autoFocus type="number" min="0.01" step="0.01" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className="input-field flex-1" aria-label="Menge" />
+              <button type="button" disabled={loading || quantity <= 0} onClick={() => void confirmQuantity()} className="suite-button suite-button--primary">Menge buchen</button>
+              <button type="button" disabled={loading} onClick={() => setPendingQuantity(null)} className="suite-button">Abbrechen</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {result && (
@@ -354,8 +557,37 @@ export function ScanPage() {
           onRefresh={loadReturns}
         />
       )}
+
+      {productDetails && <ScanProductModal product={productDetails} onClose={() => setProductDetails(null)} />}
     </div>
   );
+}
+
+function ScanProductModal({ product, onClose }: { product: ScanResolutionProduct; onClose: () => void }) {
+  return <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="scan-product-title">
+    <button type="button" className="absolute inset-0 bg-black/70" onClick={onClose} aria-label="Produktdetails schließen" />
+    <div className="suite-card relative z-10 w-full max-w-xl p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div><div className="suite-dashboard-eyebrow">Produkt erkannt</div><h2 id="scan-product-title" className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{product.name}</h2></div>
+        <button type="button" className="suite-button" onClick={onClose} aria-label="Schließen"><XCircle className="h-4 w-4" /></button>
+      </div>
+      <dl className="mt-5 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+        <ProductFact label="Produkt-ID" value={String(product.product_id)} />
+        <ProductFact label="Barcode" value={product.barcode || '–'} />
+        <ProductFact label="Bestandsführung" value={product.tracking_mode === 'individual' ? 'Einzelverfolgung' : product.tracking_mode === 'quantity' ? 'Mengenbestand' : 'Keine'} />
+        <ProductFact label="Bestand" value={product.tracking_mode === 'individual' ? `${product.device_count} Geräte` : `${product.stock} ${product.unit}`} />
+        <ProductFact label="Marke" value={product.brand || '–'} />
+        <ProductFact label="Hersteller" value={product.manufacturer || '–'} />
+        <ProductFact label="Kategorie" value={product.category || '–'} />
+        <ProductFact label="Beschreibung" value={product.description || '–'} wide />
+      </dl>
+      <div className="mt-5 flex justify-end"><button type="button" className="suite-button suite-button--primary" onClick={onClose}>Schließen</button></div>
+    </div>
+  </div>;
+}
+
+function ProductFact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return <div className={wide ? 'sm:col-span-2' : ''}><dt className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</dt><dd className="mt-1" style={{ color: 'var(--text-primary)' }}>{value}</dd></div>;
 }
 
 function ReturnQueue({

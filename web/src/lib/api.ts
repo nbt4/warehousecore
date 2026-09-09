@@ -566,6 +566,8 @@ export const handlingUnitsApi = {
       destination_zone_id: destinationZoneId,
       mode,
     }),
+  move: (id: number, destinationZoneId: number) =>
+    api.post(`/handling-units/${id}/move`, { destination_zone_id: destinationZoneId }),
   unpack: (id: number, destinationZoneId: number) =>
     api.post(`/handling-units/${id}/unpack`, {
       destination_zone_id: destinationZoneId,
@@ -627,8 +629,32 @@ export const zoneTypesApi = {
 
 export const scansApi = {
   process: (data: ScanRequest) => api.post<ScanResponse>('/scans', data),
+  resolve: (scanCode: string) => api.get<ScanResolution>('/scans/resolve', { params: { scan_code: scanCode } }),
   getHistory: (limit: number = 50) => api.get(`/scans/history`, { params: { limit } }),
 };
+
+export interface ScanResolutionProduct {
+  product_id: number;
+  name: string;
+  description: string;
+  barcode: string;
+  tracking_mode: 'individual' | 'quantity' | 'none';
+  stock: number;
+  unit: string;
+  brand: string;
+  manufacturer: string;
+  category: string;
+  device_count: number;
+}
+
+export interface ScanResolution {
+  kind: 'zone' | 'job' | 'case' | 'device' | 'product';
+  zone?: { zone_id: number; code: string; name: string };
+  job?: { job_id: number; job_code: string; title: string; status_id: number; status: string };
+  case?: HandlingUnit;
+  device_id?: string;
+  product?: ScanResolutionProduct;
+}
 
 export interface JobRequirement {
   id: number;
@@ -643,6 +669,8 @@ export const jobsApi = {
   getByScan: (scanCode: string) => api.get<JobSummary>('/jobs/scan', { params: { scan_code: scanCode } }),
   getById: (id: number) => api.get<JobSummary>(`/jobs/${id}`),
   getRequirements: (id: number) => api.get<JobRequirement[]>(`/jobs/${id}/requirements`),
+  getPackingList: (id: number) => api.get<Blob>(`/jobs/${id}/packing-list.pdf`, { responseType: 'blob' }),
+  regeneratePackingList: (id: number) => api.post<Blob>(`/jobs/${id}/packing-list`, null, { responseType: 'blob' }),
 };
 
 export interface PicklistPositionDevice {

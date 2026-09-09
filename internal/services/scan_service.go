@@ -561,7 +561,6 @@ func (s *ScanService) syncProductStockFromLocations(productID int64) error {
 			WHERE product_id = $1
 		)
 		WHERE productID = $2
-		AND (is_consumable = TRUE OR is_accessory = TRUE)
 	`, productID, productID)
 	if err != nil {
 		log.Printf("Warning: Failed to sync stock_quantity for product %d: %v", productID, err)
@@ -617,8 +616,7 @@ func (s *ScanService) findConsumableByScan(scanCode string) (*ConsumableProduct,
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
 		WHERE p.lifecycle_status = 'active'
 		  AND p.tracking_mode = 'quantity'
-		  AND (p.is_consumable = TRUE OR p.is_accessory = TRUE)
-		  AND (UPPER(COALESCE(p.generic_barcode, '')) = UPPER($1) OR CAST(p.productID AS CHAR) = $1
+		  AND (UPPER(COALESCE(p.generic_barcode, '')) = UPPER($1) OR p.productID::text = $1
 		       OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='product' AND ii.entity_key=p.productID::text AND ii.active AND UPPER(ii.code)=UPPER($1)))
 		LIMIT 1
 	`, scanCode).Scan(

@@ -1,5 +1,12 @@
 # WarehouseCore
 
+## Release 5.9.72 – Packlisten und universeller Scanner
+
+- Jobdetails erzeugen und speichern eine A4-Packliste als PDF mit Job-Barcode, Titel, Produktmengen, eingerücktem Zubehör und zentral gepflegtem Firmenlogo. Der gespeicherte Stand kann jederzeit heruntergeladen oder explizit aus den aktuellen Jobdaten neu erzeugt werden.
+- Der Scanner erkennt Lagerplätze, bestätigte Jobs, Geräte, Mengenprodukte und Cases automatisch. „Lagerplatz → Artikel“ lagert ein, „Job → Artikel“ gibt auch noch nicht zugeordnete Geräte aus, reine Produktscans öffnen die Stammdaten und Case-Scans bewegen den gesamten Inhalt.
+- Der eigene Case-Packmodus führt von einem dynamischen oder hybriden Case zu Geräten, Mengenartikeln oder Untercases und fragt Mengen ausdrücklich ab.
+- Die Suite-Navigation steht wie in allen Cores am Ende der Fachnavigation als Core-Auswahl plus eigenständiger Dashboard-Link zur Verfügung.
+
 ## Einheitliches Cores Designsystem
 
 WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://github.com/nbt4/cores/blob/main/docs/DESIGN_SYSTEM.md). Inter-Typografie, Graphitpalette, roter Akzent, 256/80-px-Sidebar, Tabellen, Formulare, Selects, Dropdowns, Scrollbars und Dashboard-Aufbau sind suite-weit identisch; Lagerstatusfarben bleiben ausschließlich semantisch.
@@ -23,10 +30,10 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 - **Scannerbasierte Zählinventur** — Offene oder verdeckte Sollmengen, automatische Platzsperre, Zählung von Geräten, Mengenartikeln und Cases, Abweichungsprüfung und kontrollierte Bestandsfreigabe
 - **LED-Bin-Highlighting** — Echtzeit-Steuerung von LED-Streifen via MQTT zur visuellen Hervorhebung von Pick-Positionen. Unterstützt Selbsthosting (Mosquitto) und Cloud-Broker
 - **Label Studio & Direktdruck** — Visueller Designer für Geräte-, Kabel-, Case- und Zonenlabels mit direktem Verschieben/Skalieren über Ziehpunkte und einpassbarer 25–200-%-Vorschau. Dauerhaft gespeicherte PDF-Master, schneller PDF-Download/Browserdruck aus dem Cache und protokollierter Zebra-ZPL-Direktdruck über TCP
-- **Geführtes Barcode-Scanning** — Klare Abläufe „Job → Artikel“ für Ausgaben und „Artikel → Lagerplatz“ für Einlagerungen, ein echtes Mengenfeld für Zubehör/Verbrauchsmaterial sowie nachvollziehbare Bewegungs- und Scanprotokolle
+- **Geführtes Barcode-Scanning** — Automatische Abläufe „Lagerplatz → Artikel“ und „Job → Artikel“, eigenständiger Case-Packmodus, Mengenabfrage für mengenbasierte Produkte, Produkt-Infodialog sowie nachvollziehbare Bewegungs- und Scanprotokolle
 - **Eindeutige Gerätestatus** — `on_job` bezeichnet nur aktive Ausgaben. Nach Jobabschluss bleibt ein nicht eingebuchtes Gerät als „Rückgabe offen“ sichtbar; alte Datensätze ohne Job oder Lagerplatz werden als „Standort ungeklärt“ ausgewiesen.
 - **Hybrides Kabelinventar** — Kabel als normale Produkte mit strukturierten Anschlüssen, Länge und Querschnitt verwalten. Wahlweise gemeinsamer Artikelbarcode mit Mengenbestand je Lagerzone oder individueller Barcode je physischem Kabel
-- **Job-Picklisten** — Automatische Picklist-Generierung für Mietaufträge mit Scan-Bestätigung und Abschluss-Workflow
+- **Job-Picklisten und PDF-Packlisten** — Picklist-Scanbestätigung sowie dauerhaft gespeicherte, per Knopfdruck aktualisierbare A4-Packlisten mit Barcode, Firmenlogo und rekursiv eingerücktem Zubehör
 - **Transparenter Rücklauf** — Dashboard und Scanner zeigen alle auf Rückgabe wartenden Geräte mit Produkt, Job und Betriebszustand; Zustand und Ziel-Lagerplatz lassen sich zusätzlich zum Scanprozess kontrolliert manuell bestätigen
 - **Kontextuelle Bestandssuche** — Produkt-, Geräte-, Paket-, Kabel-, Label- und Wartungssuchen berücksichtigen neben Titeln auch Marke, Hersteller, Modellkontext, Kategorien, Barcodes, Seriennummern und technische Parameter; mehrere Suchbegriffe dürfen aus unterschiedlichen Feldern stammen
 - **Dynamische Handling Units** — Leere Euroboxen und Flightcases je Job frei befüllen, feste oder hybride Soll-Inhalte pflegen, Geräte/Mengenartikel/Untercases scannen, versiegeln, komplett ausgeben, im Rücklauf prüfen und gesammelt zurücklagern
@@ -36,7 +43,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 - **Role-Based Access** — Feingranulares Rollensystem mit Admin-Bereich für Benutzer-, Kategorie- und LED-Konfiguration
 - **Installierbare Mobile-App (PWA)** — Standalone-Modus mit WarehouseCore-App-Icon, Safe-Area-Unterstützung, großen Touch-Zielen, App-Tabbar und Drawer-Navigation; dasselbe Image läuft auf der eigenen Domain unter `/` oder im globalen Suite-Pfadmodus unter `/warehousecore/`
 - **Zentrales Branding** — Live geladene Varianten für Bildmarke, Sidebar, Login, Browser-Tab und dynamisches PWA-Manifest über `/api/v1/branding`; auch die Branding-Defaults sind im Suite-Pfadmodus mount-sicher
-- **Einheitliche Navigation** — Ein-/ausklappbare Sidebar mit normierter Logo-/Symbolfläche, logofreier App-Header und zentralem Cores-Link ohne direkten RentalCore-Umschalter
+- **Einheitliche Navigation** — Ein-/ausklappbare Sidebar mit normierter Logo-/Symbolfläche, suite-weitem Core-Auswahlfeld und eigenständigem Dashboard-Link an derselben Position in allen Cores
 
 ---
 
@@ -132,9 +139,19 @@ kompatible API-Clients bestehen.
 | `PUT`   | `/api/v1/devices/:id/status`            | Gerätestatus aktualisieren (🔒)           |
 | `GET`   | `/api/v1/devices/:id/movements`         | Bewegungsprotokoll (🔒)                   |
 | `POST`  | `/api/v1/scans`                         | Gerät scannen (🔒)                        |
+| `GET`   | `/api/v1/scans/resolve`                 | Scan-Code ohne Bestandsänderung auflösen (🔒) |
 | `GET`   | `/api/v1/scans/history`                 | Scan-Historie (🔒)                        |
 
 `POST /api/v1/scans` akzeptiert `scan_code`, `action`, optional `job_id`, `zone_id` und `quantity`. `job_id` bezeichnet ausschließlich den echten Zieljob; Mengen werden nicht mehr über dieses Feld transportiert. Eine Ausgabe benötigt einen offenen Job, eine Einlagerung einen bestätigten Lagerplatz.
+
+### Job-Packlisten
+
+| Methode | Pfad                                      | Beschreibung |
+|---------|-------------------------------------------|--------------|
+| `GET`   | `/api/v1/jobs/:id/packing-list.pdf`       | Gespeicherte Packliste laden oder erstmalig erzeugen (🔒) |
+| `POST`  | `/api/v1/jobs/:id/packing-list`           | Packliste aus aktuellen Jobdaten neu erzeugen und speichern (🔒) |
+
+PDFs liegen dauerhaft unter `PACKING_LIST_DIR` (Standard `/var/lib/warehousecore/packing-lists`). Für Docker-Deployments ist dafür das Volume `warehousecore-packing-lists` vorgesehen.
 
 ### Wartung und Instandhaltung
 

@@ -7,11 +7,14 @@ services:
       - .env
     environment:
       LED_MAPPING_FILE: "${LED_MAPPING_FILE:-/var/lib/warehousecore/led/led_mapping.json}"
+      PACKING_LIST_DIR: "${PACKING_LIST_DIR:-/var/lib/warehousecore/packing-lists}"
     ports:
       - "8082:8082"
     volumes:
       - led-mapping:/var/lib/warehousecore/led
       - warehousecore-labels:/root/web/dist/labels
+      - warehousecore-packing-lists:/var/lib/warehousecore/packing-lists
+      - branding-data:/var/lib/branding
     networks:
       - warehousecore-network
     depends_on:
@@ -76,6 +79,8 @@ networks:
 volumes:
   led-mapping:
   warehousecore-labels:
+  warehousecore-packing-lists:
+  branding-data:
   mosquitto-config:
   mosquitto-data:
   mosquitto-log:
