@@ -1,6 +1,6 @@
 # WarehouseCore
 
-## Release 5.9.72 – Packlisten und universeller Scanner
+## Release 5.9.73 – Packlisten und universeller Scanner
 
 - Jobdetails erzeugen und speichern eine A4-Packliste als PDF mit Job-Barcode, Titel, Produktmengen, eingerücktem Zubehör und zentral gepflegtem Firmenlogo. Der gespeicherte Stand kann jederzeit heruntergeladen oder explizit aus den aktuellen Jobdaten neu erzeugt werden.
 - Der Scanner erkennt Lagerplätze, bestätigte Jobs, Geräte, Mengenprodukte und Cases automatisch. „Lagerplatz → Artikel“ lagert ein, „Job → Artikel“ gibt auch noch nicht zugeordnete Geräte aus, reine Produktscans öffnen die Stammdaten und Case-Scans bewegen den gesamten Inhalt.
