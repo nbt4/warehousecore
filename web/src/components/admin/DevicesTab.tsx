@@ -521,9 +521,9 @@ export function DevicesTab() {
                     <td className="px-4 py-3 text-sm text-gray-300">{device.serial_number || '-'}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`px-2 py-1 rounded-full bg-white/10 text-xs font-semibold ${getStatusColor(device.status)}`}
+                        className={`px-2 py-1 rounded-full bg-white/10 text-xs font-semibold ${device.lifecycle_status === 'archived' ? 'text-amber-400' : getStatusColor(device.status)}`}
                       >
-                        {formatStatus(device.status)}
+                        {device.lifecycle_status === 'archived' ? 'Archiviert' : formatStatus(device.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-300">
@@ -541,20 +541,12 @@ export function DevicesTab() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => downloadQR(device.device_id)}
-                          className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white"
-                          title="QR-Code herunterladen"
-                        >
-                          <QrCode className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => downloadBarcode(device.device_id)}
-                          className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white"
-                          title="Barcode herunterladen"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
+						{device.lifecycle_status !== 'archived' && (
+						  <>
+							<button onClick={() => downloadQR(device.device_id)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white" title="QR-Code herunterladen"><QrCode className="w-4 h-4" /></button>
+							<button onClick={() => downloadBarcode(device.device_id)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white" title="Barcode herunterladen"><Download className="w-4 h-4" /></button>
+						  </>
+						)}
 						{device.lifecycle_status === 'archived' ? (
 						  <>
 							<button onClick={() => handleRestore(device.device_id)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-green-400 hover:text-green-300" title="Wiederherstellen"><RotateCcw className="w-4 h-4" /></button>
@@ -587,9 +579,9 @@ export function DevicesTab() {
                 )}
               </div>
                 <span
-                  className={`px-2 py-1 rounded-full bg-white/10 text-xs font-semibold ${getStatusColor(device.status)}`}
+                  className={`px-2 py-1 rounded-full bg-white/10 text-xs font-semibold ${device.lifecycle_status === 'archived' ? 'text-amber-400' : getStatusColor(device.status)}`}
                 >
-                  {formatStatus(device.status)}
+                  {device.lifecycle_status === 'archived' ? 'Archiviert' : formatStatus(device.status)}
                 </span>
               </div>
 

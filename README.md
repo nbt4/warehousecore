@@ -1,5 +1,11 @@
 # WarehouseCore
 
+## Release 5.9.74 – Geräte-Lebenszyklus
+
+- Devices lassen sich archivieren, wiederherstellen und nach vorheriger Archivierung endgültig löschen; archivierte Geräte verschwinden aus Scans, Cases, Picklisten, Labels, Lagerbeständen und operativen Kennzahlen.
+- Beim Archivieren eines Produkts werden alle aktiven Devices atomar mitarchiviert. Eine Wiederherstellung reaktiviert ausschließlich die Devices, die durch genau dieses Produktarchiv deaktiviert wurden.
+- Archivierte Produkte können samt ihren archivierten Devices endgültig gelöscht werden, sofern keine geschützten historischen Produktverwendungen mehr bestehen.
+
 ## Release 5.9.73 – Packlisten und universeller Scanner
 
 - Jobdetails erzeugen und speichern eine A4-Packliste als PDF mit Job-Barcode, Titel, Produktmengen, eingerücktem Zubehör und zentral gepflegtem Firmenlogo. Der gespeicherte Stand kann jederzeit heruntergeladen oder explizit aus den aktuellen Jobdaten neu erzeugt werden.
