@@ -129,7 +129,7 @@ const warehouseLocationSelect = `
 	       z.parent_zone_id, z.capacity, z.capacity_mode, z.is_storable, z.is_active,
 	       z.pick_sequence, z.max_weight_kg, z.max_volume_m3, z.inventory_frequency_days,
 	       z.last_counted_at, z.next_count_at,
-	       (SELECT COUNT(*) FROM devices d WHERE d.zone_id = z.zone_id AND d.status = 'in_storage'),
+	       (SELECT COUNT(*) FROM devices d WHERE d.zone_id = z.zone_id AND d.status = 'in_storage' AND d.lifecycle_status='active'),
 	       (SELECT COUNT(*) FROM cases c WHERE c.zone_id = z.zone_id),
 	       COALESCE((SELECT SUM(pl.quantity) FROM product_locations pl WHERE pl.zone_id = z.zone_id), 0),
 	       (SELECT COUNT(*) FROM storage_zones child WHERE child.parent_zone_id = z.zone_id AND child.is_active)
@@ -402,7 +402,7 @@ func getWarehouseLocationUsage(db *sql.DB, id int64) (warehouseLocationUsage, er
 	var usage warehouseLocationUsage
 	err := db.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM storage_zones WHERE parent_zone_id=$1 AND is_active),
-		(SELECT COUNT(*) FROM devices WHERE zone_id=$1),
+		(SELECT COUNT(*) FROM devices WHERE zone_id=$1 AND lifecycle_status='active'),
 		(SELECT COUNT(*) FROM cases WHERE zone_id=$1),
 		COALESCE((SELECT SUM(quantity) FROM product_locations WHERE zone_id=$1),0)`, id).
 		Scan(&usage.Children, &usage.Devices, &usage.Cases, &usage.Products)
@@ -426,6 +426,7 @@ func GetWarehouseOverview(w http.ResponseWriter, r *http.Request) {
 		(SELECT COUNT(*) FROM storage_zones WHERE is_active AND operational_status <> 'available'),
 		(SELECT COUNT(*) FROM devices
 		 WHERE zone_id IS NULL
+		   AND lifecycle_status='active'
 		   AND COALESCE(status,'') NOT IN ('on_job','rented')
 		   AND NOT EXISTS (SELECT 1 FROM devicescases dc WHERE dc.deviceID=devices.deviceID)),
 		(SELECT COUNT(*) FROM cases

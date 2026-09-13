@@ -13,6 +13,7 @@ import {
   RefreshCcw,
   RotateCcw,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import { api, devicesApi, ledApi, type Device } from '../../lib/api';
@@ -542,7 +543,7 @@ export function ProductsTab() {
   };
 
   const handleArchive = async (product: Product) => {
-    if (!window.confirm(`Produkt "${product.name}" archivieren? Zugeordnete Geräte und historische Daten bleiben erhalten.`)) {
+    if (!window.confirm(`Produkt "${product.name}" archivieren? Alle aktiven Geräte dieses Produkts werden ebenfalls archiviert und sind danach nicht mehr einsetzbar.`)) {
       return;
     }
 
@@ -562,6 +563,17 @@ export function ProductsTab() {
 		await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
 	  } catch (error) {
 		toast.error('Produkt konnte nicht wiederhergestellt werden: ' + String(error));
+	  }
+	};
+
+	const handlePermanentDelete = async (product: Product) => {
+	  if (!window.confirm(`Produkt "${product.name}" inklusive seiner archivierten Geräte endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+	  try {
+		await api.delete(`/admin/products/${product.product_id}/permanent`);
+		toast.success('Produkt wurde endgültig gelöscht.');
+		await fetchProducts(searchTerm, categoryFilter, lifecycleFilter);
+	  } catch (error) {
+		toast.error('Produkt konnte nicht gelöscht werden: ' + String(error));
 	  }
 	};
 
@@ -910,9 +922,10 @@ export function ProductsTab() {
                           <GitBranch className="h-4 w-4" />
                         </button>
 						{product.lifecycle_status === 'archived' ? (
-						  <button onClick={() => handleRestore(product)} className="rounded-lg bg-emerald-600/80 p-2 text-white transition hover:bg-emerald-600" title="Wiederherstellen">
-							<RotateCcw className="h-4 w-4" />
-						  </button>
+						  <>
+							<button onClick={() => handleRestore(product)} className="rounded-lg bg-emerald-600/80 p-2 text-white transition hover:bg-emerald-600" title="Wiederherstellen"><RotateCcw className="h-4 w-4" /></button>
+							<button onClick={() => handlePermanentDelete(product)} className="rounded-lg bg-red-600/80 p-2 text-white transition hover:bg-red-600" title="Endgültig löschen"><Trash2 className="h-4 w-4" /></button>
+						  </>
 						) : (
 						  <button onClick={() => handleArchive(product)} className="rounded-lg bg-amber-600/80 p-2 text-white transition hover:bg-amber-600" title="Archivieren">
 							<Archive className="h-4 w-4" />
@@ -987,9 +1000,10 @@ export function ProductsTab() {
                     <GitBranch className="h-4 w-4" />
                   </button>
 				  {product.lifecycle_status === 'archived' ? (
-					<button onClick={() => handleRestore(product)} className="rounded-lg bg-emerald-600/80 p-2 text-white transition hover:bg-emerald-600" title="Wiederherstellen">
-					  <RotateCcw className="h-4 w-4" />
-					</button>
+					<>
+					  <button onClick={() => handleRestore(product)} className="rounded-lg bg-emerald-600/80 p-2 text-white transition hover:bg-emerald-600" title="Wiederherstellen"><RotateCcw className="h-4 w-4" /></button>
+					  <button onClick={() => handlePermanentDelete(product)} className="rounded-lg bg-red-600/80 p-2 text-white transition hover:bg-red-600" title="Endgültig löschen"><Trash2 className="h-4 w-4" /></button>
+					</>
 				  ) : (
 					<button onClick={() => handleArchive(product)} className="rounded-lg bg-amber-600/80 p-2 text-white transition hover:bg-amber-600" title="Archivieren">
 					  <Archive className="h-4 w-4" />

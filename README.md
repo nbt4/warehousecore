@@ -220,14 +220,17 @@ Job- und Lagerstatus bleiben ebenfalls getrennt. WarehouseCore zeigt für Vorber
 | `GET`    | `/api/v1/admin/products`              | Aktive Produkte auflisten; Statusfilter möglich (🔒) |
 | `POST`   | `/api/v1/admin/products`              | Typisiertes Produkt erstellen (🔒 Admin)          |
 | `PUT`    | `/api/v1/admin/products/:id`          | Produktstammdaten aktualisieren (🔒 Admin)         |
-| `DELETE` | `/api/v1/admin/products/:id`          | Produkt sicher archivieren (🔒 Admin)              |
-| `PUT`    | `/api/v1/admin/products/:id/restore`  | Archiviertes Produkt wiederherstellen (🔒 Admin)  |
+| `DELETE` | `/api/v1/admin/products/:id`          | Produkt und seine aktiven Devices archivieren (🔒 Admin) |
+| `PUT`    | `/api/v1/admin/products/:id/restore`  | Produkt und dadurch archivierte Devices wiederherstellen (🔒 Admin) |
+| `DELETE` | `/api/v1/admin/products/:id/permanent` | Archiviertes Produkt samt Devices endgültig löschen (🔒 Admin) |
 
 `POST /api/v1/admin/products` akzeptiert zusätzlich `product_kind`, `model_number`, `manufacturer_part_number`, `ean`, `initial_device_quantity` und `initial_zone_id`. Bei Einzelverfolgung werden Produkt und Anfangsexemplare in einer Transaktion angelegt. Die Zubehörendpunkte `/api/v1/admin/products/:id/dependencies` verwenden `relation_type` (`required`, `recommended`, `compatible`, `consumes`, `alternative`, `included`) und `assignment_scope`.
 
 Die Admin-Registerkarte **Beschaffung** gleicht Warehouse-Produkte anhand stabiler Artikelmerkmale mit ProcurementCore ab. `GET /api/v1/admin/product-links` liefert Verknüpfungen und Vorschläge, `/products/:id/procurement-link` bestätigt oder löst eine Zuordnung und `/products/:id/procurement-requisitions` erzeugt einen Procurement-Bedarfsentwurf. Eine Neuanlage mit `procurement_product_id` speichert Warehouse-Produkt, automatisch erzeugte Produkt-/Device-IDs und die eindeutige Core-Verknüpfung gemeinsam in einer Transaktion. `PROCUREMENTCORE_PUBLIC_URL` steuert die serviceübergreifende Navigation.
 
 `GET /api/v1/admin/products` akzeptiert `lifecycle_status=active|archived|all`. Mengenbestände werden aus `product_locations` berechnet; bei auf Lagerzonen verteiltem Bestand erfolgen Korrekturen über Zonen- oder Scanabläufe.
+
+Devices besitzen denselben Lebenszyklus. `GET /api/v1/admin/devices-list` akzeptiert `lifecycle_status=active|archived|all` (Standard: `active`). `DELETE /api/v1/admin/devices/:id` archiviert ein Device, `PUT /api/v1/admin/devices/:id/restore` stellt es wieder her und `DELETE /api/v1/admin/devices/:id/permanent` löscht ein bereits archiviertes Device endgültig. Archivierte Devices werden nicht in Scans, Lagerbeständen, Cases, Picklisten, Labels oder operativen Kennzahlen berücksichtigt. Beim Archivieren eines Produkts werden dessen aktive Devices atomar mitarchiviert; beim Wiederherstellen werden nur die durch dieses Produktarchiv deaktivierten Devices reaktiviert.
 
 ### Produktpakete
 
@@ -339,6 +342,8 @@ Die Migration `038_device_status_lifecycle.sql` trennt Jobabschluss und physisch
 Die Migration `039_warehouse_operations_and_handling_units.sql` erweitert Lagerorte um Prozessrollen, Betriebszustände, Kapazitäts- und Inventursteuerung. Sie ergänzt dynamische/feste/hybride Handling Units, Mengen- und Untercase-Inhalte, Ereignisprotokolle, Lageraufgaben und scannerbasierte Zählinventuren. Die Migration verändert keine bestehenden Geräte-Lagerplatzzuordnungen automatisch.
 
 Die Migration `041_product_master_v2.sql` ergänzt das unveränderliche Kennungssystem, Scan-Aliase, Produktklassen, technische Artikelnummern, typisierte Beziehungen, konkrete Device-Komponenten und Case-Modelle. Bestehende Produkte, Devices und Cases werden idempotent nachgezogen. Vorhandene Device-IDs bleiben erhalten; bisherige Cases mit Geräteinhalt werden als feste Cases klassifiziert und ihr Ist-Inhalt als Soll-Inhalt übernommen. Kabelprodukte werden automatisch unter „Kabel & Adapter“ einsortiert.
+
+Die Migration `044_device_lifecycle.sql` ergänzt den aktiven bzw. archivierten Device-Zustand, den Archivzeitpunkt und die Herkunft eines Produktarchivs. Dadurch bleiben historische Verknüpfungen erhalten, während archivierte Geräte zuverlässig aus allen operativen Abläufen verschwinden.
 
 🔒 = Authentifizierung via `session_id` Cookie erforderlich
 

@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"warehousecore/internal/models"
@@ -25,6 +27,8 @@ type DeviceAdminResponse struct {
 	QRCode          *string `json:"qr_code,omitempty"`
 	Status          string  `json:"status"`
 	ConditionStatus string  `json:"condition_status"`
+	LifecycleStatus string  `json:"lifecycle_status"`
+	ArchivedAt      *string `json:"archived_at,omitempty"`
 	CurrentLocation *string `json:"current_location,omitempty"`
 	ZoneID          *int    `json:"zone_id,omitempty"`
 	ZoneName        string  `json:"zone_name,omitempty"`
@@ -73,6 +77,8 @@ func toDeviceAdminResponse(device *models.DeviceWithDetails) DeviceAdminResponse
 		QRCode:          ptrString(device.QRCode),
 		Status:          device.Status,
 		ConditionStatus: device.ConditionStatus,
+		LifecycleStatus: device.LifecycleStatus,
+		ArchivedAt:      formatNullTimestamp(device.ArchivedAt),
 		CurrentLocation: ptrString(device.CurrentLocation),
 		ZoneID:          nullIntToPtr(device.ZoneID),
 		ZoneName:        device.ZoneName,
@@ -91,6 +97,14 @@ func toDeviceAdminResponse(device *models.DeviceWithDetails) DeviceAdminResponse
 	}
 }
 
+func formatNullTimestamp(value sql.NullTime) *string {
+	if !value.Valid {
+		return nil
+	}
+	formatted := value.Time.Format(time.RFC3339)
+	return &formatted
+}
+
 // ===========================
 // DEVICE ADMIN HANDLERS
 // ===========================
@@ -98,9 +112,15 @@ func toDeviceAdminResponse(device *models.DeviceWithDetails) DeviceAdminResponse
 // GetAllDevicesAdmin retrieves all devices with full details for admin use
 func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
+	lifecycleStatus, err := normalizeLifecycleFilter(r.URL.Query().Get("lifecycle_status"))
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "lifecycle_status must be active, archived, or all"})
+		return
+	}
 
 	query := `
 		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
+		       d.lifecycle_status,d.archived_at,d.archived_by_product,
 		       d.current_location, d.zone_id,
 		       d.condition_rating, d.usage_hours, d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
@@ -120,10 +140,11 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN cases c ON dc.caseID = c.caseID
 		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID
 		LEFT JOIN jobs j ON jd.jobID = j.jobID
+		WHERE ($1='all' OR d.lifecycle_status=$1)
 		ORDER BY d.deviceID DESC
 	`
 
-	rows, err := db.Query(query)
+	rows, err := db.Query(query, lifecycleStatus)
 	if err != nil {
 		log.Printf("[DEVICE LIST] Failed to query devices: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch devices"})
@@ -142,6 +163,9 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 			&device.QRCode,
 			&device.Status,
 			&device.ConditionStatus,
+			&device.LifecycleStatus,
+			&device.ArchivedAt,
+			&device.ArchivedByProduct,
 			&device.CurrentLocation,
 			&device.ZoneID,
 			&device.ConditionRating,
@@ -171,6 +195,17 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, responses)
 }
 
+func normalizeLifecycleFilter(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "active", nil
+	}
+	if value != "active" && value != "archived" && value != "all" {
+		return "", fmt.Errorf("invalid lifecycle status %q", value)
+	}
+	return value, nil
+}
+
 // CreateDevice creates a single device or multiple devices with the admin service
 func CreateDevice(w http.ResponseWriter, r *http.Request) {
 	var input models.DeviceCreateInput
@@ -194,6 +229,14 @@ func CreateDevice(w http.ResponseWriter, r *http.Request) {
 	service := services.NewDeviceAdminService()
 	devices, err := service.CreateDevices(r.Context(), &input)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
+			return
+		}
+		if errors.Is(err, services.ErrDeviceProductArchived) {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Archivierte Produkte können keine neuen Geräte erhalten"})
+			return
+		}
 		log.Printf("[DEVICE CREATE] Failed: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -233,6 +276,14 @@ func UpdateDevice(w http.ResponseWriter, r *http.Request) {
 			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
 			return
 		}
+		if errors.Is(err, services.ErrDeviceArchived) {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Archivierte Geräte müssen vor der Bearbeitung wiederhergestellt werden"})
+			return
+		}
+		if errors.Is(err, services.ErrDeviceProductArchived) {
+			respondJSON(w, http.StatusConflict, map[string]string{"error": "Das zugehörige Produkt ist archiviert"})
+			return
+		}
 		log.Printf("[DEVICE UPDATE] Failed for %s: %v", deviceID, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -251,18 +302,66 @@ func DeleteDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	service := services.NewDeviceAdminService()
-	err := service.DeleteDevice(r.Context(), deviceID)
+	err := service.ArchiveDevice(r.Context(), deviceID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
 			return
 		}
-		log.Printf("[DEVICE DELETE] Failed for %s: %v", deviceID, err)
+		log.Printf("[DEVICE ARCHIVE] Failed for %s: %v", deviceID, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Device deleted successfully"})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Device archived successfully"})
+}
+
+// RestoreDevice reactivates an archived device.
+func RestoreDevice(w http.ResponseWriter, r *http.Request) {
+	deviceID := mux.Vars(r)["id"]
+	if deviceID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Device ID is required"})
+		return
+	}
+	err := services.NewDeviceAdminService().RestoreDevice(r.Context(), deviceID)
+	if errors.Is(err, repository.ErrNotFound) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
+		return
+	}
+	if errors.Is(err, services.ErrDeviceProductArchived) {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Das zugehörige Produkt muss vor dem Gerät wiederhergestellt werden"})
+		return
+	}
+	if err != nil {
+		log.Printf("[DEVICE RESTORE] Failed for %s: %v", deviceID, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Device restored successfully"})
+}
+
+// PermanentlyDeleteDevice irreversibly removes an already archived device.
+func PermanentlyDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	deviceID := mux.Vars(r)["id"]
+	if deviceID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Device ID is required"})
+		return
+	}
+	err := services.NewDeviceAdminService().DeleteDevice(r.Context(), deviceID)
+	if errors.Is(err, repository.ErrNotFound) {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
+		return
+	}
+	if errors.Is(err, services.ErrDeviceNotArchived) {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Das Gerät muss vor dem endgültigen Löschen archiviert werden"})
+		return
+	}
+	if err != nil {
+		log.Printf("[DEVICE DELETE] Failed for %s: %v", deviceID, err)
+		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Device permanently deleted"})
 }
 
 // GetDeviceAdmin retrieves a single device with full details

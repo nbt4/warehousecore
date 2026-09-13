@@ -24,6 +24,8 @@ export interface Device {
   serial_number?: string;
   status: string;
   condition_status?: string;
+  lifecycle_status?: 'active' | 'archived';
+  archived_at?: string;
   current_location?: string;
   zone_id?: number;
   zone_name?: string;
@@ -504,7 +506,9 @@ export interface DeviceUpdateInput {
 export const devicesAdminApi = {
   create: (data: DeviceCreateInput) => api.post<Device | Device[]>('/admin/devices', data),
   update: (id: string, data: DeviceUpdateInput) => api.put<Device>(`/admin/devices/${id}`, data),
-  delete: (id: string) => api.delete<{ message: string }>(`/admin/devices/${id}`),
+  archive: (id: string) => api.delete<{ message: string }>(`/admin/devices/${id}`),
+  restore: (id: string) => api.put<{ message: string }>(`/admin/devices/${id}/restore`),
+  deletePermanently: (id: string) => api.delete<{ message: string }>(`/admin/devices/${id}/permanent`),
   getById: (id: string) => api.get<Device>(`/admin/devices/${id}`),
   downloadQR: (id: string) => appPath(`/api/v1/admin/devices/${id}/qr`),
   downloadBarcode: (id: string) => appPath(`/api/v1/admin/devices/${id}/barcode`),

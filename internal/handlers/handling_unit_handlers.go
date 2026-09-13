@@ -472,7 +472,7 @@ func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
 	var deviceID string
 	var productID sql.NullInt64
 	var deviceStatus, conditionStatus string
-	err = tx.QueryRow(`SELECT deviceID,productID,status,condition_status FROM devices WHERE UPPER(deviceID)=UPPER($1) OR UPPER(COALESCE(barcode,''))=UPPER($1) OR UPPER(COALESCE(qr_code,''))=UPPER($1) LIMIT 1`, code).Scan(&deviceID, &productID, &deviceStatus, &conditionStatus)
+	err = tx.QueryRow(`SELECT deviceID,productID,status,condition_status FROM devices WHERE lifecycle_status='active' AND (UPPER(deviceID)=UPPER($1) OR UPPER(COALESCE(barcode,''))=UPPER($1) OR UPPER(COALESCE(qr_code,''))=UPPER($1)) LIMIT 1`, code).Scan(&deviceID, &productID, &deviceStatus, &conditionStatus)
 	if err == nil {
 		if deviceStatus == "on_job" || deviceStatus == "return_pending" {
 			respondJSON(w, http.StatusConflict, map[string]string{"error": "Ausgegebenes Gerät bzw. offener Rücklauf kann nicht gepackt werden"})
@@ -825,7 +825,7 @@ func DispatchHandlingUnit(w http.ResponseWriter, r *http.Request) {
 	}
 	var unavailable int
 	if err = tx.QueryRow(`WITH RECURSIVE tree AS (SELECT $1::int AS case_id UNION ALL SELECT cc.child_case_id FROM case_child_contents cc JOIN tree t ON cc.parent_case_id=t.case_id)
-		SELECT COUNT(*) FROM devicescases dc JOIN tree t ON t.case_id=dc.caseID JOIN devices d ON d.deviceID=dc.deviceID WHERE d.condition_status<>'available' OR d.status<>'in_storage'`, caseID).Scan(&unavailable); err != nil {
+		SELECT COUNT(*) FROM devicescases dc JOIN tree t ON t.case_id=dc.caseID JOIN devices d ON d.deviceID=dc.deviceID WHERE d.lifecycle_status<>'active' OR d.condition_status<>'available' OR d.status<>'in_storage'`, caseID).Scan(&unavailable); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

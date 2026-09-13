@@ -245,7 +245,7 @@ func exportProductsWithDeviceCount() ([]byte, error) {
 			SUM(CASE WHEN d.condition_status IN ('defective','blocked','maintenance') THEN 1 ELSE 0 END) as defect_count
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryid
-		LEFT JOIN devices d ON p.productID = d.productID
+		LEFT JOIN devices d ON p.productID = d.productID AND d.lifecycle_status='active'
 		GROUP BY p.productID, p.name, c.name
 		ORDER BY p.name
 	`
@@ -371,6 +371,7 @@ func exportAllDevices() ([]byte, error) {
 		LEFT JOIN products p ON d.productid = p.productid
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
 		LEFT JOIN cases c ON d.current_case_id = c.caseid
+		WHERE d.lifecycle_status='active'
 		ORDER BY d.deviceid
 	`
 

@@ -219,6 +219,9 @@ func main() {
 	if err := handlers.EnsureMaintenanceSchema(); err != nil {
 		log.Fatalf("Failed to initialize maintenance schema: %v", err)
 	}
+	if err := handlers.EnsureDeviceLifecycleSchema(); err != nil {
+		log.Fatalf("Failed to initialize device lifecycle schema: %v", err)
+	}
 	if err := handlers.EnsureLabelStudioSchema(); err != nil {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
@@ -517,6 +520,7 @@ func main() {
 	admin.HandleFunc("/products/{id}/procurement-requisitions", handlers.CreateProductRequisition).Methods("POST")
 	admin.HandleFunc("/products/{id}", handlers.DeleteProduct).Methods("DELETE")
 	admin.HandleFunc("/products/{id}/restore", handlers.RestoreProduct).Methods("PUT")
+	admin.HandleFunc("/products/{id}/permanent", handlers.PermanentlyDeleteProduct).Methods("DELETE")
 	admin.HandleFunc("/products/{id}/website", handlers.UpdateProductWebsite).Methods("PUT")
 	admin.HandleFunc("/products/{id}/pictures", handlers.UploadProductPictures).Methods("POST")
 	admin.HandleFunc("/products/{id}/pictures/{filename}", handlers.DeleteProductPicture).Methods("DELETE")
@@ -561,6 +565,8 @@ func main() {
 	admin.HandleFunc("/devices/{id}", handlers.GetDeviceAdmin).Methods("GET")
 	admin.HandleFunc("/devices/{id}", handlers.UpdateDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}", handlers.DeleteDevice).Methods("DELETE")
+	admin.HandleFunc("/devices/{id}/restore", handlers.RestoreDevice).Methods("PUT")
+	admin.HandleFunc("/devices/{id}/permanent", handlers.PermanentlyDeleteDevice).Methods("DELETE")
 	admin.HandleFunc("/devices/{id}/qr", handlers.GenerateDeviceQR).Methods("GET")
 	admin.HandleFunc("/devices/{id}/barcode", handlers.GenerateDeviceBarcode).Methods("GET")
 	admin.HandleFunc("/api-limits", handlers.GetAPILimits).Methods("GET")

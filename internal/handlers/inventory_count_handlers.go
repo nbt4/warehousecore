@@ -111,7 +111,7 @@ func CreateInventoryCount(w http.ResponseWriter, r *http.Request) {
 	}
 	statements := []string{
 		`INSERT INTO inventory_count_lines(count_id,item_type,item_key,expected_quantity)
-		 SELECT $1,'device',d.deviceID,1 FROM devices d WHERE d.zone_id=$2 AND NOT EXISTS(SELECT 1 FROM devicescases dc WHERE dc.deviceID=d.deviceID)`,
+		 SELECT $1,'device',d.deviceID,1 FROM devices d WHERE d.zone_id=$2 AND d.lifecycle_status='active' AND NOT EXISTS(SELECT 1 FROM devicescases dc WHERE dc.deviceID=d.deviceID)`,
 		`INSERT INTO inventory_count_lines(count_id,item_type,item_key,expected_quantity)
 		 SELECT $1,'product',pl.product_id::text,pl.quantity FROM product_locations pl WHERE pl.zone_id=$2 AND pl.quantity<>0`,
 		`INSERT INTO inventory_count_lines(count_id,item_type,item_key,expected_quantity)
@@ -232,7 +232,7 @@ func ScanInventoryCount(w http.ResponseWriter, r *http.Request) {
 	var deviceID string
 	var productName sql.NullString
 	err = tx.QueryRow(`SELECT d.deviceID,p.name FROM devices d LEFT JOIN products p ON p.productID=d.productID
-		WHERE UPPER(d.deviceID)=UPPER($1) OR UPPER(COALESCE(d.barcode,''))=UPPER($1) OR UPPER(COALESCE(d.qr_code,''))=UPPER($1) LIMIT 1`, code).Scan(&deviceID, &productName)
+		WHERE d.lifecycle_status='active' AND (UPPER(d.deviceID)=UPPER($1) OR UPPER(COALESCE(d.barcode,''))=UPPER($1) OR UPPER(COALESCE(d.qr_code,''))=UPPER($1)) LIMIT 1`, code).Scan(&deviceID, &productName)
 	if err == nil {
 		var packed bool
 		_ = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM devicescases WHERE deviceID=$1)`, deviceID).Scan(&packed)

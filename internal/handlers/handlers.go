@@ -211,7 +211,7 @@ func loadCaseDevices(db *sql.DB, caseID int64) ([]CaseDevice, error) {
 		INNER JOIN devices d ON dc.deviceID = d.deviceID
 		LEFT JOIN products p ON d.productID = p.productID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
-		WHERE dc.caseID = $1
+		WHERE dc.caseID = $1 AND d.lifecycle_status='active'
 		ORDER BY d.deviceID ASC
 	`
 
@@ -277,7 +277,7 @@ func loadAvailableCaseDevices(db *sql.DB, caseID *int64, search string, limit in
 		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
 		LEFT JOIN products p ON d.productID = p.productID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
-		WHERE 1=1
+		WHERE d.lifecycle_status='active'
 	`
 
 	args := []interface{}{}
@@ -676,7 +676,7 @@ func GetDevices(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN cases c ON dc.caseID = c.caseID
 		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID AND jd.pack_status IN ('packed', 'issued')
 		LEFT JOIN jobs j ON jd.jobID = j.jobID
-		WHERE 1=1`
+		WHERE d.lifecycle_status='active'`
 
 	args := []interface{}{}
 	if status != "" {
@@ -818,7 +818,7 @@ func GetDevice(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
 		LEFT JOIN cases c ON dc.caseID = c.caseID
 		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID AND jd.pack_status IN ('packed', 'issued')
-		WHERE d.deviceID = $1
+		WHERE d.deviceID = $1 AND d.lifecycle_status='active'
 	`, deviceID).Scan(&device.DeviceID, &device.ProductID, &device.SerialNumber, &device.Status, &device.ConditionStatus,
 		&device.Barcode, &device.QRCode, &device.ZoneID, &device.ConditionRating, &device.UsageHours, &device.LabelPath,
 		&device.ProductName, &device.ZoneName, &device.ZoneCode, &caseName, &jobNumber)
@@ -898,7 +898,7 @@ func UpdateDeviceStatus(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	var currentStatus string
 	var hasLocator bool
-	err := db.QueryRow(`SELECT d.status,(d.zone_id IS NOT NULL OR EXISTS(SELECT 1 FROM devicescases dc WHERE dc.deviceID=d.deviceID)) FROM devices d WHERE d.deviceID=$1`, deviceID).Scan(&currentStatus, &hasLocator)
+	err := db.QueryRow(`SELECT d.status,(d.zone_id IS NOT NULL OR EXISTS(SELECT 1 FROM devicescases dc WHERE dc.deviceID=d.deviceID)) FROM devices d WHERE d.deviceID=$1 AND d.lifecycle_status='active'`, deviceID).Scan(&currentStatus, &hasLocator)
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Gerät nicht gefunden"})
 		return
@@ -2349,7 +2349,7 @@ func AddDevicesToCase(w http.ResponseWriter, r *http.Request) {
 	for _, deviceID := range req.DeviceIDs {
 		// Check if device exists
 		var physicalStatus, conditionStatus string
-		err = db.QueryRow("SELECT status,condition_status FROM devices WHERE deviceID=$1", deviceID).Scan(&physicalStatus, &conditionStatus)
+		err = db.QueryRow("SELECT status,condition_status FROM devices WHERE deviceID=$1 AND lifecycle_status='active'", deviceID).Scan(&physicalStatus, &conditionStatus)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("Device %s not found", deviceID))
 			skippedCount++
@@ -2775,14 +2775,15 @@ func GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 			COUNT(*) FILTER (WHERE condition_status = 'retired'),
 			COUNT(*)
 		FROM devices
+		WHERE lifecycle_status='active'
 	`).Scan(&inStorage, &onJob, &returnPending, &locationUnknown, &available, &blocked, &defective, &maintenance, &retired, &total)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load device statistics"})
 		return
 	}
 	err = db.QueryRow(`SELECT
-		(SELECT COUNT(*) FROM devices WHERE status='in_storage' AND condition_status='available'),
-		(SELECT COUNT(*) FROM devices WHERE condition_status<>'available'),
+		(SELECT COUNT(*) FROM devices WHERE lifecycle_status='active' AND status='in_storage' AND condition_status='available'),
+		(SELECT COUNT(*) FROM devices WHERE lifecycle_status='active' AND condition_status<>'available'),
 		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE),
 		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type='intake'),
 		(SELECT COUNT(*) FROM device_movements WHERE created_at>=CURRENT_DATE AND movement_type='outtake'),
@@ -3117,9 +3118,9 @@ func GetDeviceTree(w http.ResponseWriter, r *http.Request) {
 		FROM categories c
 		LEFT JOIN subcategories sc ON c.categoryID = sc.categoryID
 		LEFT JOIN subbiercategories sbc ON sc.subcategoryID = sbc.subcategoryID
-		LEFT JOIN products p ON (sbc.subbiercategoryID = p.subbiercategoryID OR (sc.subcategoryID = p.subcategoryID AND p.subbiercategoryID IS NULL))
+		LEFT JOIN products p ON (sbc.subbiercategoryID = p.subbiercategoryID OR (sc.subcategoryID = p.subcategoryID AND p.subbiercategoryID IS NULL)) AND p.lifecycle_status='active'
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		LEFT JOIN devices d ON p.productID = d.productID
+		LEFT JOIN devices d ON p.productID = d.productID AND d.lifecycle_status='active'
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
 		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
 		LEFT JOIN cases cs ON dc.caseID = cs.caseID

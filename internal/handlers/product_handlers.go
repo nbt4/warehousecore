@@ -9,12 +9,15 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 
 	"warehousecore/internal/middleware"
@@ -153,7 +156,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			m.name as manufacturer_name,
 			ct.name as count_type_name,
 			ct.abbreviation as count_type_abbr,
-			(SELECT COUNT(*) FROM devices WHERE productID = p.productID) AS device_count
+			(SELECT COUNT(*) FROM devices WHERE productID = p.productID AND lifecycle_status=p.lifecycle_status) AS device_count
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
@@ -341,7 +344,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			m.name as manufacturer_name,
 			ct.name as count_type_name,
 			ct.abbreviation as count_type_abbr,
-			(SELECT COUNT(*) FROM devices WHERE productID = p.productID) AS device_count
+			(SELECT COUNT(*) FROM devices WHERE productID = p.productID AND lifecycle_status=p.lifecycle_status) AS device_count
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
@@ -1202,7 +1205,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(`
 			UPDATE products
 			SET stock_quantity = CASE
-				WHEN tracking_mode = 'individual' THEN (SELECT COUNT(*) FROM devices WHERE productid = $1)
+				WHEN tracking_mode = 'individual' THEN (SELECT COUNT(*) FROM devices WHERE productid = $1 AND lifecycle_status='active')
 				ELSE NULL
 			END
 			WHERE productid = $1
@@ -1228,7 +1231,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Product updated successfully"})
 }
 
-// DeleteProduct archives a product. Devices and historical references remain intact.
+// DeleteProduct archives a product and all of its currently active devices.
 func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -1257,7 +1260,7 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var deviceCount int
-	err = tx.QueryRow("SELECT COUNT(*) FROM devices WHERE productID = $1", id).Scan(&deviceCount)
+	err = tx.QueryRow("SELECT COUNT(*) FROM devices WHERE productID = $1 AND lifecycle_status='active'", id).Scan(&deviceCount)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to check product devices"})
 		return
@@ -1279,10 +1282,24 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 		return
 	}
+	if _, err := tx.Exec(`
+		UPDATE devices
+		SET lifecycle_status='archived',archived_at=CURRENT_TIMESTAMP,
+		    archived_by_product=TRUE,updated_at=CURRENT_TIMESTAMP
+		WHERE productID=$1 AND lifecycle_status='active'
+	`, id); err != nil {
+		log.Printf("[PRODUCT ARCHIVE] Failed to archive devices for product %d: %v", id, err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to archive product devices"})
+		return
+	}
+	if _, err := tx.Exec(`UPDATE inventory_identifiers SET active=FALSE WHERE (entity_type='product' AND entity_key=$1::text) OR (entity_type='device' AND entity_key IN (SELECT deviceID FROM devices WHERE productID=$1))`, id); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to disable archived inventory identifiers"})
+		return
+	}
 
 	if err := recordProductAudit(tx, r, "product.archive", id,
 		map[string]interface{}{"lifecycle_status": oldStatus},
-		map[string]interface{}{"lifecycle_status": "archived", "website_visible": false},
+		map[string]interface{}{"lifecycle_status": "archived", "website_visible": false, "archived_devices": deviceCount},
 	); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
 		return
@@ -1292,12 +1309,12 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[PRODUCT ARCHIVE] Archived product %d (%s); preserved %d device(s)", id, productName, deviceCount)
+	log.Printf("[PRODUCT ARCHIVE] Archived product %d (%s) and %d active device(s)", id, productName, deviceCount)
 	websiteRevalidator.Revalidate("/products")
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":           "Product archived successfully",
-		"preserved_devices": deviceCount,
+		"message":          "Product archived successfully",
+		"archived_devices": deviceCount,
 	})
 }
 
@@ -1323,9 +1340,20 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 		return
 	}
+	var restoredDevices int64
+	deviceResult, err := tx.Exec(`UPDATE devices SET lifecycle_status='active',archived_at=NULL,archived_by_product=FALSE,updated_at=CURRENT_TIMESTAMP WHERE productID=$1 AND lifecycle_status='archived' AND archived_by_product=TRUE`, id)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to restore product devices"})
+		return
+	}
+	restoredDevices, _ = deviceResult.RowsAffected()
+	if _, err := tx.Exec(`UPDATE inventory_identifiers SET active=TRUE WHERE (entity_type='product' AND entity_key=$1::text) OR (entity_type='device' AND entity_key IN (SELECT deviceID FROM devices WHERE productID=$1 AND lifecycle_status='active'))`, id); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to enable restored inventory identifiers"})
+		return
+	}
 	if err := recordProductAudit(tx, r, "product.restore", id,
 		map[string]interface{}{"lifecycle_status": "archived"},
-		map[string]interface{}{"lifecycle_status": "active"},
+		map[string]interface{}{"lifecycle_status": "active", "restored_devices": restoredDevices},
 	); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
 		return
@@ -1335,7 +1363,100 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	websiteRevalidator.Revalidate("/products")
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Product restored successfully"})
+	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Product restored successfully", "restored_devices": restoredDevices})
+}
+
+// PermanentlyDeleteProduct irreversibly removes an archived product and its archived devices.
+func PermanentlyDeleteProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
+		return
+	}
+	tx, err := repository.GetSQLDB().Begin()
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete product"})
+		return
+	}
+	defer tx.Rollback()
+
+	var productName, lifecycleStatus string
+	if err := tx.QueryRow(`SELECT name,lifecycle_status FROM products WHERE productID=$1 FOR UPDATE`, id).Scan(&productName, &lifecycleStatus); err == sql.ErrNoRows {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
+		return
+	} else if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch product"})
+		return
+	}
+	if lifecycleStatus != "archived" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Das Produkt muss vor dem endgültigen Löschen archiviert werden"})
+		return
+	}
+
+	rows, err := tx.Query(`SELECT deviceID,label_path FROM devices WHERE productID=$1`, id)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load product devices"})
+		return
+	}
+	var deviceIDs []string
+	var labelPaths []string
+	for rows.Next() {
+		var deviceID string
+		var labelPath sql.NullString
+		if err := rows.Scan(&deviceID, &labelPath); err != nil {
+			rows.Close()
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load product devices"})
+			return
+		}
+		deviceIDs = append(deviceIDs, deviceID)
+		if labelPath.Valid && labelPath.String != "" {
+			labelPaths = append(labelPaths, labelPath.String)
+		}
+	}
+	rows.Close()
+
+	if _, err := tx.Exec(`DELETE FROM device_components WHERE device_id IN (SELECT deviceID FROM devices WHERE productID=$1) OR component_device_id IN (SELECT deviceID FROM devices WHERE productID=$1)`, id); err != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Product devices are still in use"})
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM job_position_devices WHERE device_id=ANY($1::text[])`, pq.Array(deviceIDs)); err != nil {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Product devices are still used by a picklist"})
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM label_assets WHERE (target_type='device' AND target_id=ANY($1::text[])) OR (target_type='product' AND target_id=$2::text)`, pq.Array(deviceIDs), id); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete label metadata"})
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM inventory_identifiers WHERE (entity_type='device' AND entity_key=ANY($1::text[])) OR (entity_type='product' AND entity_key=$2::text)`, pq.Array(deviceIDs), id); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete inventory identifiers"})
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM devices WHERE productID=$1`, id); err != nil {
+		log.Printf("[PRODUCT DELETE] Failed to delete devices for product %d: %v", id, err)
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Produktgeräte sind noch in Verwendung und können nicht gelöscht werden"})
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM products WHERE productID=$1`, id); err != nil {
+		log.Printf("[PRODUCT DELETE] Failed to delete product %d: %v", id, err)
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Das Produkt wird noch in Cases, Jobs oder Paketen verwendet"})
+		return
+	}
+	if err := recordProductAudit(tx, r, "product.delete", id, map[string]interface{}{"name": productName, "lifecycle_status": lifecycleStatus, "devices": len(deviceIDs)}, nil); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product deletion"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete product"})
+		return
+	}
+	for _, labelPath := range labelPaths {
+		fullPath := filepath.Join("web", "dist", strings.TrimPrefix(labelPath, "/"))
+		if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("[PRODUCT DELETE] Failed to remove label %s: %v", fullPath, err)
+		}
+	}
+	websiteRevalidator.Revalidate("/products")
+	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Product permanently deleted", "deleted_devices": len(deviceIDs)})
 }
 
 // CreateDevicesForProduct creates multiple devices for a product
@@ -1415,7 +1536,8 @@ func GetProductDevices(w http.ResponseWriter, r *http.Request) {
 			FROM job_devices jd
 			GROUP BY jd.deviceID
 		)
-		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status,
+		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status,d.condition_status,
+		       d.lifecycle_status,d.archived_at,d.archived_by_product,
 		       d.current_location, d.zone_id,
 		       COALESCE(d.condition_rating,5), COALESCE(d.usage_hours,0), d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
@@ -1457,6 +1579,10 @@ func GetProductDevices(w http.ResponseWriter, r *http.Request) {
 			&device.Barcode,
 			&device.QRCode,
 			&device.Status,
+			&device.ConditionStatus,
+			&device.LifecycleStatus,
+			&device.ArchivedAt,
+			&device.ArchivedByProduct,
 			&device.CurrentLocation,
 			&device.ZoneID,
 			&device.ConditionRating,

@@ -175,7 +175,7 @@ func (s *LabelService) ListTargets(targetType, search string, limit int) ([]Labe
 		LEFT JOIN storage_zones z ON z.zone_id = d.zone_id
 		LEFT JOIN label_assets a ON a.target_type = 'device' AND a.target_id = d.deviceid
 		LEFT JOIN label_templates t ON t.target_type = 'device' AND t.is_default
-		WHERE ($1 = '' OR NOT EXISTS (
+		WHERE d.lifecycle_status='active' AND ($1 = '' OR NOT EXISTS (
 			SELECT 1 FROM unnest(regexp_split_to_array(lower(trim($1)), '\\s+')) search_term(value)
 			WHERE CONCAT_WS(' ',d.deviceid,d.barcode,d.serialnumber,p.name,b.name,m.name) NOT ILIKE '%' || search_term.value || '%'
 		))
@@ -193,7 +193,7 @@ func (s *LabelService) ListTargets(targetType, search string, limit int) ([]Labe
 		LEFT JOIN manufacturer m ON m.manufacturerid = p.manufacturerid
 		LEFT JOIN label_assets a ON a.target_type = 'product' AND a.target_id = p.productid::text
 		LEFT JOIN label_templates t ON t.target_type = 'product' AND t.is_default
-		WHERE ($1 = '' OR NOT EXISTS (
+		WHERE p.lifecycle_status='active' AND ($1 = '' OR NOT EXISTS (
 			SELECT 1 FROM unnest(regexp_split_to_array(lower(trim($1)), '\\s+')) search_term(value)
 			WHERE CONCAT_WS(' ',p.name,p.generic_barcode,b.name,m.name,ct.name,ca.name,cb.name,
 				cp.length_m::text,cp.cross_section_mm2::text) NOT ILIKE '%' || search_term.value || '%'
@@ -260,7 +260,7 @@ func (s *LabelService) GetTarget(targetType, targetID string) (LabelTarget, erro
 			COALESCE(d.updated_at, d.created_at), COALESCE(a.label_path, d.label_path, '')
 		FROM devices d LEFT JOIN products p ON p.productid = d.productid
 		LEFT JOIN categories c ON c.categoryid = p.categoryid LEFT JOIN storage_zones z ON z.zone_id = d.zone_id
-		LEFT JOIN label_assets a ON a.target_type = 'device' AND a.target_id = d.deviceid WHERE d.deviceid = $1`
+		LEFT JOIN label_assets a ON a.target_type = 'device' AND a.target_id = d.deviceid WHERE d.deviceid = $1 AND d.lifecycle_status='active'`
 	case LabelTargetProduct:
 		query = `SELECT jsonb_build_object(
 			'cable_id', cp.cable_product_id::text, 'product_id', p.productid::text,

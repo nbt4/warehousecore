@@ -23,6 +23,12 @@ type DeviceAdminService struct {
 	labelService *LabelService
 }
 
+var (
+	ErrDeviceArchived        = errors.New("device is archived")
+	ErrDeviceNotArchived     = errors.New("device must be archived before it can be permanently deleted")
+	ErrDeviceProductArchived = errors.New("device product is archived")
+)
+
 // NewDeviceAdminService constructs a device admin service using the global repositories.
 func NewDeviceAdminService() *DeviceAdminService {
 	return &DeviceAdminService{
@@ -79,6 +85,18 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	var productLifecycle, trackingMode string
+	if err := tx.QueryRowContext(ctx, `SELECT lifecycle_status,tracking_mode FROM products WHERE productID=$1`, input.ProductID).Scan(&productLifecycle, &trackingMode); errors.Is(err, sql.ErrNoRows) {
+		return nil, repository.ErrNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to load product: %w", err)
+	}
+	if productLifecycle != "active" {
+		return nil, ErrDeviceProductArchived
+	}
+	if trackingMode != "individual" {
+		return nil, errors.New("only individually tracked products can receive devices")
+	}
 	if input.ZoneID != nil {
 		if err := ValidateStorageDestination(tx, int64(*input.ZoneID), float64(input.Quantity)); err != nil {
 			return nil, err
@@ -184,17 +202,34 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 
 	setClauses := make([]string, 0, 12)
 	args := make([]interface{}, 0, 12)
-	var currentStatus string
+	var currentStatus, lifecycleStatus string
 	var currentZone sql.NullInt64
 	var caseID sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT d.status,d.zone_id,dc.caseID FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID WHERE d.deviceID=$1 FOR UPDATE OF d`, deviceID).
-		Scan(&currentStatus, &currentZone, &caseID); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT d.status,d.lifecycle_status,d.zone_id,dc.caseID FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID WHERE d.deviceID=$1 FOR UPDATE OF d`, deviceID).
+		Scan(&currentStatus, &lifecycleStatus, &currentZone, &caseID); errors.Is(err, sql.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to load device state: %w", err)
 	}
+	if lifecycleStatus != "active" {
+		return nil, ErrDeviceArchived
+	}
 
 	if input.ProductID.Set {
+		if input.ProductID.Valid {
+			var productLifecycle, trackingMode string
+			if err := tx.QueryRowContext(ctx, `SELECT lifecycle_status,tracking_mode FROM products WHERE productID=$1`, input.ProductID.Value).Scan(&productLifecycle, &trackingMode); errors.Is(err, sql.ErrNoRows) {
+				return nil, repository.ErrNotFound
+			} else if err != nil {
+				return nil, fmt.Errorf("failed to load product: %w", err)
+			}
+			if productLifecycle != "active" {
+				return nil, ErrDeviceProductArchived
+			}
+			if trackingMode != "individual" {
+				return nil, errors.New("only individually tracked products can receive devices")
+			}
+		}
 		setClauses = append(setClauses, fmt.Sprintf("productID = $%d", len(args)+1))
 		if input.ProductID.Valid {
 			args = append(args, input.ProductID.Value)
@@ -388,7 +423,77 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 	return s.FetchDevice(ctx, deviceID)
 }
 
-// DeleteDevice removes a device and its label file if no dependencies exist.
+// ArchiveDevice removes a device from operational inventory while preserving history.
+func (s *DeviceAdminService) ArchiveDevice(ctx context.Context, deviceID string) error {
+	if deviceID == "" {
+		return errors.New("deviceID required")
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var lifecycleStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT lifecycle_status FROM devices WHERE deviceID=$1 FOR UPDATE`, deviceID).Scan(&lifecycleStatus); errors.Is(err, sql.ErrNoRows) {
+		return repository.ErrNotFound
+	} else if err != nil {
+		return fmt.Errorf("failed to load device: %w", err)
+	}
+	if lifecycleStatus == "archived" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE devices SET lifecycle_status='archived',archived_at=CURRENT_TIMESTAMP,archived_by_product=FALSE,updated_at=CURRENT_TIMESTAMP WHERE deviceID=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to archive device: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE inventory_identifiers SET active=FALSE WHERE entity_type='device' AND entity_key=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to disable device identifiers: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit device archive: %w", err)
+	}
+	return nil
+}
+
+// RestoreDevice returns an archived device to operational inventory when its product is active.
+func (s *DeviceAdminService) RestoreDevice(ctx context.Context, deviceID string) error {
+	if deviceID == "" {
+		return errors.New("deviceID required")
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var lifecycleStatus string
+	var productLifecycle sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT d.lifecycle_status,p.lifecycle_status FROM devices d LEFT JOIN products p ON p.productID=d.productID WHERE d.deviceID=$1 FOR UPDATE OF d`, deviceID).Scan(&lifecycleStatus, &productLifecycle)
+	if errors.Is(err, sql.ErrNoRows) {
+		return repository.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("failed to load device: %w", err)
+	}
+	if lifecycleStatus == "active" {
+		return nil
+	}
+	if !productLifecycle.Valid || productLifecycle.String != "active" {
+		return ErrDeviceProductArchived
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE devices SET lifecycle_status='active',archived_at=NULL,archived_by_product=FALSE,updated_at=CURRENT_TIMESTAMP WHERE deviceID=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to restore device: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE inventory_identifiers SET active=TRUE WHERE entity_type='device' AND entity_key=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to enable device identifiers: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit device restore: %w", err)
+	}
+	return nil
+}
+
+// DeleteDevice permanently removes an archived device and its label file.
 func (s *DeviceAdminService) DeleteDevice(ctx context.Context, deviceID string) error {
 	if deviceID == "" {
 		return errors.New("deviceID required")
@@ -403,12 +508,29 @@ func (s *DeviceAdminService) DeleteDevice(ctx context.Context, deviceID string) 
 	}()
 
 	var labelPath sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT label_path FROM devices WHERE deviceID = $1`, deviceID).Scan(&labelPath)
+	var lifecycleStatus string
+	err = tx.QueryRowContext(ctx, `SELECT label_path,lifecycle_status FROM devices WHERE deviceID = $1 FOR UPDATE`, deviceID).Scan(&labelPath, &lifecycleStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repository.ErrNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("failed to load device: %w", err)
+	}
+	if lifecycleStatus != "archived" {
+		return ErrDeviceNotArchived
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM inventory_identifiers WHERE entity_type='device' AND entity_key=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to delete device identifiers: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM label_assets WHERE target_type='device' AND target_id=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to delete device label metadata: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM device_components WHERE component_device_id=$1 OR device_id=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to delete device component links: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_position_devices WHERE device_id=$1`, deviceID); err != nil {
+		return fmt.Errorf("failed to delete device picklist links: %w", err)
 	}
 
 	result, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE deviceID = $1`, deviceID)
@@ -452,6 +574,7 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 	var device models.DeviceWithDetails
 	err := s.db.QueryRowContext(ctx, `
 		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
+		       d.lifecycle_status,d.archived_at,d.archived_by_product,
 		       d.current_location, d.zone_id,
 		       COALESCE(d.condition_rating,5), COALESCE(d.usage_hours,0), d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
@@ -481,6 +604,9 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 		&device.QRCode,
 		&device.Status,
 		&device.ConditionStatus,
+		&device.LifecycleStatus,
+		&device.ArchivedAt,
+		&device.ArchivedByProduct,
 		&device.CurrentLocation,
 		&device.ZoneID,
 		&device.ConditionRating,

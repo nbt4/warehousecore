@@ -320,7 +320,7 @@ func (s *ZoneService) getDeviceCountRecursive(zoneID int64) int {
 		SELECT COUNT(*)
 		FROM devices d
 		INNER JOIN zone_tree zt ON d.zone_id = zt.zone_id
-		WHERE d.status = 'in_storage'
+		WHERE d.status = 'in_storage' AND d.lifecycle_status='active'
 	`, zoneID).Scan(&count)
 
 	if err != nil {

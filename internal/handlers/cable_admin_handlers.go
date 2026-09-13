@@ -175,7 +175,7 @@ func cableSelectQuery() string {
 			SELECT COUNT(*) AS total_count,
 			       COUNT(*) FILTER (WHERE d.status='in_storage' AND d.condition_status='available') AS available_count
 			FROM devices d
-			WHERE d.productid = cp.product_id
+			WHERE d.productid = cp.product_id AND d.lifecycle_status='active'
 		) device_totals ON TRUE
 	`
 }
@@ -339,7 +339,7 @@ func loadCable(db *sql.DB, id int, includeInventory bool) (*Cable, error) {
 			ORDER BY jd.jobid DESC
 			LIMIT 1
 		) assigned_job ON TRUE
-		WHERE d.productid = $1
+		WHERE d.productid = $1 AND d.lifecycle_status='active'
 		ORDER BY d.deviceid
 	`, cable.ProductID)
 	if err != nil {
@@ -501,7 +501,7 @@ func UpdateCable(w http.ResponseWriter, r *http.Request) {
 		if mode != currentMode {
 			var quantity float64
 			var unitCount int
-			if err := tx.QueryRow(`SELECT COALESCE(stock_quantity, 0), (SELECT COUNT(*) FROM devices WHERE productid = $1) FROM products WHERE productid = $1`, productID).Scan(&quantity, &unitCount); err != nil {
+			if err := tx.QueryRow(`SELECT COALESCE(stock_quantity, 0), (SELECT COUNT(*) FROM devices WHERE productid = $1 AND lifecycle_status='active') FROM products WHERE productid = $1`, productID).Scan(&quantity, &unitCount); err != nil {
 				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to validate tracking mode"})
 				return
 			}
@@ -610,7 +610,7 @@ func DeleteCable(w http.ResponseWriter, r *http.Request) {
 	var stock float64
 	var units int
 	err = db.QueryRow(`
-		SELECT cp.product_id, COALESCE(p.stock_quantity, 0), (SELECT COUNT(*) FROM devices d WHERE d.productid = cp.product_id)
+		SELECT cp.product_id, COALESCE(p.stock_quantity, 0), (SELECT COUNT(*) FROM devices d WHERE d.productid = cp.product_id AND d.lifecycle_status='active')
 		FROM cable_products cp JOIN products p ON p.productid = cp.product_id
 		WHERE cp.cable_product_id = $1
 	`, id).Scan(&productID, &stock, &units)
@@ -850,7 +850,7 @@ func setCableStock(tx *sql.Tx, productID int, zoneID *int, quantity float64) err
 func syncCableProductStock(tx *sql.Tx, productID int, mode string) error {
 	var query string
 	if mode == cableTrackingIndividual {
-		query = `UPDATE products SET stock_quantity = (SELECT COUNT(*) FROM devices WHERE productid = $1), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
+		query = `UPDATE products SET stock_quantity = (SELECT COUNT(*) FROM devices WHERE productid = $1 AND lifecycle_status='active'), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
 	} else {
 		query = `UPDATE products SET stock_quantity = (SELECT COALESCE(SUM(quantity), 0) FROM product_locations WHERE product_id = $1), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
 	}

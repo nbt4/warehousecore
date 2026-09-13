@@ -37,6 +37,9 @@ type Device struct {
 	QRCode            sql.NullString `json:"qr_code" db:"qr_code"`
 	Status            string         `json:"status" db:"status"`
 	ConditionStatus   string         `json:"condition_status" db:"condition_status"`
+	LifecycleStatus   string         `json:"lifecycle_status" db:"lifecycle_status"`
+	ArchivedAt        sql.NullTime   `json:"archived_at,omitempty" db:"archived_at"`
+	ArchivedByProduct bool           `json:"archived_by_product" db:"archived_by_product"`
 	CurrentLocation   sql.NullString `json:"current_location" db:"current_location"`
 	ZoneID            sql.NullInt64  `json:"zone_id,omitempty" db:"zone_id"`
 	CaseID            sql.NullInt64  `json:"case_id,omitempty" db:"case_id"`

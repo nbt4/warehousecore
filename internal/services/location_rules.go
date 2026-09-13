@@ -74,7 +74,7 @@ func ValidateStorageDestination(q rowQueryer, zoneID int64, incoming float64) er
 		var used float64
 		err = q.QueryRow(`
 			SELECT
-				(SELECT COUNT(*) FROM devices WHERE zone_id = $1 AND status = 'in_storage')::numeric +
+				(SELECT COUNT(*) FROM devices WHERE zone_id = $1 AND status = 'in_storage' AND lifecycle_status='active')::numeric +
 				(SELECT COUNT(*) FROM cases WHERE zone_id = $1)::numeric +
 				COALESCE((SELECT SUM(quantity) FROM product_locations WHERE zone_id = $1), 0)
 		`, zoneID).Scan(&used)

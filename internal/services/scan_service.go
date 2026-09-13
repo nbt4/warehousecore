@@ -440,10 +440,12 @@ func (s *ScanService) findDeviceByScan(scanCode string) (*models.Device, error) 
 		SELECT d.deviceID,d.productID,d.serialnumber,d.barcode,d.qr_code,d.status,d.condition_status,
 		       d.current_location,d.zone_id,dc.caseID,d.condition_rating,d.usage_hours
 		FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID
-		WHERE UPPER(COALESCE(d.barcode, '')) = UPPER($1)
+		WHERE d.lifecycle_status='active' AND (
+		      UPPER(COALESCE(d.barcode, '')) = UPPER($1)
 		   OR UPPER(COALESCE(d.qr_code, '')) = UPPER($1)
 		   OR UPPER(d.deviceID) = UPPER($1)
 		   OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='device' AND ii.entity_key=d.deviceID AND ii.active AND UPPER(ii.code)=UPPER($1))
+		)
 		LIMIT 1
 	`, scanCode).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
@@ -504,7 +506,7 @@ func (s *ScanService) getDeviceWithDetails(deviceID string) *models.DeviceWithDe
 			ORDER BY jd.pack_ts DESC NULLS LAST, jd.jobid DESC
 			LIMIT 1
 		) assignment ON TRUE
-		WHERE d.deviceID = $1
+		WHERE d.deviceID = $1 AND d.lifecycle_status='active'
 	`, deviceID).Scan(
 		&device.DeviceID, &device.ProductID, &device.SerialNumber,
 		&device.Barcode, &device.QRCode, &device.Status, &device.ConditionStatus,

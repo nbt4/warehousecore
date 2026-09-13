@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Archive,
   Download,
   Eye,
   LayoutGrid,
@@ -9,6 +10,7 @@ import {
   Plus,
   QrCode,
   RefreshCcw,
+  RotateCcw,
   Search,
   Trash2,
   X,
@@ -102,6 +104,7 @@ export function DevicesTab() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [conditionFilter, setConditionFilter] = useState<string>('');
+  const [lifecycleFilter, setLifecycleFilter] = useState<'active' | 'archived' | 'all'>('active');
   const [productFilter, setProductFilter] = useState<number | ''>('');
   const [zoneFilter, setZoneFilter] = useState<number | ''>('');
   const [refreshing, setRefreshing] = useState(false);
@@ -114,7 +117,7 @@ export function DevicesTab() {
   const fetchDevices = useCallback(async () => {
     setLoadingDevices(true);
     try {
-      const { data } = await api.get<Device[]>('/admin/devices-list');
+      const { data } = await api.get<Device[]>('/admin/devices-list', { params: { lifecycle_status: lifecycleFilter } });
       setDevices(data || []);
     } catch (error) {
       toast.error('Failed to load devices:' + " " + String(error));
@@ -122,7 +125,7 @@ export function DevicesTab() {
     } finally {
       setLoadingDevices(false);
     }
-  }, []);
+  }, [lifecycleFilter]);
 
   const loadMetadata = useCallback(async () => {
     try {
@@ -155,6 +158,7 @@ export function DevicesTab() {
     setSearchTerm('');
     setStatusFilter('');
     setConditionFilter('');
+    setLifecycleFilter('active');
     setProductFilter('');
     setZoneFilter('');
   };
@@ -211,17 +215,40 @@ export function DevicesTab() {
     setModalOpen(true);
   };
 
-  const handleDelete = async (deviceId: string) => {
-    if (!window.confirm('Möchten Sie dieses Gerät wirklich löschen?')) {
+  const handleArchive = async (deviceId: string) => {
+	if (!window.confirm('Dieses Gerät archivieren? Es ist danach nicht mehr scan- oder einsatzfähig.')) {
       return;
     }
 
     try {
-      await devicesAdminApi.delete(deviceId);
+	  await devicesAdminApi.archive(deviceId);
+	  toast.success('Gerät wurde archiviert.');
       await fetchDevices();
     } catch (error: unknown) {
-      toast.error('Failed to delete device:' + " " + String(error));
-      alert('Fehler beim Löschen des Geräts');
+	  toast.error('Gerät konnte nicht archiviert werden: ' + String(error));
+    }
+  };
+
+  const handleRestore = async (deviceId: string) => {
+    try {
+      await devicesAdminApi.restore(deviceId);
+      toast.success('Gerät wurde wiederhergestellt.');
+      await fetchDevices();
+    } catch (error: unknown) {
+      toast.error('Gerät konnte nicht wiederhergestellt werden: ' + String(error));
+    }
+  };
+
+  const handlePermanentDelete = async (deviceId: string) => {
+    if (!window.confirm(`Gerät "${deviceId}" endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) {
+      return;
+    }
+    try {
+      await devicesAdminApi.deletePermanently(deviceId);
+      toast.success('Gerät wurde endgültig gelöscht.');
+      await fetchDevices();
+    } catch (error: unknown) {
+      toast.error('Gerät konnte nicht gelöscht werden: ' + String(error));
     }
   };
 
@@ -346,16 +373,16 @@ export function DevicesTab() {
 
       {/* Filters */}
       <div className="glass-dark rounded-xl p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+		<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
           {/* Search */}
           <div className="suite-search-field lg:col-span-2">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="w-5 h-5 text-gray-400" />
             <input
               type="text"
               placeholder="Suchen (ID, Produkt, Serial, Barcode)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field pl-10 w-full"
+			  className="input-field w-full"
             />
           </div>
 
@@ -372,10 +399,16 @@ export function DevicesTab() {
             <option value="location_unknown">Standort ungeklärt</option>
           </select>
 
-          <select value={conditionFilter} onChange={(e) => setConditionFilter(e.target.value)} className="input-field">
+		  <select value={conditionFilter} onChange={(e) => setConditionFilter(e.target.value)} className="input-field">
             <option value="">Alle Betriebszustände</option>
             <option value="available">Einsatzbereit</option><option value="blocked">Gesperrt</option>
             <option value="defective">Defekt</option><option value="maintenance">Wartung</option><option value="retired">Ausgemustert</option>
+		  </select>
+
+          <select value={lifecycleFilter} onChange={(e) => setLifecycleFilter(e.target.value as 'active' | 'archived' | 'all')} className="input-field">
+            <option value="active">Aktive Geräte</option>
+            <option value="archived">Archivierte Geräte</option>
+            <option value="all">Alle Geräte</option>
           </select>
 
           {/* Product Filter */}
@@ -454,7 +487,7 @@ export function DevicesTab() {
         <div className="text-center py-12 text-gray-400">Lädt Geräte...</div>
       ) : filteredDevices.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          {debouncedSearch || statusFilter || conditionFilter || productFilter || zoneFilter
+		  {debouncedSearch || statusFilter || conditionFilter || productFilter || zoneFilter || lifecycleFilter !== 'active'
             ? 'Keine Geräte gefunden mit den aktuellen Filtern'
             : 'Noch keine Geräte vorhanden'}
         </div>
@@ -522,20 +555,17 @@ export function DevicesTab() {
                         >
                           <Download className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => openEditModal(device)}
-                          className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-blue-400 hover:text-blue-300"
-                          title="Bearbeiten"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(device.device_id)}
-                          className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-red-400 hover:text-red-300"
-                          title="Löschen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+						{device.lifecycle_status === 'archived' ? (
+						  <>
+							<button onClick={() => handleRestore(device.device_id)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-green-400 hover:text-green-300" title="Wiederherstellen"><RotateCcw className="w-4 h-4" /></button>
+							<button onClick={() => handlePermanentDelete(device.device_id)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-red-400 hover:text-red-300" title="Endgültig löschen"><Trash2 className="w-4 h-4" /></button>
+						  </>
+						) : (
+						  <>
+							<button onClick={() => openEditModal(device)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-blue-400 hover:text-blue-300" title="Bearbeiten"><Pencil className="w-4 h-4" /></button>
+							<button onClick={() => handleArchive(device.device_id)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-amber-400 hover:text-amber-300" title="Archivieren"><Archive className="w-4 h-4" /></button>
+						  </>
+						)}
                       </div>
                     </td>
                   </tr>
@@ -601,19 +631,17 @@ export function DevicesTab() {
                   <Eye className="w-4 h-4" />
                   Details
                 </button>
-                <button
-                  onClick={() => openEditModal(device)}
-                  className="flex-1 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-sm text-blue-400 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Pencil className="w-4 h-4" />
-                  Bearbeiten
-                </button>
-                <button
-                  onClick={() => handleDelete(device.device_id)}
-                  className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm text-red-400 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+				{device.lifecycle_status === 'archived' ? (
+				  <>
+					<button onClick={() => handleRestore(device.device_id)} className="flex-1 px-3 py-2 bg-green-500/20 hover:bg-green-500/30 rounded-lg text-sm text-green-400 transition-colors flex items-center justify-center gap-2"><RotateCcw className="w-4 h-4" />Wiederherstellen</button>
+					<button onClick={() => handlePermanentDelete(device.device_id)} className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm text-red-400 transition-colors" title="Endgültig löschen"><Trash2 className="w-4 h-4" /></button>
+				  </>
+				) : (
+				  <>
+					<button onClick={() => openEditModal(device)} className="flex-1 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-sm text-blue-400 transition-colors flex items-center justify-center gap-2"><Pencil className="w-4 h-4" />Bearbeiten</button>
+					<button onClick={() => handleArchive(device.device_id)} className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 rounded-lg text-sm text-amber-400 transition-colors" title="Archivieren"><Archive className="w-4 h-4" /></button>
+				  </>
+				)}
               </div>
             </div>
           ))}

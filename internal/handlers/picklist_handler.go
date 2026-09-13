@@ -160,6 +160,7 @@ func ScanDeviceToPicklist(w http.ResponseWriter, r *http.Request) {
 		WHERE jp.job_id = $1
 		  AND jp.position_type = 'product'
 		  AND d.deviceid = $2
+		  AND d.lifecycle_status = 'active'
 		  AND COALESCE(counts.cnt, 0) < jp.quantity
 		ORDER BY jp.sort_order ASC
 		LIMIT 1
