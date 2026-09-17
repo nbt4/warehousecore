@@ -1292,7 +1292,8 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to archive product devices"})
 		return
 	}
-	if _, err := tx.Exec(`UPDATE inventory_identifiers SET active=FALSE WHERE (entity_type='product' AND entity_key=$1::text) OR (entity_type='device' AND entity_key IN (SELECT deviceID FROM devices WHERE productID=$1))`, id); err != nil {
+	if _, err := tx.Exec(`UPDATE inventory_identifiers SET active=FALSE WHERE (entity_type='product' AND entity_key=$2) OR (entity_type='device' AND entity_key IN (SELECT deviceID FROM devices WHERE productID=$1))`, id, strconv.Itoa(id)); err != nil {
+		log.Printf("[PRODUCT ARCHIVE] Failed to disable identifiers for product %d: %v", id, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to disable archived inventory identifiers"})
 		return
 	}
@@ -1347,7 +1348,8 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	restoredDevices, _ = deviceResult.RowsAffected()
-	if _, err := tx.Exec(`UPDATE inventory_identifiers SET active=TRUE WHERE (entity_type='product' AND entity_key=$1::text) OR (entity_type='device' AND entity_key IN (SELECT deviceID FROM devices WHERE productID=$1 AND lifecycle_status='active'))`, id); err != nil {
+	if _, err := tx.Exec(`UPDATE inventory_identifiers SET active=TRUE WHERE (entity_type='product' AND entity_key=$2) OR (entity_type='device' AND entity_key IN (SELECT deviceID FROM devices WHERE productID=$1 AND lifecycle_status='active'))`, id, strconv.Itoa(id)); err != nil {
+		log.Printf("[PRODUCT RESTORE] Failed to enable identifiers for product %d: %v", id, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to enable restored inventory identifiers"})
 		return
 	}

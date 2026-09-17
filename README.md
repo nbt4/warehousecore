@@ -1,5 +1,9 @@
 # WarehouseCore
 
+## Release 5.9.75 – Zuverlässige Produktarchivierung
+
+- Produktarchivierung und Wiederherstellung schalten Produkt- und Device-Kennungen nun mit getrennt typisierten SQL-Parametern zuverlässig gemeinsam um.
+
 ## Release 5.9.74 – Geräte-Lebenszyklus
 
 - Devices lassen sich archivieren, wiederherstellen und nach vorheriger Archivierung endgültig löschen; archivierte Geräte verschwinden aus Scans, Cases, Picklisten, Labels, Lagerbeständen und operativen Kennzahlen.
