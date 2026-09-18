@@ -1,5 +1,9 @@
 # WarehouseCore
 
+## Release 5.9.76 – Robuster Start auf frischen Installationen
+
+- Die Produktstamm-Migration legt `product_dependencies` nun selbst idempotent an, bevor sie die typisierten Beziehungen ergänzt. Frische Umbrella-Installationen und Systeme mit übersprungenen historischen Migrationen starten dadurch ohne manuellen Datenbankeingriff.
+
 ## Release 5.9.75 – Zuverlässige Produktarchivierung
 
 - Produktarchivierung und Wiederherstellung schalten Produkt- und Device-Kennungen nun mit getrennt typisierten SQL-Parametern zuverlässig gemeinsam um.

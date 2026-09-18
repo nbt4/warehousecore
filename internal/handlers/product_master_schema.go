@@ -6,6 +6,26 @@ import (
 	"warehousecore/internal/repository"
 )
 
+// productDependenciesBootstrapStatements keep startup independent from the
+// historical SQL migration files. Umbrella installations may only contain the
+// consolidated base schema, so the runtime upgrader must also create this
+// table before extending it with the product-master columns below.
+var productDependenciesBootstrapStatements = []string{
+	`CREATE TABLE IF NOT EXISTS product_dependencies (
+		id SERIAL PRIMARY KEY,
+		product_id INTEGER NOT NULL REFERENCES products(productid) ON DELETE CASCADE,
+		dependency_product_id INTEGER NOT NULL REFERENCES products(productid) ON DELETE CASCADE,
+		is_optional BOOLEAN DEFAULT TRUE,
+		default_quantity NUMERIC(10,2) DEFAULT 1.0,
+		notes VARCHAR(500),
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		CONSTRAINT unique_dependency UNIQUE (product_id, dependency_product_id)
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_product_dependencies_product_id ON product_dependencies(product_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_product_dependencies_dep_product_id ON product_dependencies(dependency_product_id)`,
+}
+
 // EnsureProductMasterSchema installs immutable suite-wide inventory codes and
 // the richer product master data model. All statements are intentionally
 // idempotent because WarehouseCore also upgrades installations that skipped
@@ -22,7 +42,7 @@ func EnsureProductMasterSchema() error {
 	}
 	defer tx.Rollback()
 
-	statements := []string{
+	statements := append(append([]string{}, productDependenciesBootstrapStatements...), []string{
 		`CREATE SEQUENCE IF NOT EXISTS product_master_code_seq START WITH 1`,
 		`CREATE SEQUENCE IF NOT EXISTS device_master_code_seq START WITH 1`,
 		`CREATE SEQUENCE IF NOT EXISTS case_master_code_seq START WITH 1`,
@@ -116,7 +136,7 @@ func EnsureProductMasterSchema() error {
 		`UPDATE categories SET name='Sonstiges',abbreviation='SON' WHERE LOWER(TRIM(name))='other'`,
 		`DO $$ DECLARE cable_category_id INT; BEGIN INSERT INTO categories(name,abbreviation) VALUES('Kabel & Adapter','KAB') ON CONFLICT DO NOTHING; SELECT categoryID INTO cable_category_id FROM categories WHERE LOWER(TRIM(name))='kabel & adapter' LIMIT 1; INSERT INTO subcategories(subcategoryID,name,abbreviation,categoryID) VALUES ('KAB-AUDIO','Audio','AUD',cable_category_id),('KAB-POWER','Strom','PWR',cable_category_id),('KAB-DATA','Daten','DAT',cable_category_id),('KAB-COMBI','Kombikabel','KOM',cable_category_id) ON CONFLICT(subcategoryID) DO NOTHING; UPDATE products p SET categoryID=cable_category_id,subcategoryID=CASE WHEN LOWER(ct.name) LIKE '%audio%' THEN 'KAB-AUDIO' WHEN LOWER(ct.name) LIKE '%strom%' THEN 'KAB-POWER' WHEN LOWER(ct.name) LIKE '%kombi%' THEN 'KAB-COMBI' ELSE 'KAB-DATA' END FROM cable_products cp JOIN cable_types ct ON ct.cable_typesID=cp.cable_type_id WHERE p.productID=cp.product_id; END $$`,
 		`INSERT INTO warehouse_schema_migrations(version) VALUES('043_product_master_v2') ON CONFLICT(version) DO NOTHING`,
-	}
+	}...)
 
 	for _, statement := range statements {
 		if _, err := tx.Exec(statement); err != nil {
