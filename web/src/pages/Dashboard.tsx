@@ -10,7 +10,7 @@ import type { DashboardStats, Movement, WarehouseOverview } from '../lib/api';
 import { LowStockAlertsWidget } from '../components/LowStockAlertsWidget';
 import { toast } from '../lib/toast';
 import { useAuth } from '../contexts/AuthContext';
-import { suiteGreeting } from '../lib/cores-design';
+import { suiteGreeting, suiteLocale } from '../lib/cores-design';
 
 const emptyStats: DashboardStats = {
   in_storage: 0, on_job: 0, return_pending: 0, location_unknown: 0,
@@ -111,7 +111,7 @@ export function Dashboard() {
           <p className="suite-dashboard-subtitle">Prioritäten, Materialfluss und Einsatzbereitschaft auf einen Blick.</p>
         </div>
         <div className="suite-dashboard-actions">
-          <span className="suite-dashboard-timestamp">{lastUpdated ? `Aktualisiert ${lastUpdated.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <span className="suite-dashboard-timestamp">{lastUpdated ? `Aktualisiert ${lastUpdated.toLocaleTimeString(suiteLocale(), { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
           <button type="button" onClick={() => void loadData(true)} disabled={refreshing} className="suite-button"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />Aktualisieren</button>
         </div>
       </header>

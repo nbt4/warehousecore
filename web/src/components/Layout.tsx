@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useBranding } from '../hooks/useBranding';
 import { suiteGreetingName } from '../lib/cores-design';
-import { LanguageSwitcher } from './LanguageSwitcher';
+import { SuiteLanguageSwitcher } from '../lib/SuiteLanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 import { coresDashboardURL } from '../lib/suite-auth';
 import { SuiteCoreNavigation } from './SuiteCoreNavigation';
@@ -124,7 +124,7 @@ export function Layout({ children }: LayoutProps) {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <LanguageSwitcher />
+            <SuiteLanguageSwitcher compact />
             {companyName && (
               <span className="text-sm hidden sm:block" style={{ color: 'var(--text-tertiary)' }}>
                 {companyName}
@@ -322,6 +322,7 @@ export function Layout({ children }: LayoutProps) {
           className={`p-3 flex flex-col gap-1 ${!sidebarOpen && !isMobile ? 'items-center' : ''}`}
           style={{ borderTop: '1px solid var(--border-subtle)' }}
         >
+          <SuiteLanguageSwitcher compact={!sidebarOpen && !isMobile} />
           {user && (sidebarOpen || isMobile) && (
             <div
               className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg w-full text-left"

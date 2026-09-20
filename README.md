@@ -1,5 +1,11 @@
 # WarehouseCore
 
+## Release 5.9.77 – Suiteweite Sprachwahl
+
+Der bestehende deutsch/englische i18next-Katalog verwendet jetzt die gemeinsame
+`cores_language`-Auswahl der gesamten Suite. Der Umschalter bleibt in Desktop-,
+Kompakt- und Mobilnavigation zugänglich und synchronisiert sich beim Core-Wechsel.
+
 ## Release 5.9.76 – Robuster Start auf frischen Installationen
 
 - Die Produktstamm-Migration legt `product_dependencies` nun selbst idempotent an, bevor sie die typisierten Beziehungen ergänzt. Frische Umbrella-Installationen und Systeme mit übersprungenen historischen Migrationen starten dadurch ohne manuellen Datenbankeingriff.

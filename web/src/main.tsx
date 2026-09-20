@@ -5,6 +5,18 @@ import './cores-theme.css'
 import './i18n' // Initialize i18n
 import App from './App'
 import { appBasePath, appPath } from './lib/app-paths'
+import { initSuiteI18n, pairSuiteTranslations } from './lib/cores-design'
+import commonDe from './lib/cores-locales/de.json'
+import commonEn from './lib/cores-locales/en.json'
+import warehouseDe from './locales/de.json'
+import warehouseEn from './locales/en.json'
+
+const commonTranslations = pairSuiteTranslations(commonDe, commonEn)
+const warehouseTranslations = pairSuiteTranslations(warehouseDe, warehouseEn)
+initSuiteI18n({
+  de: { ...commonTranslations.de, ...warehouseTranslations.de },
+  en: { ...commonTranslations.en, ...warehouseTranslations.en },
+})
 
 document.addEventListener('wheel', (event) => {
   const target = event.target

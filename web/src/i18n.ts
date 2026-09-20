@@ -4,6 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import de from './locales/de.json';
 import en from './locales/en.json';
+import { onSuiteLanguageChange, suiteLanguage } from './lib/cores-design';
 
 // Initialize i18next
 i18n
@@ -18,6 +19,7 @@ i18n
         translation: en,
       },
     },
+    lng: suiteLanguage(),
     fallbackLng: 'de', // Default language
     supportedLngs: ['de', 'en'],
     interpolation: {
@@ -27,8 +29,12 @@ i18n
       // Order of language detection
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
-      lookupLocalStorage: 'warehousecore_language',
+      lookupLocalStorage: 'cores_language',
     },
   });
+
+onSuiteLanguageChange((language) => {
+  void i18n.changeLanguage(language);
+});
 
 export default i18n;
