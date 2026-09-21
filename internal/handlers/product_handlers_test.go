@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -9,6 +11,26 @@ func TestWarehouseProductSearchTerms(t *testing.T) {
 	want := []string{"ld", "systems", "stinger", "sub", "18a", "g3"}
 	if got := warehouseProductSearchTerms(" LD Systems  Stinger SUB 18A G3 "); !reflect.DeepEqual(got, want) {
 		t.Fatalf("warehouseProductSearchTerms() = %v, want %v", got, want)
+	}
+}
+
+func TestProductMasterResolveInputsArePartOfCreatePayload(t *testing.T) {
+	manufacturer, category, abbreviation, brand := "MA Lighting", "Lichtsteuerung", "LST", "grandMA"
+	encoded, err := json.Marshal(Product{
+		Name:                  "grandMA3 4-Port Node",
+		ManufacturerNameInput: &manufacturer,
+		CategoryNameInput:     &category,
+		CategoryAbbrInput:     &abbreviation,
+		BrandNameInput:        &brand,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(encoded)
+	for _, expected := range []string{"manufacturer_name_input", "category_name_input", "category_abbreviation_input", "brand_name_input"} {
+		if !strings.Contains(payload, expected) {
+			t.Fatalf("create payload lacks %s: %s", expected, payload)
+		}
 	}
 }
 

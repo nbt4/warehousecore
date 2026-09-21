@@ -1,5 +1,14 @@
 # WarehouseCore
 
+## Release 5.9.78 – Atomare MCP-Produktanlage
+
+`POST /api/v1/admin/products` kann fehlende Hersteller, Marken sowie die
+dreistufige Kategoriehierarchie jetzt über explizite `*_name_input`-Felder
+auflösen oder zusammen mit dem Produkt anlegen. Stammdaten, Produkt,
+Anfangsbestand und Devices bleiben dabei in einer Transaktion; neue
+Stammdatensätze und das Produkt werden dem handelnden Suite-Benutzer im
+Audit-Log zugeordnet.
+
 ## Release 5.9.77 – Suiteweite Sprachwahl
 
 Der bestehende deutsch/englische i18next-Katalog verwendet jetzt die gemeinsame
@@ -244,7 +253,7 @@ Job- und Lagerstatus bleiben ebenfalls getrennt. WarehouseCore zeigt für Vorber
 | `PUT`    | `/api/v1/admin/products/:id/restore`  | Produkt und dadurch archivierte Devices wiederherstellen (🔒 Admin) |
 | `DELETE` | `/api/v1/admin/products/:id/permanent` | Archiviertes Produkt samt Devices endgültig löschen (🔒 Admin) |
 
-`POST /api/v1/admin/products` akzeptiert zusätzlich `product_kind`, `model_number`, `manufacturer_part_number`, `ean`, `initial_device_quantity` und `initial_zone_id`. Bei Einzelverfolgung werden Produkt und Anfangsexemplare in einer Transaktion angelegt. Die Zubehörendpunkte `/api/v1/admin/products/:id/dependencies` verwenden `relation_type` (`required`, `recommended`, `compatible`, `consumes`, `alternative`, `included`) und `assignment_scope`.
+`POST /api/v1/admin/products` akzeptiert zusätzlich `product_kind`, `model_number`, `manufacturer_part_number`, `ean`, `initial_device_quantity` und `initial_zone_id`. Für geführte Integrationen lösen `manufacturer_name_input`, `brand_name_input`, `category_name_input`, `subcategory_name_input` und `third_category_name_input` exakte Stammdaten auf oder legen sie atomar an; neue Kategorien benötigen `category_abbreviation_input`, die tieferen Ebenen akzeptieren ihre jeweilige optionale Abkürzung. Bei Einzelverfolgung werden Produkt und Anfangsexemplare in derselben Transaktion angelegt. Die Zubehörendpunkte `/api/v1/admin/products/:id/dependencies` verwenden `relation_type` (`required`, `recommended`, `compatible`, `consumes`, `alternative`, `included`) und `assignment_scope`.
 
 Die Admin-Registerkarte **Beschaffung** gleicht Warehouse-Produkte anhand stabiler Artikelmerkmale mit ProcurementCore ab. `GET /api/v1/admin/product-links` liefert Verknüpfungen und Vorschläge, `/products/:id/procurement-link` bestätigt oder löst eine Zuordnung und `/products/:id/procurement-requisitions` erzeugt einen Procurement-Bedarfsentwurf. Eine Neuanlage mit `procurement_product_id` speichert Warehouse-Produkt, automatisch erzeugte Produkt-/Device-IDs und die eindeutige Core-Verknüpfung gemeinsam in einer Transaktion. `PROCUREMENTCORE_PUBLIC_URL` steuert die serviceübergreifende Navigation.
 
