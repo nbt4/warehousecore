@@ -1,5 +1,11 @@
 # WarehouseCore
 
+## Release 5.9.79 – Vollständige Dashboard-Lokalisierung
+
+Die Suite-Sprache wirkt jetzt bidirektional auf deutsche und englische
+Quelltexte. Das Warehouse-Dashboard lokalisiert Kennzahlen, Arbeitsvorrat,
+Materialfluss, Bewegungen und dynamische Mengen beziehungsweise Zeitangaben.
+
 ## Release 5.9.78 – Atomare MCP-Produktanlage
 
 `POST /api/v1/admin/products` kann fehlende Hersteller, Marken sowie die
