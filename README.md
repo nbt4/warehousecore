@@ -1,5 +1,19 @@
 # WarehouseCore
 
+## Release 5.9.80 – Flexibler Datentransfer
+
+WarehouseCore stellt einen schema-beschriebenen Datentransfer für Produkte,
+Geräte, Kontakte, Hersteller, Marken, Kategorien, Lagerbereiche, Kabel und Jobs
+bereit. Exporte unterstützen frei gewählte Felder, lesbare oder technische
+Spaltennamen, CSV mit drei Trennzeichen sowie XLSX. Admin-Importe akzeptieren CSV
+und XLSX bis 5.000 Zeilen, ordnen Spalten anhand ihrer Überschrift zu, validieren
+Typen und Referenzen in einer Vorschau und schreiben atomar. Konflikte werden
+über stabile IDs, Codes, Barcodes, E-Mail oder Namen erkannt und lassen sich
+überspringen oder je Feld mit Importwert, Bestandswert beziehungsweise
+„nur leere Felder“ zusammenführen. Die bisherigen festen CSV-Endpunkte bleiben
+kompatibel; jeder bestätigte Sammelimport wird mit Datensatz und Ergebnis im
+Audit-Log protokolliert.
+
 ## Release 5.9.79 – Vollständige Dashboard-Lokalisierung
 
 Die Suite-Sprache wirkt jetzt bidirektional auf deutsche und englische
@@ -56,6 +70,7 @@ WarehouseCore folgt dem verbindlichen Designvertrag aus [`nbt4/cores`](https://g
 
 - **Geräteverwaltung** — Vollständiges Inventory-Tracking mit Hierarchiebaum, Statusverfolgung, Bewegungsprotokoll und Defekterfassung
 - **Produktstammdaten 2.0** — Produktklasse, Zubehörrolle und Trackingart sind getrennt. Produkt, initiale Devices, Lagerzuordnung und automatisch erzeugte Kennungen entstehen transaktional; Modellnummer, Herstellerartikelnummer und EAN bleiben eigene Felder
+- **Flexibler Datentransfer** — Schema-getriebene CSV-/XLSX-Exporte und atomare, vorschaubasierte Importe mit headerbasierter Zuordnung und spaltenweisen Konfliktregeln
 - **ProcurementCore-Verknüpfung** — Bestehende Produktstämme lassen sich automatisch vorgeschlagen oder manuell eindeutig verbinden. Procurement-Artikel öffnen den vollständigen Warehouse-Produktdialog mit bearbeitbaren Vorbelegungen; Warehouse meldet daraus direkt einen Procurement-Bedarfsentwurf
 - **Unveränderliche Scan-IDs** — Produkte (`PRD-…`), Devices (`DEV-…`) und Cases (`CAS-…`) erhalten automatisch globale Barcodes. Bestehende Gerätekennungen bleiben als Scan-Aliase gültig, während fehlende Barcodes und QR-Codes beim Upgrade sicher ergänzt werden
 - **Typisierte Produktbeziehungen** — Benötigtes, empfohlenes, kompatibles, verbrauchtes, alternatives oder enthaltenes Zubehör wird mit Standardmenge gepflegt; feste Device-Komponenten können zusätzlich einem konkreten Exemplar zugewiesen werden
@@ -341,6 +356,21 @@ Die bisherigen `/cases`-Endpunkte bleiben kompatibel. Die UI verwendet zusätzli
 | `POST`  | `/api/v1/led/identify`              | LEDs identifizieren (🔒)                  |
 | `POST`  | `/api/v1/led/test`                  | Bin testen (🔒)                           |
 | `POST`  | `/api/v1/led/locate`                | Bin orten (🔒)                            |
+
+### Datentransfer
+
+| Methode | Pfad                                          | Beschreibung |
+|---------|-----------------------------------------------|--------------|
+| `GET`   | `/api/v1/admin/data-transfer/catalog`         | Datensätze, Felder, Typen und Importfähigkeit auflisten (🔒 Admin/Manager) |
+| `POST`  | `/api/v1/admin/data-transfer/export`          | Feldauswahl als CSV oder XLSX exportieren (🔒 Admin/Manager) |
+| `POST`  | `/api/v1/admin/data-transfer/import/preview`  | CSV/XLSX prüfen, Überschriften zuordnen und Konflikte ermitteln (🔒 Admin) |
+| `POST`  | `/api/v1/admin/data-transfer/import`          | Geprüfte Zeilen atomar anlegen oder nach Feldregeln zusammenführen (🔒 Admin) |
+
+Importdateien sind auf 10 MiB, 100 Spalten und 5.000 Datenzeilen begrenzt.
+Beziehungen wie Kategorie, Produkt, Hersteller oder Lagerbereich werden über
+exakte ID beziehungsweise exakten Namen aufgelöst; unbekannte Referenzen
+blockieren den Import bereits in der Vorschau. Schreibvorgänge laufen in einer
+Transaktion, sodass ein Fehler keine teilweise importierte Datei hinterlässt.
 
 ### Labels & Druck
 

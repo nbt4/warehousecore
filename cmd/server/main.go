@@ -269,7 +269,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.79")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.80")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -574,6 +574,10 @@ func main() {
 
 	// CSV Export endpoints (read-only, admin or manager)
 	adminRead.HandleFunc("/export/{type}", handlers.ExportCSV).Methods("GET")
+	adminRead.HandleFunc("/data-transfer/catalog", handlers.GetDataTransferCatalog).Methods("GET")
+	adminRead.HandleFunc("/data-transfer/export", handlers.ExportDataTransfer).Methods("POST")
+	admin.HandleFunc("/data-transfer/import/preview", handlers.PreviewDataTransferImport).Methods("POST")
+	admin.HandleFunc("/data-transfer/import", handlers.ApplyDataTransferImport).Methods("POST")
 
 	// Profile endpoints (authenticated users)
 	protected.HandleFunc("/profile/me", handlers.GetMyProfile).Methods("GET")
