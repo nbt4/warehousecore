@@ -104,7 +104,11 @@ func ExportLabelsPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", `attachment; filename="warehousecore-labels.pdf"`)
+	filename := "warehousecore-labels.pdf"
+	if strings.EqualFold(strings.TrimSpace(request.Layout), "a4_sheet") {
+		filename = "warehousecore-label-sheet-a4.pdf"
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Length", strconv.Itoa(len(pdfData)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(pdfData)

@@ -67,11 +67,12 @@ type LabelRenderResult struct {
 }
 
 type LabelPrintRequest struct {
-	TargetType string   `json:"target_type"`
-	TargetIDs  []string `json:"target_ids"`
-	TemplateID int      `json:"template_id"`
-	PrinterID  int      `json:"printer_id"`
-	Copies     int      `json:"copies"`
+	TargetType string           `json:"target_type"`
+	TargetIDs  []string         `json:"target_ids"`
+	TemplateID int              `json:"template_id"`
+	PrinterID  int              `json:"printer_id"`
+	Copies     int              `json:"copies"`
+	Items      []LabelPrintItem `json:"items,omitempty"`
 }
 
 type LabelBatchRequest struct {
@@ -83,10 +84,22 @@ type LabelBatchRequest struct {
 }
 
 type LabelPDFRequest struct {
-	TargetType string   `json:"target_type"`
-	TargetIDs  []string `json:"target_ids"`
-	TemplateID int      `json:"template_id"`
-	Copies     int      `json:"copies"`
+	TargetType      string           `json:"target_type"`
+	TargetIDs       []string         `json:"target_ids"`
+	TemplateID      int              `json:"template_id"`
+	Copies          int              `json:"copies"`
+	Items           []LabelPrintItem `json:"items,omitempty"`
+	Layout          string           `json:"layout,omitempty"`
+	Orientation     string           `json:"orientation,omitempty"`
+	MarginMM        float64          `json:"margin_mm,omitempty"`
+	HorizontalGapMM float64          `json:"horizontal_gap_mm,omitempty"`
+	VerticalGapMM   float64          `json:"vertical_gap_mm,omitempty"`
+	ShowGuides      bool             `json:"show_guides,omitempty"`
+}
+
+type LabelPrintItem struct {
+	TargetID string `json:"target_id"`
+	Copies   int    `json:"copies"`
 }
 
 func ValidLabelTargetType(targetType string) bool {
@@ -442,23 +455,49 @@ func (s *LabelService) RenderTargetLabels(request LabelBatchRequest) ([]*LabelRe
 }
 
 func (s *LabelService) ExportTargetsPDF(request LabelPDFRequest) ([]byte, error) {
-	if request.Copies <= 0 || request.Copies > 1000 {
-		return nil, fmt.Errorf("copies must be between 1 and 1000")
-	}
-	if len(request.TargetIDs) == 0 || len(request.TargetIDs) > 250 || len(request.TargetIDs)*request.Copies > 500 {
-		return nil, fmt.Errorf("PDF export allows at most 250 targets and 500 label pages")
-	}
-	assets, err := s.ensureCachedLabelPDFs(request.TargetType, request.TargetIDs, request.TemplateID)
+	items, err := normalizeLabelPrintItems(request.TargetIDs, request.Copies, request.Items, 250, 500)
 	if err != nil {
 		return nil, err
 	}
-	return mergeCachedLabelPDFs(assets, request.Copies)
+	if !ValidLabelTargetType(request.TargetType) {
+		return nil, fmt.Errorf("unsupported target type %q", request.TargetType)
+	}
+	layout := strings.ToLower(strings.TrimSpace(request.Layout))
+	if layout == "" || layout == "single" {
+		assets, err := s.ensureCachedLabelPDFs(request.TargetType, labelPrintTargetIDs(items), request.TemplateID)
+		if err != nil {
+			return nil, err
+		}
+		return mergeCachedLabelPDFItems(assets, items)
+	}
+	if layout != "a4_sheet" {
+		return nil, fmt.Errorf("unsupported PDF layout %q", request.Layout)
+	}
+	return s.exportTargetsA4Sheet(request, items)
 }
 
 func mergeCachedLabelPDFs(assets []cachedLabelPDF, copies int) ([]byte, error) {
-	readers := make([]io.ReadSeeker, 0, len(assets)*copies)
-	for _, asset := range assets {
-		for range copies {
+	items := make([]LabelPrintItem, len(assets))
+	for index, asset := range assets {
+		items[index] = LabelPrintItem{TargetID: asset.Target.ID, Copies: copies}
+	}
+	return mergeCachedLabelPDFItems(assets, items)
+}
+
+func mergeCachedLabelPDFItems(assets []cachedLabelPDF, items []LabelPrintItem) ([]byte, error) {
+	if len(assets) != len(items) {
+		return nil, fmt.Errorf("label assets do not match the requested items")
+	}
+	total := 0
+	for _, item := range items {
+		total += item.Copies
+	}
+	readers := make([]io.ReadSeeker, 0, total)
+	for index, asset := range assets {
+		if asset.Target.ID != items[index].TargetID {
+			return nil, fmt.Errorf("label asset order does not match target %q", items[index].TargetID)
+		}
+		for range items[index].Copies {
 			readers = append(readers, bytes.NewReader(asset.PDF))
 		}
 	}
@@ -755,11 +794,12 @@ func (s *LabelService) ListPrintJobs(limit int) ([]models.LabelPrintJob, error) 
 }
 
 func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPrintJob, error) {
-	if !ValidLabelTargetType(request.TargetType) || len(request.TargetIDs) == 0 {
-		return nil, fmt.Errorf("target type and at least one target are required")
+	if !ValidLabelTargetType(request.TargetType) {
+		return nil, fmt.Errorf("unsupported target type %q", request.TargetType)
 	}
-	if request.Copies <= 0 || request.Copies > 1000 {
-		return nil, fmt.Errorf("copies must be between 1 and 1000")
+	items, err := normalizeLabelPrintItems(request.TargetIDs, request.Copies, request.Items, 250, 500)
+	if err != nil {
+		return nil, err
 	}
 	var printer models.LabelPrinter
 	query := repository.GetDB().Where("is_active = ?", true)
@@ -771,7 +811,8 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 	if err := query.First(&printer).Error; err != nil {
 		return nil, fmt.Errorf("active printer not found")
 	}
-	assets, err := s.ensureCachedLabelPDFs(request.TargetType, request.TargetIDs, request.TemplateID)
+	targetIDs := labelPrintTargetIDs(items)
+	assets, err := s.ensureCachedLabelPDFs(request.TargetType, targetIDs, request.TemplateID)
 	if err != nil {
 		return nil, err
 	}
@@ -794,17 +835,18 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 		}
 	}
 	if len(missingPrinterCache) > 0 {
-		assets, err = s.ensureCachedLabelPDFs(request.TargetType, request.TargetIDs, request.TemplateID)
+		assets, err = s.ensureCachedLabelPDFs(request.TargetType, targetIDs, request.TemplateID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	jobs := make([]models.LabelPrintJob, 0, len(request.TargetIDs))
-	for index, targetID := range request.TargetIDs {
+	jobs := make([]models.LabelPrintJob, 0, len(items))
+	for index, item := range items {
+		targetID := item.TargetID
 		templateID := request.TemplateID
 		printerID := printer.ID
-		job := models.LabelPrintJob{TargetType: request.TargetType, TargetID: targetID, TemplateID: &templateID, PrinterID: &printerID, Copies: request.Copies, Status: "queued", PrinterName: printer.Name}
+		job := models.LabelPrintJob{TargetType: request.TargetType, TargetID: targetID, TemplateID: &templateID, PrinterID: &printerID, Copies: item.Copies, Status: "queued", PrinterName: printer.Name}
 		if err := repository.GetDB().Create(&job).Error; err != nil {
 			return jobs, fmt.Errorf("create print job: %w", err)
 		}
@@ -820,7 +862,7 @@ func (s *LabelService) PrintTargets(request LabelPrintRequest) ([]models.LabelPr
 			zpl, renderErr = os.ReadFile(zplSidecarPath(diskPath, printer.DPI))
 		}
 		if renderErr == nil {
-			zpl = []byte(zplCopiesPattern.ReplaceAllString(string(zpl), fmt.Sprintf("^PQ%d", request.Copies)))
+			zpl = []byte(zplCopiesPattern.ReplaceAllString(string(zpl), fmt.Sprintf("^PQ%d", item.Copies)))
 			renderErr = sendRawPrinterData(printer.Address, printer.Port, zpl)
 		}
 		job.LabelPath = asset.Path

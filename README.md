@@ -1,5 +1,15 @@
 # WarehouseCore
 
+## Release 5.9.81 – A4-Etikettenbögen und individuelle Stückzahlen
+
+Das Druckcenter kann ausgewählte Labels nun mit einer eigenen Kopienzahl je
+Eintrag ausgeben. PDF-Export und Browserdruck unterstützen wahlweise weiterhin
+eine maßhaltige Seite je Label oder einen automatisch gefüllten A4-Bogen in
+Hoch-/Querformat. Seitenrand, horizontale und vertikale Abstände sowie optionale
+Schnittführungen sind einstellbar; dieselben individuellen Stückzahlen werden
+auch beim Zebra-Direktdruck berücksichtigt. Pro Anfrage gelten weiterhin
+höchstens 250 Ziele und 500 Labels.
+
 ## Release 5.9.80 – Flexibler Datentransfer
 
 WarehouseCore stellt einen schema-beschriebenen Datentransfer für Produkte,
@@ -390,7 +400,7 @@ Transaktion, sodass ein Fehler keine teilweise importierte Datei hinterlässt.
 | `GET`    | `/api/v1/labels/fields/:target_type`    | Datenfelder eines Labeltyps (🔒)          |
 | `POST`   | `/api/v1/labels/render`                 | Label serverseitig rendern/speichern; das Druckcenter zeigt dabei Fortschritt und Ergebnis direkt an (🔒) |
 | `POST`   | `/api/v1/labels/render-batch`           | Bis zu 250 Labels mit einem gemeinsamen Browserprozess rendern (🔒) |
-| `POST`   | `/api/v1/labels/pdf`                    | Auswahl als maßhaltige Mehrseiten-PDF herunterladen (🔒) |
+| `POST`   | `/api/v1/labels/pdf`                    | Auswahl als maßhaltige Einzelseiten oder A4-Etikettenbogen herunterladen (🔒) |
 | `GET`    | `/api/v1/labels/printers`               | Druckerprofile auflisten (🔒)             |
 | `POST`   | `/api/v1/labels/printers`               | Zebra-Netzwerkdrucker anlegen (🔒)        |
 | `PUT`    | `/api/v1/labels/printers/:id`           | Druckerprofil aktualisieren (🔒)          |
@@ -398,7 +408,14 @@ Transaktion, sodass ein Fehler keine teilweise importierte Datei hinterlässt.
 | `POST`   | `/api/v1/labels/print`                  | Labels direkt als ZPL drucken (🔒)        |
 | `GET`    | `/api/v1/labels/print-jobs`             | Druckaufträge und Fehler abrufen (🔒)     |
 
-Das Label Studio verwendet für Geräte, Kabel, Cases und Lagerzonen jeweils getrennte Templates und ein eigenes Standardtemplate. Im Kabelbereich werden ausschließlich Datensätze aus `cable_products` angeboten; normale Produkte erscheinen dort nicht. Bei „Neu erzeugen“ wird pro Ziel ein maßhaltiges, einseitiges PDF als Master gespeichert und der vorherige Stand überschrieben; PNG-Dateien werden nicht gespeichert. Export, Browserdruck und ZPL-Direktdruck verwenden diesen Cache und rendern nur fehlende oder veraltete Labels neu. Ein Label gilt als veraltet, sobald sich sein Quelldatensatz, das gewählte Template oder dessen Revision ändert. Der PDF-Export führt die gespeicherten Master entsprechend Auswahl und Kopien zu einer Mehrseiten-PDF zusammen. Für Direktdruck wird im Studio ein aktiver Zebra-kompatibler Netzwerkdrucker mit IP/Hostname, TCP-Port (üblicherweise `9100`) und Auflösung (`203`, `300` oder `600` DPI) hinterlegt.
+Das Label Studio verwendet für Geräte, Kabel, Cases und Lagerzonen jeweils getrennte Templates und ein eigenes Standardtemplate. Im Kabelbereich werden ausschließlich Datensätze aus `cable_products` angeboten; normale Produkte erscheinen dort nicht. Bei „Neu erzeugen“ wird pro Ziel ein maßhaltiges, einseitiges PDF als Master gespeichert und der vorherige Stand überschrieben; PNG-Dateien werden nicht gespeichert. Export, Browserdruck und ZPL-Direktdruck verwenden diesen Cache und rendern nur fehlende oder veraltete Labels neu. Ein Label gilt als veraltet, sobald sich sein Quelldatensatz, das gewählte Template oder dessen Revision ändert. Der PDF-Export führt die gespeicherten Master entsprechend der individuellen Stückzahlen entweder zu einer Mehrseiten-PDF oder maßhaltig auf A4-Bögen zusammen. Der A4-Modus berechnet Zeilen und Spalten aus Templategröße, Seitenrand und Abständen; zu große Kombinationen werden abgelehnt, statt Labels unbemerkt zu skalieren. Für Direktdruck wird im Studio ein aktiver Zebra-kompatibler Netzwerkdrucker mit IP/Hostname, TCP-Port (üblicherweise `9100`) und Auflösung (`203`, `300` oder `600` DPI) hinterlegt.
+
+`POST /api/v1/labels/pdf` und `POST /api/v1/labels/print` akzeptieren die
+rückwärtskompatiblen Felder `target_ids`/`copies` oder `items` als Liste aus
+`target_id` und `copies`. Für PDF setzt `layout=a4_sheet` den Bogenmodus;
+`orientation`, `margin_mm`, `horizontal_gap_mm`, `vertical_gap_mm` und
+`show_guides` steuern die Ausgabe. `layout=single` erzeugt weiterhin eine
+maßhaltige PDF-Seite je Label.
 
 Die Migration `034_label_studio_and_direct_print.sql` ergänzt Templates um Zieltyp und Revision und legt `label_assets`, `label_printers` sowie `label_print_jobs` an. `035_cable_labels_and_pdf_export.sql` benennt das Standardtemplate konsistent für Kabel. `036_pdf_label_cache.sql` verwirft alte PNG-Cachepfade; die Dateien werden beim Start gezielt aus dem Label-Cache entfernt und bei Bedarf als PDF neu erzeugt. Die Migrationen werden beim WarehouseCore-Start idempotent angewendet.
 

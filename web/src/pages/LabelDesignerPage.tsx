@@ -18,6 +18,8 @@ import { toast } from '../lib/toast';
 import './LabelDesignerPage.css';
 
 type StudioTab = 'designer' | 'print' | 'printers';
+type PDFLayout = 'single' | 'a4_sheet';
+type PDFOrientation = 'portrait' | 'landscape';
 type DragMode = 'move' | 'resize';
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 type DesignElement = LabelElement & { id: string };
@@ -130,12 +132,19 @@ export default function LabelDesignerPage() {
   const [targets, setTargets] = useState<LabelTarget[]>([]);
   const [previewTarget, setPreviewTarget] = useState<LabelTarget | null>(null);
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
+  const [targetCopies, setTargetCopies] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
   const [printers, setPrinters] = useState<LabelPrinter[]>([]);
   const [jobs, setJobs] = useState<LabelPrintJob[]>([]);
   const [printerForm, setPrinterForm] = useState<LabelPrinter>(EMPTY_PRINTER);
   const [selectedPrinterID, setSelectedPrinterID] = useState(0);
   const [copies, setCopies] = useState(1);
+  const [pdfLayout, setPDFLayout] = useState<PDFLayout>('a4_sheet');
+  const [pdfOrientation, setPDFOrientation] = useState<PDFOrientation>('portrait');
+  const [sheetMargin, setSheetMargin] = useState(10);
+  const [sheetHorizontalGap, setSheetHorizontalGap] = useState(2);
+  const [sheetVerticalGap, setSheetVerticalGap] = useState(2);
+  const [showGuides, setShowGuides] = useState(false);
   const [busy, setBusy] = useState(false);
   const [generationState, setGenerationState] = useState<GenerationState | null>(null);
   const [codeImages, setCodeImages] = useState<Record<string, string>>({});
@@ -153,6 +162,22 @@ export default function LabelDesignerPage() {
     [targetType, templates],
   );
   const selectedElement = elements.find(element => element.id === selectedElementID) ?? null;
+  const selectedItems = useMemo(
+    () => Array.from(selectedTargets).map(targetID => ({ target_id: targetID, copies: targetCopies[targetID] ?? copies })),
+    [copies, selectedTargets, targetCopies],
+  );
+  const selectedLabelTotal = useMemo(
+    () => selectedItems.reduce((total, item) => total + item.copies, 0),
+    [selectedItems],
+  );
+  const sheetCapacity = useMemo(() => {
+    if (!activeTemplate) return 0;
+    const pageWidth = pdfOrientation === 'portrait' ? 210 : 297;
+    const pageHeight = pdfOrientation === 'portrait' ? 297 : 210;
+    const columns = Math.floor((pageWidth - 2 * sheetMargin + sheetHorizontalGap) / (Number(activeTemplate.width) + sheetHorizontalGap));
+    const rows = Math.floor((pageHeight - 2 * sheetMargin + sheetVerticalGap) / (Number(activeTemplate.height) + sheetVerticalGap));
+    return Math.max(0, columns) * Math.max(0, rows);
+  }, [activeTemplate, pdfOrientation, sheetHorizontalGap, sheetMargin, sheetVerticalGap]);
   const previewFields = previewTarget?.fields ?? sampleFields[targetType];
   const fitScale = Math.max(1, Math.min((stageSize.width - 48) / labelWidth, (stageSize.height - 48) / labelHeight, 12));
   const scale = fitScale * canvasZoom / 100;
@@ -182,6 +207,7 @@ export default function LabelDesignerPage() {
     const nextTargets = data ?? [];
     setTargets(nextTargets);
     setSelectedTargets(new Set());
+    setTargetCopies({});
     if (nextTargets[0]) {
       const detail = await labelsApi.getTarget(type, nextTargets[0].id);
       setPreviewTarget(detail.data);
@@ -370,11 +396,58 @@ export default function LabelDesignerPage() {
   }
 
   function toggleTarget(id: string) {
+    const selecting = !selectedTargets.has(id);
     setSelectedTargets(current => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (selecting) next.add(id); else next.delete(id);
       return next;
     });
+    setTargetCopies(current => {
+      const next = { ...current };
+      if (selecting) next[id] = copies; else delete next[id];
+      return next;
+    });
+  }
+
+  function selectAllTargets() {
+    setSelectedTargets(new Set(targets.map(target => target.id)));
+    setTargetCopies(Object.fromEntries(targets.map(target => [target.id, targetCopies[target.id] ?? copies])));
+  }
+
+  function clearSelectedTargets() {
+    setSelectedTargets(new Set());
+    setTargetCopies({});
+  }
+
+  function normalizeCopies(value: number) {
+    if (!Number.isFinite(value)) return 1;
+    return Math.min(1000, Math.max(1, Math.trunc(value)));
+  }
+
+  function updateTargetCopies(targetID: string, value: number) {
+    setTargetCopies(current => ({ ...current, [targetID]: normalizeCopies(value) }));
+  }
+
+  function applyCopiesToSelection() {
+    setTargetCopies(current => {
+      const next = { ...current };
+      selectedTargets.forEach(targetID => { next[targetID] = copies; });
+      return next;
+    });
+  }
+
+  function pdfPayload() {
+    return {
+      target_type: targetType,
+      template_id: activeTemplateID!,
+      items: selectedItems,
+      layout: pdfLayout,
+      orientation: pdfOrientation,
+      margin_mm: sheetMargin,
+      horizontal_gap_mm: sheetHorizontalGap,
+      vertical_gap_mm: sheetVerticalGap,
+      show_guides: showGuides,
+    };
   }
 
   async function generateSelected() {
@@ -433,20 +506,18 @@ export default function LabelDesignerPage() {
       return;
     }
     const targetIDs = Array.from(selectedTargets);
-    const total = targetIDs.length * copies;
+    const total = selectedLabelTotal;
     if (targetIDs.length > 250 || total > 500) {
-      const message = 'Ein PDF darf höchstens 250 Einträge und 500 Labelseiten enthalten.';
+      const message = 'Ein PDF darf höchstens 250 Einträge und 500 Labels enthalten.';
       setGenerationState({ operation: 'pdf', status: 'error', completed: 0, total, message });
       toast.error(message);
       return;
     }
     setBusy(true);
-    setGenerationState({ operation: 'pdf', status: 'running', completed: 0, total, message: `PDF mit ${total} Labelseiten wird erstellt …` });
+    setGenerationState({ operation: 'pdf', status: 'running', completed: 0, total, message: `PDF für ${total} Labels wird erstellt …` });
     toast.info('PDF-Export wird vorbereitet.');
     try {
-      const response = await labelsApi.exportPDF({
-        target_type: targetType, target_ids: targetIDs, template_id: activeTemplateID, copies,
-      });
+      const response = await labelsApi.exportPDF(pdfPayload());
       const disposition = String(response.headers['content-disposition'] ?? '');
       const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'warehousecore-labels.pdf';
       const url = URL.createObjectURL(response.data);
@@ -457,7 +528,7 @@ export default function LabelDesignerPage() {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      const message = `PDF mit ${total} Labelseite${total === 1 ? '' : 'n'} heruntergeladen.`;
+      const message = `PDF für ${total} Label${total === 1 ? '' : 's'} heruntergeladen.`;
       setGenerationState({ operation: 'pdf', status: 'success', completed: total, total, message });
       toast.success(message);
       await loadTargets(targetType, search).catch(error => toast.error(requestErrorMessage(error, 'Liste konnte nicht aktualisiert werden.')));
@@ -481,13 +552,11 @@ export default function LabelDesignerPage() {
     setBusy(true);
     try {
       const targetIDs = Array.from(selectedTargets);
-      const total = targetIDs.length * copies;
+      const total = selectedLabelTotal;
       if (targetIDs.length > 250 || total > 500) {
-        throw new Error('Die Druckansicht darf höchstens 250 Einträge und 500 Labelseiten enthalten.');
+        throw new Error('Die Druckansicht darf höchstens 250 Einträge und 500 Labels enthalten.');
       }
-      const response = await labelsApi.exportPDF({
-        target_type: targetType, target_ids: targetIDs, template_id: activeTemplateID, copies,
-      });
+      const response = await labelsApi.exportPDF(pdfPayload());
       const url = URL.createObjectURL(response.data);
       printWindow.location.href = url;
       window.setTimeout(() => URL.revokeObjectURL(url), 300_000);
@@ -501,11 +570,15 @@ export default function LabelDesignerPage() {
 
   async function directPrint() {
     if (!activeTemplateID || !selectedPrinterID || selectedTargets.size === 0) return;
+    if (selectedTargets.size > 250 || selectedLabelTotal > 500) {
+      toast.error('Ein Druckauftrag darf höchstens 250 Einträge und 500 Labels enthalten.');
+      return;
+    }
     setBusy(true);
     try {
       const { data } = await labelsApi.printDirect({
-        target_type: targetType, target_ids: Array.from(selectedTargets), template_id: activeTemplateID,
-        printer_id: selectedPrinterID, copies,
+        target_type: targetType, items: selectedItems, template_id: activeTemplateID,
+        printer_id: selectedPrinterID,
       });
       const failed = data.jobs.filter(job => job.status === 'failed');
       if (failed.length) toast.error(`${failed.length} Druckauftrag${failed.length === 1 ? '' : 'e'} fehlgeschlagen.`);
@@ -714,19 +787,22 @@ export default function LabelDesignerPage() {
           <section className="card ls-print-targets">
             <div className="ls-print-toolbar">
               <label className="ls-search"><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={`${targetLabel(targetType)} suchen`} /></label>
-              <button className="btn-action" onClick={() => setSelectedTargets(new Set(targets.map(target => target.id)))}><Check size={15} /> Alle</button>
-              <button className="btn-action" onClick={() => setSelectedTargets(new Set())}><X size={15} /> Keine</button>
+              <button className="btn-action" onClick={selectAllTargets}><Check size={15} /> Alle</button>
+              <button className="btn-action" onClick={clearSelectedTargets}><X size={15} /> Keine</button>
             </div>
             <div className="ls-target-list">
               {targets.map(target => (
-                <label key={target.id} className={selectedTargets.has(target.id) ? 'selected' : ''}>
-                  <input type="checkbox" checked={selectedTargets.has(target.id)} onChange={() => toggleTarget(target.id)} />
+                <div key={target.id} className={selectedTargets.has(target.id) ? 'selected' : ''}>
+                  <input type="checkbox" aria-label={`${target.code} auswählen`} checked={selectedTargets.has(target.id)} onChange={() => toggleTarget(target.id)} />
                   <span className="ls-target-code">{target.code}</span>
                   <span className="ls-target-name"><strong>{target.name}</strong><small>{target.subtitle || target.id}</small></span>
+                  {selectedTargets.has(target.id)
+                    ? <label className="ls-target-copies"><span>Kopien</span><input className="input" type="number" min="1" max="1000" value={targetCopies[target.id] ?? copies} onChange={event => updateTargetCopies(target.id, Number(event.target.value))} /></label>
+                    : <span className="ls-target-copies" aria-hidden="true" />}
                   {!target.label_path && <span className="badge-neutral">Neu</span>}
                   {target.label_path && target.is_stale && <span className="badge-warning">Veraltet</span>}
                   {target.label_path && !target.is_stale && <span className="badge-success">Aktuell</span>}
-                </label>
+                </div>
               ))}
               {targets.length === 0 && <p className="ls-empty-copy">Keine Einträge gefunden.</p>}
             </div>
@@ -738,8 +814,21 @@ export default function LabelDesignerPage() {
               const template = templates.find(item => item.id === Number(event.target.value));
               if (template) applyTemplate(template);
             }}>{typeTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
-            <label>Kopien je Label<input className="input" type="number" min="1" max="1000" value={copies} onChange={event => setCopies(Math.max(1, Number(event.target.value)))} /></label>
-            <div className="ls-selection-summary"><strong>{selectedTargets.size}</strong><span>ausgewählt</span><strong>{selectedTargets.size * copies}</strong><span>Labels gesamt</span></div>
+            <div className="ls-copy-bulk">
+              <label>Kopien für Auswahl<input className="input" type="number" min="1" max="1000" value={copies} onChange={event => setCopies(normalizeCopies(Number(event.target.value)))} /></label>
+              <button className="btn-action" onClick={applyCopiesToSelection} disabled={selectedTargets.size === 0}>Übernehmen</button>
+            </div>
+            <div className="ls-selection-summary"><strong>{selectedTargets.size}</strong><span>ausgewählt</span><strong>{selectedLabelTotal}</strong><span>Labels gesamt</span></div>
+            <div className="ls-divider"><span>PDF-Ausgabe</span></div>
+            <label>Layout<select className="input" value={pdfLayout} onChange={event => setPDFLayout(event.target.value as PDFLayout)}><option value="a4_sheet">A4-Etikettenbogen</option><option value="single">Ein Label je Seite</option></select></label>
+            {pdfLayout === 'a4_sheet' && <div className="ls-sheet-options">
+              <label>Ausrichtung<select className="input" value={pdfOrientation} onChange={event => setPDFOrientation(event.target.value as PDFOrientation)}><option value="portrait">Hochformat</option><option value="landscape">Querformat</option></select></label>
+              <label>Seitenrand (mm)<input className="input" type="number" min="0" max="50" step="0.5" value={sheetMargin} onChange={event => setSheetMargin(Math.min(50, Math.max(0, Number(event.target.value) || 0)))} /></label>
+              <label>Abstand horizontal (mm)<input className="input" type="number" min="0" max="50" step="0.5" value={sheetHorizontalGap} onChange={event => setSheetHorizontalGap(Math.min(50, Math.max(0, Number(event.target.value) || 0)))} /></label>
+              <label>Abstand vertikal (mm)<input className="input" type="number" min="0" max="50" step="0.5" value={sheetVerticalGap} onChange={event => setSheetVerticalGap(Math.min(50, Math.max(0, Number(event.target.value) || 0)))} /></label>
+              <label className="ls-check"><input type="checkbox" checked={showGuides} onChange={event => setShowGuides(event.target.checked)} /> Schnittführungen anzeigen</label>
+              {sheetCapacity > 0 && selectedLabelTotal > 0 && <span className="ls-sheet-hint">{sheetCapacity} Labels pro A4-Seite · {Math.ceil(selectedLabelTotal / sheetCapacity)} Seite{Math.ceil(selectedLabelTotal / sheetCapacity) === 1 ? '' : 'n'}</span>}
+            </div>}
             {generationState && (
               <div className={`ls-generation-status ${generationState.status}`} role="status" aria-live="polite">
                 <div className="ls-generation-heading">

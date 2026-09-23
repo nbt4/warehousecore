@@ -1004,6 +1004,25 @@ export interface LabelPrintJob {
   completed_at?: string;
 }
 
+export interface LabelPrintItem {
+  target_id: string;
+  copies: number;
+}
+
+export interface LabelPDFPayload {
+  target_type: LabelTargetType;
+  target_ids?: string[];
+  template_id: number;
+  copies?: number;
+  items?: LabelPrintItem[];
+  layout?: 'single' | 'a4_sheet';
+  orientation?: 'portrait' | 'landscape';
+  margin_mm?: number;
+  horizontal_gap_mm?: number;
+  vertical_gap_mm?: number;
+  show_guides?: boolean;
+}
+
 export interface LabelElement {
   type: 'barcode' | 'qrcode' | 'text' | 'image';
   x: number;
@@ -1072,12 +1091,12 @@ export const labelsApi = {
         label_path?: string;
       }>;
     }>('/labels/render-batch', payload),
-  exportPDF: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; copies: number }) => api.post<Blob>('/labels/pdf', payload, { responseType: 'blob' }),
+  exportPDF: (payload: LabelPDFPayload) => api.post<Blob>('/labels/pdf', payload, { responseType: 'blob' }),
   getPrinters: () => api.get<LabelPrinter[]>('/labels/printers'),
   createPrinter: (printer: LabelPrinter) => api.post<LabelPrinter>('/labels/printers', printer),
   updatePrinter: (id: number, printer: LabelPrinter) => api.put<LabelPrinter>(`/labels/printers/${id}`, printer),
   deletePrinter: (id: number) => api.delete(`/labels/printers/${id}`),
-  printDirect: (payload: { target_type: LabelTargetType; target_ids: string[]; template_id: number; printer_id: number; copies: number }) => api.post<{ jobs: LabelPrintJob[] }>('/labels/print', payload),
+  printDirect: (payload: { target_type: LabelTargetType; target_ids?: string[]; template_id: number; printer_id: number; copies?: number; items?: LabelPrintItem[] }) => api.post<{ jobs: LabelPrintJob[] }>('/labels/print', payload),
   getPrintJobs: (limit = 100) => api.get<LabelPrintJob[]>('/labels/print-jobs', { params: { limit } }),
 };
 
