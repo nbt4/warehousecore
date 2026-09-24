@@ -84,6 +84,7 @@ type Product struct {
 
 	// Joined fields for display
 	WebsiteVisible   bool     `json:"website_visible"`
+	WebsiteFeatured  bool     `json:"website_featured"`
 	WebsiteImages    []string `json:"website_images,omitempty"`
 	WebsiteThumbnail *string  `json:"website_thumbnail,omitempty"`
 
@@ -155,6 +156,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			p.ean,
 			p.attributes,
 			COALESCE(p.website_visible, false) as website_visible,
+			COALESCE(p.website_featured, false) as website_featured,
 			p.website_thumbnail,
 			p.website_images_json,
 			c.name as category_name,
@@ -273,6 +275,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			&p.EAN,
 			&rawAttributes,
 			&p.WebsiteVisible,
+			&p.WebsiteFeatured,
 			&p.WebsiteThumbnail,
 			&rawImages,
 			&p.CategoryName,
@@ -343,6 +346,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			p.ean,
 			p.attributes,
 			COALESCE(p.website_visible, false) as website_visible,
+			COALESCE(p.website_featured, false) as website_featured,
 			p.website_thumbnail,
 			p.website_images_json,
 			c.name as category_name,
@@ -400,6 +404,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		&p.EAN,
 		&rawAttributes,
 		&p.WebsiteVisible,
+		&p.WebsiteFeatured,
 		&p.WebsiteThumbnail,
 		&rawImages,
 		&p.CategoryName,
@@ -1312,7 +1317,7 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 
 	result, err := tx.Exec(`
 		UPDATE products
-		SET lifecycle_status = 'archived', website_visible = FALSE, updated_at = CURRENT_TIMESTAMP
+		SET lifecycle_status = 'archived', website_visible = FALSE, website_featured = FALSE, updated_at = CURRENT_TIMESTAMP
 		WHERE productID = $1
 	`, id)
 	if err != nil {
@@ -1723,6 +1728,7 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 
 	var payload struct {
 		WebsiteVisible   *bool    `json:"website_visible"`
+		WebsiteFeatured  *bool    `json:"website_featured"`
 		WebsiteImages    []string `json:"website_images"`
 		WebsiteThumbnail *string  `json:"website_thumbnail"`
 	}
@@ -1764,13 +1770,23 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	websiteFeatured := false
+	if payload.WebsiteFeatured != nil {
+		websiteFeatured = *payload.WebsiteFeatured
+	} else if err := repository.GetSQLDB().QueryRow("SELECT website_featured FROM products WHERE productID = $1", id).Scan(&websiteFeatured); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load featured status"})
+		return
+	}
+	if !websiteVisible {
+		websiteFeatured = false
+	}
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec(`
 		UPDATE products
-		SET website_visible = $1, website_thumbnail = $2, website_images_json = $3
-		WHERE productID = $4
-	`, websiteVisible, filteredThumb, nullJSONFromSlice(filteredImages), id)
+		SET website_visible = $1, website_thumbnail = $2, website_images_json = $3, website_featured = $4, updated_at = CURRENT_TIMESTAMP
+		WHERE productID = $5
+	`, websiteVisible, filteredThumb, nullJSONFromSlice(filteredImages), websiteFeatured, id)
 	if err != nil {
 		log.Printf("[WEBSITE] Failed to update product %d: %v", id, err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
@@ -1793,6 +1809,7 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message":           "Website settings updated",
 		"website_visible":   websiteVisible,
+		"website_featured":  websiteFeatured,
 		"website_thumbnail": filteredThumb,
 		"website_images":    filteredImages,
 	})
@@ -1804,6 +1821,7 @@ func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
 
 type WebsiteProduct struct {
 	ProductID    int      `json:"product_id"`
+	Featured     bool     `json:"website_featured"`
 	Name         string   `json:"name"`
 	Brand        *string  `json:"brand,omitempty"`
 	Category     *string  `json:"category,omitempty"`
@@ -1818,7 +1836,7 @@ type WebsiteProduct struct {
 func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	rows, err := db.Query(`
-		SELECT p.productID, p.name, b.name as brand_name, p.description, p.price_per_unit, p.website_thumbnail, p.website_images_json,
+		SELECT p.productID, p.name, b.name as brand_name, p.description, p.price_per_unit, p.website_thumbnail, p.website_images_json, p.website_featured,
 			c.name as category_name, sc.name as subcategory_name
 		FROM products p
 		LEFT JOIN brands b ON p.brandID = b.brandID
@@ -1849,7 +1867,7 @@ func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 			p       WebsiteProduct
 			rawImgs sql.NullString
 		)
-		if err := rows.Scan(&p.ProductID, &p.Name, &p.Brand, &p.Description, &p.PricePerUnit, &p.Thumbnail, &rawImgs, &p.Category, &p.Subcategory); err != nil {
+		if err := rows.Scan(&p.ProductID, &p.Name, &p.Brand, &p.Description, &p.PricePerUnit, &p.Thumbnail, &rawImgs, &p.Featured, &p.Category, &p.Subcategory); err != nil {
 			log.Printf("[WEBSITE] Failed to scan product: %v", err)
 			continue
 		}

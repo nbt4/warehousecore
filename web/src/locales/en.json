@@ -223,6 +223,11 @@
     "productsTitle": "Product Catalog",
     "productsSubtitle": "Manage product definitions and rental metadata.",
     "cablesTitle": "Cable Catalog",
-    "cablesSubtitle": "Manage cable products, stock levels, and individual codes."
+    "cablesSubtitle": "Manage cable products, stock levels, and individual codes.",
+    "featuredOnWebsite": "Feature on homepage",
+    "featuredHelp": "This product also stays in the rental catalog. Select ‘Save website’ to apply changes.",
+    "websiteSettingsSaved": "Website settings saved",
+    "websiteSave": "Save website",
+    "websiteSaving": "Saving..."
   }
 }

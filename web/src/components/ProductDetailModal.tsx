@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { X, Package, Ruler, Weight, Zap, Tag, Box, DollarSign, Wrench, Barcode, Info, Image as ImageIcon, UploadCloud, Loader2, Eye, Cpu, MapPin } from 'lucide-react';
 import { ModalPortal } from './ModalPortal';
 import { useBlockBodyScroll } from '../hooks/useBlockBodyScroll';
@@ -36,6 +37,7 @@ export interface ProductDetail {
   count_type_abbreviation?: string;
   device_count?: number;
   website_visible?: boolean;
+  website_featured?: boolean;
   website_thumbnail?: string | null;
   website_images?: string[];
 }
@@ -48,6 +50,7 @@ interface ProductDetailModalProps {
 
 export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailModalProps) {
   useBlockBodyScroll(isOpen);
+  const { t } = useTranslation();
 
   const [pictures, setPictures] = useState<ProductPicture[]>([]);
   const [loadingPictures, setLoadingPictures] = useState(false);
@@ -58,6 +61,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
   const [deleting, setDeleting] = useState<string | null>(null);
   const [lightboxLoading, setLightboxLoading] = useState(false);
   const [websiteVisible, setWebsiteVisible] = useState(false);
+  const [websiteFeatured, setWebsiteFeatured] = useState(false);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [websiteThumbnail, setWebsiteThumbnail] = useState<string | null>(null);
   const [savingWebsite, setSavingWebsite] = useState(false);
@@ -114,6 +118,7 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
     if (isOpen && product) {
       loadPictures();
       setWebsiteVisible(Boolean(product.website_visible));
+      setWebsiteFeatured(Boolean(product.website_featured));
       setSelectedImages(new Set(product.website_images || []));
       setWebsiteThumbnail(product.website_thumbnail || null);
       setWebsiteMessage(null);
@@ -264,10 +269,11 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
     try {
       await productWebsiteApi.update(product.product_id, {
         website_visible: overrideVisible ?? websiteVisible,
+        website_featured: overrideVisible === false ? false : websiteFeatured,
         website_images: images,
         website_thumbnail: websiteThumbnail ?? undefined,
       });
-      setWebsiteMessage('Website-Einstellungen gespeichert');
+      setWebsiteMessage(t('productManagement.websiteSettingsSaved'));
     } catch (error) {
       toast.error('Failed to save website settings' + " " + String(error));
       setPictureError('Website-Einstellungen konnten nicht gespeichert werden.');
@@ -443,12 +449,24 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                     onChange={e => {
                       const next = e.target.checked;
                       setWebsiteVisible(next);
+                      if (!next) setWebsiteFeatured(false);
                       void persistWebsiteSettings(next);
                     }}
                   />
                   Auf Website anzeigen
                 </label>
               </div>
+              <label className="flex min-h-11 items-center gap-3 text-sm text-white cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-accent-red focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-red"
+                  checked={websiteFeatured && websiteVisible}
+                  disabled={!websiteVisible || savingWebsite}
+                  onChange={e => { setWebsiteFeatured(e.target.checked); setWebsiteMessage(null); }}
+                />
+                {t('productManagement.featuredOnWebsite')}
+              </label>
+              <p className="text-sm text-gray-400">{t('productManagement.featuredHelp')}</p>
               {pictures.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-sm text-gray-400">Bilder auswählen und Thumbnail festlegen:</p>
@@ -493,20 +511,20 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                       </div>
                     ))}
                   </div>
-                  <div className="flex items-center justify-end gap-3">
-                    {websiteMessage && <span className="text-xs text-green-400">{websiteMessage}</span>}
-                    <button
-                      onClick={handleSaveWebsite}
-                      disabled={savingWebsite}
-                      className="px-4 py-2 rounded-lg bg-accent-red text-white text-sm font-semibold hover:bg-accent-red/90 transition disabled:opacity-60"
-                    >
-                      {savingWebsite ? 'Speichert...' : 'Website speichern'}
-                    </button>
-                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-gray-400">Keine Bilder vorhanden. Bitte zuerst Bilder hochladen.</p>
               )}
+              <div className="flex items-center justify-end gap-3">
+                {websiteMessage && <span role="status" className="text-xs text-green-400">{websiteMessage}</span>}
+                <button
+                  onClick={handleSaveWebsite}
+                  disabled={savingWebsite}
+                  className="min-h-11 px-4 py-2 rounded-lg bg-accent-red text-white text-sm font-semibold hover:bg-accent-red/90 transition disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-red"
+                >
+                  {savingWebsite ? t('productManagement.websiteSaving') : t('productManagement.websiteSave')}
+                </button>
+              </div>
             </div>
 
             {/* Type Badges */}

@@ -223,6 +223,11 @@
     "productsTitle": "Produktkatalog",
     "productsSubtitle": "Produktstammdaten verwalten.",
     "cablesTitle": "Kabelverwaltung",
-    "cablesSubtitle": "Kabelprodukte, Lagerbestände und Einzelcodes verwalten."
+    "cablesSubtitle": "Kabelprodukte, Lagerbestände und Einzelcodes verwalten.",
+    "featuredOnWebsite": "Auf der Startseite hervorheben",
+    "featuredHelp": "Das Produkt bleibt zusätzlich im Mietpark. Änderungen mit „Website speichern“ übernehmen.",
+    "websiteSettingsSaved": "Website-Einstellungen gespeichert",
+    "websiteSave": "Website speichern",
+    "websiteSaving": "Speichert..."
   }
 }

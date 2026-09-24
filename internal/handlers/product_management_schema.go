@@ -32,6 +32,7 @@ func EnsureProductManagementSchema() error {
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE (user_id, operation, key_hash)
 		)`,
+		`ALTER TABLE products ADD COLUMN IF NOT EXISTS website_featured BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(20)`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS tracking_mode VARCHAR(20)`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20)`,

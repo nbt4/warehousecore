@@ -1267,6 +1267,7 @@ export const productWebsiteApi = {
     productId: number,
     payload: {
       website_visible: boolean;
+      website_featured: boolean;
       website_images: string[];
       website_thumbnail?: string | null;
     },
