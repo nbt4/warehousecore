@@ -1,5 +1,14 @@
 # WarehouseCore
 
+## Release 5.9.83 – Startseiten-Hervorhebung
+
+Freigegebene Mietparkprodukte können im Produktdialog zusätzlich auf der
+Tsunami-Startseite angepinnt werden. `website_featured` wird im öffentlichen
+Produktfeed nur für ohnehin sichtbare und aktive Produkte ausgegeben.
+Archivieren oder Ausblenden entfernt die Hervorhebung. Die idempotente
+Migration `046_website_featured.sql` ergänzt die Spalte; der Start-Upgrader
+holt sie auch bei bestehenden Installationen nach.
+
 ## Release 5.9.82 – Geführte Produktänderung
 
 `PUT /api/v1/admin/products/{id}` unterstützt für MCP/KI-Aufrufe nun die
