@@ -1,5 +1,18 @@
 # WarehouseCore
 
+## Release 5.9.82 – Geführte Produktänderung
+
+`PUT /api/v1/admin/products/{id}` unterstützt für MCP/KI-Aufrufe nun die
+exakte `expectedUpdatedAt`-Version und einen dauerhaften Idempotenzschlüssel.
+Die Änderung sperrt das Produkt während der Transaktion; Produktdaten,
+Audit-Herkunft und Wiederholungsbeleg werden zusammen gespeichert oder
+zurückgerollt. Bestehende UI-Aufrufe bleiben ohne die zusätzlichen Felder
+möglich. Ein leerer generischer Barcode entfernt nun den bisherigen Wert.
+`migrations/045_product_mcp_idempotency.sql` dokumentiert die neue Tabelle;
+der Start-Upgrader legt sie auch ohne historische SQL-Migration an. Der
+PostgreSQL-Integrationstest läuft mit
+`WAREHOUSE_TEST_DATABASE_URL=postgres://.../warehouse_product_test go test ./internal/handlers`.
+
 ## Release 5.9.81 – A4-Etikettenbögen und individuelle Stückzahlen
 
 Das Druckcenter kann ausgewählte Labels nun mit einer eigenen Kopienzahl je

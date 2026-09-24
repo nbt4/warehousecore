@@ -1056,11 +1056,15 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	db := repository.GetSQLDB()
 
-	var req Product
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var input struct {
+		Product
+		ExpectedUpdatedAt string `json:"expectedUpdatedAt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
+	req := input.Product
 	if err := normalizeProductRequest(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -1078,12 +1082,27 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	input.Product = req
+	receiptID, replay, err := beginWarehouseProductMutation(tx, r, id, input)
+	if err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
+	if replay != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(replay)
+		return
+	}
+
 	var existingTracking, existingLifecycle, oldValues string
+	var currentVersion string
 	var currentStock float64
 	err = tx.QueryRow(`
-		SELECT tracking_mode, lifecycle_status, COALESCE(stock_quantity, 0), row_to_json(p)::text
-		FROM products p WHERE productid = $1
-	`, id).Scan(&existingTracking, &existingLifecycle, &currentStock, &oldValues)
+		SELECT tracking_mode, lifecycle_status, COALESCE(stock_quantity, 0), row_to_json(p)::text,
+			to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+		FROM products p WHERE productid = $1 FOR UPDATE
+	`, id).Scan(&existingTracking, &existingLifecycle, &currentStock, &oldValues, &currentVersion)
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 		return
@@ -1091,6 +1110,14 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Failed to load product before update: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
+		return
+	}
+	if isWarehouseMCPMutation(r) && strings.TrimSpace(input.ExpectedUpdatedAt) == "" {
+		respondWarehouseMutationError(w, &warehouseMutationError{http.StatusPreconditionRequired, "version_required", "expectedUpdatedAt is required for MCP product updates"})
+		return
+	}
+	if input.ExpectedUpdatedAt != "" && strings.TrimSpace(input.ExpectedUpdatedAt) != currentVersion {
+		respondWarehouseMutationError(w, &warehouseMutationError{http.StatusConflict, "stale_version", "Product changed after preparation; prepare the update again"})
 		return
 	}
 	req.LifecycleStatus = existingLifecycle
@@ -1131,7 +1158,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 			itemcostperday = $9, weight = $10, height = $11, width = $12, depth = $13,
 			powerconsumption = $14, pos_in_category = $15,
 			is_accessory = $16, is_consumable = $17, count_type_id = $18,
-			min_stock_level = $19, generic_barcode = COALESCE($20,generic_barcode), price_per_unit = $21,
+			min_stock_level = $19, generic_barcode = $20, price_per_unit = $21,
 			product_type = $22, tracking_mode = $23, product_kind=$24, model_number=$25,
 			manufacturer_part_number=$26, ean=$27, attributes=COALESCE($28::jsonb,attributes), updated_at = CURRENT_TIMESTAMP
 		WHERE productID = $29
@@ -1218,8 +1245,22 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := recordProductAudit(tx, r, "product.update", id, json.RawMessage(oldValues), req); err != nil {
+	var auditAfter any = req
+	if isWarehouseMCPMutation(r) {
+		auditAfter = map[string]any{"origin": "MCP/AI", "after": req}
+	}
+	if err := recordProductAudit(tx, r, "product.update", id, json.RawMessage(oldValues), auditAfter); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	var storedVersion string
+	if err := tx.QueryRow(`SELECT to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM products WHERE productid=$1`, id).Scan(&storedVersion); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to read updated product version"})
+		return
+	}
+	response := map[string]any{"message": "Product updated successfully", "product_id": id, "updated_at": storedVersion}
+	if err := completeWarehouseProductMutation(tx, receiptID, response); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to store update receipt"})
 		return
 	}
 
@@ -1231,7 +1272,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	websiteRevalidator.Revalidate("/products")
 
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Product updated successfully"})
+	respondJSON(w, http.StatusOK, response)
 }
 
 // DeleteProduct archives a product and all of its currently active devices.

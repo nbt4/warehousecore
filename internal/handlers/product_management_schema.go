@@ -21,6 +21,17 @@ func EnsureProductManagementSchema() error {
 	defer tx.Rollback()
 
 	statements := []string{
+		`CREATE TABLE IF NOT EXISTS warehouse_product_mutation_receipts (
+			id BIGSERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			operation VARCHAR(80) NOT NULL,
+			key_hash CHAR(64) NOT NULL,
+			request_hash CHAR(64) NOT NULL,
+			response JSONB NOT NULL DEFAULT '{}'::jsonb,
+			status_code INTEGER NOT NULL DEFAULT 200,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (user_id, operation, key_hash)
+		)`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type VARCHAR(20)`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS tracking_mode VARCHAR(20)`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20)`,
@@ -130,6 +141,9 @@ func EnsureProductManagementSchema() error {
 		 FOR EACH ROW EXECUTE FUNCTION sync_product_stock_from_locations()`,
 		`INSERT INTO warehouse_schema_migrations (version)
 		 VALUES ('037_product_management_safety')
+		 ON CONFLICT (version) DO NOTHING`,
+		`INSERT INTO warehouse_schema_migrations (version)
+		 VALUES ('045_product_mcp_idempotency')
 		 ON CONFLICT (version) DO NOTHING`,
 	}
 
