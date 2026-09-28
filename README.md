@@ -1,5 +1,15 @@
 # WarehouseCore
 
+## Release 5.9.85 – Geschützter Produktlebenszyklus
+
+Die Produktarchivierung prüft unter Datensatzsperre offene Jobanforderungen und
+gepackte oder ausgegebene Geräte und blockiert den Wechsel bei aktiver Nutzung.
+MCP/KI-Aufrufe für Archivierung und Wiederherstellung benötigen jetzt die exakte
+Produktversion und einen Idempotenzschlüssel. Produktstatus, betroffene Geräte,
+Inventarkennungen, Audit-Herkunft `MCP/AI` und Wiederholungsbeleg werden in einer
+Transaktion gespeichert. Der Integrationstest nutzt
+`WAREHOUSE_TEST_DATABASE_URL=postgres://.../warehouse_test go test ./internal/handlers`.
+
 ## Release 5.9.84 – Idempotente MCP-Produktanlage
 
 `POST /api/v1/admin/products` speichert MCP/KI-Anlagen nun mit demselben

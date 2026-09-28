@@ -1317,14 +1317,36 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	var productName, oldStatus string
-	err = tx.QueryRow("SELECT name, lifecycle_status FROM products WHERE productID = $1 FOR UPDATE", id).Scan(&productName, &oldStatus)
+	var productName, oldStatus, version string
+	err = tx.QueryRow(`SELECT name, lifecycle_status, to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM products WHERE productID = $1 FOR UPDATE`, id).Scan(&productName, &oldStatus, &version)
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 		return
 	} else if err != nil {
 		log.Printf("Failed to query product: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch product"})
+		return
+	}
+	receiptID, replay, err := beginProductLifecycleMutation(tx, r, "product.archive", id, version)
+	if err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
+	if replay != nil {
+		respondJSON(w, http.StatusOK, replay)
+		return
+	}
+	if oldStatus != "active" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Only active products can be archived"})
+		return
+	}
+	openRequirements, packedDevices, err := productArchiveDependencies(tx, id)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to check product job dependencies"})
+		return
+	}
+	if openRequirements > 0 || packedDevices > 0 {
+		respondJSON(w, http.StatusConflict, map[string]interface{}{"error": "Product is used by open job requirements or packed devices", "open_job_requirements": openRequirements, "packed_or_issued_devices": packedDevices})
 		return
 	}
 
@@ -1367,11 +1389,22 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := recordProductAudit(tx, r, "product.archive", id,
-		map[string]interface{}{"lifecycle_status": oldStatus},
-		map[string]interface{}{"lifecycle_status": "archived", "website_visible": false, "archived_devices": deviceCount},
-	); err != nil {
+	auditAfter := map[string]interface{}{"lifecycle_status": "archived", "website_visible": false, "archived_devices": deviceCount}
+	if isWarehouseMCPMutation(r) {
+		auditAfter["origin"] = "MCP/AI"
+	}
+	if err := recordProductAudit(tx, r, "product.archive", id, map[string]interface{}{"lifecycle_status": oldStatus}, auditAfter); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	var storedVersion string
+	if err := tx.QueryRow(`SELECT to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM products WHERE productid=$1`, id).Scan(&storedVersion); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to read archived product version"})
+		return
+	}
+	response := map[string]interface{}{"message": "Product archived successfully", "product_id": id, "archived_devices": deviceCount, "updated_at": storedVersion}
+	if err := completeWarehouseProductMutation(tx, receiptID, http.StatusOK, response); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to store archive receipt"})
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -1382,10 +1415,7 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[PRODUCT ARCHIVE] Archived product %d (%s) and %d active device(s)", id, productName, deviceCount)
 	websiteRevalidator.Revalidate("/products")
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":          "Product archived successfully",
-		"archived_devices": deviceCount,
-	})
+	respondJSON(w, http.StatusOK, response)
 }
 
 // RestoreProduct reactivates an archived product.
@@ -1401,6 +1431,27 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	var oldStatus, version string
+	if err := tx.QueryRow(`SELECT lifecycle_status,to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM products WHERE productid=$1 FOR UPDATE`, id).Scan(&oldStatus, &version); err == sql.ErrNoRows {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
+		return
+	} else if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch product"})
+		return
+	}
+	receiptID, replay, err := beginProductLifecycleMutation(tx, r, "product.restore", id, version)
+	if err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
+	if replay != nil {
+		respondJSON(w, http.StatusOK, replay)
+		return
+	}
+	if oldStatus != "archived" {
+		respondJSON(w, http.StatusConflict, map[string]string{"error": "Only archived products can be restored"})
+		return
+	}
 	result, err := tx.Exec(`UPDATE products SET lifecycle_status = 'active', updated_at = CURRENT_TIMESTAMP WHERE productid = $1`, id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to restore product"})
@@ -1422,11 +1473,22 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to enable restored inventory identifiers"})
 		return
 	}
-	if err := recordProductAudit(tx, r, "product.restore", id,
-		map[string]interface{}{"lifecycle_status": "archived"},
-		map[string]interface{}{"lifecycle_status": "active", "restored_devices": restoredDevices},
-	); err != nil {
+	auditAfter := map[string]interface{}{"lifecycle_status": "active", "restored_devices": restoredDevices}
+	if isWarehouseMCPMutation(r) {
+		auditAfter["origin"] = "MCP/AI"
+	}
+	if err := recordProductAudit(tx, r, "product.restore", id, map[string]interface{}{"lifecycle_status": "archived"}, auditAfter); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	var storedVersion string
+	if err := tx.QueryRow(`SELECT to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM products WHERE productid=$1`, id).Scan(&storedVersion); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to read restored product version"})
+		return
+	}
+	response := map[string]interface{}{"message": "Product restored successfully", "product_id": id, "restored_devices": restoredDevices, "updated_at": storedVersion}
+	if err := completeWarehouseProductMutation(tx, receiptID, http.StatusOK, response); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to store restore receipt"})
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -1434,7 +1496,7 @@ func RestoreProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	websiteRevalidator.Revalidate("/products")
-	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Product restored successfully", "restored_devices": restoredDevices})
+	respondJSON(w, http.StatusOK, response)
 }
 
 // PermanentlyDeleteProduct irreversibly removes an archived product and its archived devices.
