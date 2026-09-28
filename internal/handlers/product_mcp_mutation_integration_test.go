@@ -54,7 +54,7 @@ func TestWarehouseProductMCPUpdateVersionReceiptAndRollback(t *testing.T) {
 			is_accessory BOOLEAN, is_consumable BOOLEAN, count_type_id INT, stock_quantity FLOAT8, min_stock_level FLOAT8,
 			generic_barcode TEXT, price_per_unit FLOAT8, product_type TEXT, tracking_mode TEXT, lifecycle_status TEXT,
 			product_kind TEXT, model_number TEXT, manufacturer_part_number TEXT, ean TEXT, attributes JSONB,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, product_code TEXT NOT NULL DEFAULT 'PRD-TEST')`,
 		`CREATE TABLE audit_log (id BIGSERIAL PRIMARY KEY, user_id BIGINT, action TEXT, entity_type TEXT, entity_id TEXT, old_values JSONB, new_values JSONB, ip_address TEXT, user_agent TEXT)`,
 		`CREATE TABLE warehouse_product_mutation_receipts (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL, operation VARCHAR(80) NOT NULL, key_hash CHAR(64) NOT NULL, request_hash CHAR(64) NOT NULL, response JSONB NOT NULL DEFAULT '{}'::jsonb, status_code INTEGER NOT NULL DEFAULT 200, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id,operation,key_hash))`,
 		`INSERT INTO products(name,product_type,tracking_mode,lifecycle_status,product_kind,generic_barcode,attributes,updated_at) VALUES ('Mixer','equipment','individual','active','standard','MIX-001','{"ports":4}','2026-09-24T08:00:00.123456')`,
@@ -123,6 +123,47 @@ func TestWarehouseProductMCPUpdateVersionReceiptAndRollback(t *testing.T) {
 		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil || count != want {
 			t.Fatalf("%s count=%d want=%d: %v", table, count, want, err)
 		}
+	}
+	create := func(name, key string) *httptest.ResponseRecorder {
+		body, err := json.Marshal(map[string]any{"name": name, "product_type": "equipment", "tracking_mode": "individual", "product_kind": "standard", "generic_barcode": "MIX-NEW"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/admin/products", bytes.NewReader(body))
+		r = r.WithContext(context.WithValue(r.Context(), middleware.UserContextKey, &models.User{UserID: 11, Username: "tester", IsAdmin: true}))
+		r.Header.Set("X-Cores-Origin", "MCP/AI")
+		r.Header.Set("Idempotency-Key", key)
+		w := httptest.NewRecorder()
+		CreateProduct(w, r)
+		return w
+	}
+	created := create("Second Mixer", "product-create-test-001")
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	if replay := create("Second Mixer", "product-create-test-001"); replay.Code != http.StatusCreated {
+		t.Fatalf("create replay: %d %s", replay.Code, replay.Body.String())
+	} else {
+		var original, repeated map[string]any
+		if err := json.Unmarshal(created.Body.Bytes(), &original); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(replay.Body.Bytes(), &repeated); err != nil {
+			t.Fatal(err)
+		}
+		if original["product_id"] != repeated["product_id"] {
+			t.Fatalf("create replay changed product: %#v %#v", original, repeated)
+		}
+	}
+	if conflict := create("Different Mixer", "product-create-test-001"); conflict.Code != http.StatusConflict {
+		t.Fatalf("create key accepted changed input: %d %s", conflict.Code, conflict.Body.String())
+	}
+	var createdCount int
+	if err := db.QueryRow("SELECT count(*) FROM products WHERE name='Second Mixer'").Scan(&createdCount); err != nil || createdCount != 1 {
+		t.Fatalf("created products=%d err=%v", createdCount, err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM audit_log WHERE action='product.create' AND new_values->>'origin'='MCP/AI'").Scan(&createdCount); err != nil || createdCount != 1 {
+		t.Fatalf("create audit=%d err=%v", createdCount, err)
 	}
 	if _, err := db.Exec("DROP TABLE audit_log"); err != nil {
 		t.Fatal(err)

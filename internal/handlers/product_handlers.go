@@ -823,7 +823,9 @@ func normalizeProductRequest(req *Product) error {
 	return nil
 }
 
-func validateProductRelations(db *sql.DB, req *Product, productID int) error {
+func validateProductRelations(db interface {
+	QueryRow(string, ...interface{}) *sql.Row
+}, req *Product, productID int) error {
 	var exists bool
 	if err := db.QueryRow(`SELECT EXISTS (
 		SELECT 1 FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) AND productid <> $2
@@ -934,18 +936,29 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := repository.GetSQLDB()
-	if err := validateProductRelations(db, &req, 0); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
 	tx, err := db.Begin()
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
 		return
 	}
 	defer tx.Rollback()
+	receiptID, replay, err := beginWarehouseProductMutation(tx, r, "product_create", req)
+	if err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
+	if replay != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(replay)
+		return
+	}
 	if err := resolveProductMasterInputs(tx, r, &req); err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := validateProductRelations(tx, &req, 0); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if len(req.Attributes) == 0 {
@@ -1037,8 +1050,16 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	if req.TrackingMode == "quantity" {
 		req.StockQuantity = &initialStock
 	}
-	if err := recordProductAudit(tx, r, "product.create", int(id), nil, req); err != nil {
+	var auditAfter any = req
+	if isWarehouseMCPMutation(r) {
+		auditAfter = map[string]any{"origin": "MCP/AI", "after": req}
+	}
+	if err := recordProductAudit(tx, r, "product.create", int(id), nil, auditAfter); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+		return
+	}
+	if err := completeWarehouseProductMutation(tx, receiptID, http.StatusCreated, req); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to store create receipt"})
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -1074,11 +1095,6 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := validateProductRelations(db, &req, id); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
 	tx, err := db.Begin()
 	if err != nil {
 		log.Printf("Failed to start product update transaction: %v", err)
@@ -1088,7 +1104,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	input.Product = req
-	receiptID, replay, err := beginWarehouseProductMutation(tx, r, id, input)
+	receiptID, replay, err := beginWarehouseProductMutation(tx, r, fmt.Sprintf("product_update:%d", id), input)
 	if err != nil {
 		respondWarehouseMutationError(w, err)
 		return
@@ -1123,6 +1139,10 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.ExpectedUpdatedAt != "" && strings.TrimSpace(input.ExpectedUpdatedAt) != currentVersion {
 		respondWarehouseMutationError(w, &warehouseMutationError{http.StatusConflict, "stale_version", "Product changed after preparation; prepare the update again"})
+		return
+	}
+	if err := validateProductRelations(tx, &req, id); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	req.LifecycleStatus = existingLifecycle
@@ -1264,7 +1284,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := map[string]any{"message": "Product updated successfully", "product_id": id, "updated_at": storedVersion}
-	if err := completeWarehouseProductMutation(tx, receiptID, response); err != nil {
+	if err := completeWarehouseProductMutation(tx, receiptID, http.StatusOK, response); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to store update receipt"})
 		return
 	}

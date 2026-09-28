@@ -145,6 +145,9 @@ func recordMasterDataAudit(tx *sql.Tx, r *http.Request, entityType string, entit
 	if user, ok := middleware.GetUserFromContext(r); ok {
 		userID = user.UserID
 	}
+	if isWarehouseMCPMutation(r) {
+		values = map[string]any{"origin": "MCP/AI", "after": values}
+	}
 	encoded, _ := json.Marshal(values)
 	ipAddress := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {

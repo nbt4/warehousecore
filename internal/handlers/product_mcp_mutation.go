@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -27,12 +26,12 @@ func isWarehouseMCPMutation(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Cores-Origin")), "MCP/AI")
 }
 
-func beginWarehouseProductMutation(tx *sql.Tx, r *http.Request, productID int, payload any) (int64, json.RawMessage, error) {
+func beginWarehouseProductMutation(tx *sql.Tx, r *http.Request, operation string, payload any) (int64, json.RawMessage, error) {
 	if !isWarehouseMCPMutation(r) {
 		return 0, nil, nil
 	}
 	user, ok := middleware.GetUserFromContext(r)
-	if !ok || user == nil {
+	if !ok || user == nil || user.UserID == 0 {
 		return 0, nil, &warehouseMutationError{http.StatusUnauthorized, "user_required", "A signed-in suite user is required"}
 	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -45,7 +44,6 @@ func beginWarehouseProductMutation(tx *sql.Tx, r *http.Request, productID int, p
 	}
 	keyDigest := sha256.Sum256([]byte(key))
 	requestDigest := sha256.Sum256(encoded)
-	operation := fmt.Sprintf("product_update:%d", productID)
 	keyHash := hex.EncodeToString(keyDigest[:])
 	requestHash := hex.EncodeToString(requestDigest[:])
 	var id int64
@@ -69,7 +67,7 @@ func beginWarehouseProductMutation(tx *sql.Tx, r *http.Request, productID int, p
 	return 0, response, nil
 }
 
-func completeWarehouseProductMutation(tx *sql.Tx, receiptID int64, response any) error {
+func completeWarehouseProductMutation(tx *sql.Tx, receiptID int64, status int, response any) error {
 	if receiptID == 0 {
 		return nil
 	}
@@ -77,7 +75,7 @@ func completeWarehouseProductMutation(tx *sql.Tx, receiptID int64, response any)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`UPDATE warehouse_product_mutation_receipts SET response=$1::jsonb,status_code=200 WHERE id=$2`, string(encoded), receiptID)
+	_, err = tx.Exec(`UPDATE warehouse_product_mutation_receipts SET response=$1::jsonb,status_code=$3 WHERE id=$2`, string(encoded), receiptID, status)
 	return err
 }
 

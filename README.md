@@ -1,5 +1,16 @@
 # WarehouseCore
 
+## Release 5.9.84 – Idempotente MCP-Produktanlage
+
+`POST /api/v1/admin/products` speichert MCP/KI-Anlagen nun mit demselben
+dauerhaften Idempotenzbeleg wie Produktänderungen. Wiederholte Anfragen mit
+demselben Schlüssel liefern dieselben Produkt- und Geräte-IDs; abweichende
+Eingaben mit einem bereits verwendeten Schlüssel werden abgewiesen.
+Aufgelöste oder neu angelegte Stammdaten, Produkt, Bestand, Geräte, Audit mit
+Herkunft `MCP/AI` und Wiederholungsbeleg werden in einer Transaktion gespeichert.
+Der PostgreSQL-Integrationstest prüft Anlage, Replay, Konflikte und Update mit
+`WAREHOUSE_TEST_DATABASE_URL=postgres://.../warehouse_test go test ./internal/handlers`.
+
 ## Release 5.9.83 – Startseiten-Hervorhebung
 
 Freigegebene Mietparkprodukte können im Produktdialog zusätzlich auf der
