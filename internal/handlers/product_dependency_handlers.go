@@ -76,6 +76,10 @@ func CreateProductDependency(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
+	if isWarehouseMCPMutation(r) {
+		createProductDependencyMCP(w, r, productID, req)
+		return
+	}
 
 	// Any active product can participate in a typed relationship. This covers
 	// alternatives and compatibility in addition to classic accessories.

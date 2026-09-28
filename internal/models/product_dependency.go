@@ -43,4 +43,5 @@ type CreateProductDependencyRequest struct {
 	AssignmentScope     string  `json:"assignment_scope"`
 	DefaultQuantity     float64 `json:"default_quantity"`
 	Notes               *string `json:"notes,omitempty"`
+	ExpectedUpdatedAt   string  `json:"expectedUpdatedAt,omitempty"`
 }

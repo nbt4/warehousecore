@@ -1,5 +1,14 @@
 # WarehouseCore
 
+## Release 5.9.86 – Versionierte MCP-Produktbeziehungen
+
+`POST /api/v1/admin/products/{id}/dependencies` prüft für MCP/KI-Aufrufe
+beide aktiven Produkte und die exakte Quellproduktversion. Die typisierte
+Beziehung wird mit Produktversion, Audit-Herkunft `MCP/AI` und dauerhaftem
+Idempotenzbeleg atomar angelegt oder geändert. Unveränderte Beziehungen und
+veraltete Vorschauen werden abgewiesen. Der PostgreSQL-Integrationstest prüft
+Anlage, Änderung, Replay, Versionskonflikt und Audit.
+
 ## Release 5.9.85 – Geschützter Produktlebenszyklus
 
 Die Produktarchivierung prüft unter Datensatzsperre offene Jobanforderungen und
