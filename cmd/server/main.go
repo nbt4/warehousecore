@@ -269,7 +269,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.87")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.88")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -480,6 +480,7 @@ func main() {
 	admin := api.PathPrefix("/admin").Subrouter()
 	admin.Use(middleware.AuthMiddleware)
 	admin.Use(middleware.RequireAdmin)
+	admin.HandleFunc("/warehouse/locations", handlers.CreateWarehouseLocation).Methods("POST")
 	admin.HandleFunc("/zone-types", handlers.CreateZoneType).Methods("POST")
 	admin.HandleFunc("/zone-types/{id}", handlers.UpdateZoneType).Methods("PUT")
 	admin.HandleFunc("/zone-types/{id}", handlers.DeleteZoneType).Methods("DELETE")

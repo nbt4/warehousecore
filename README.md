@@ -1,5 +1,12 @@
 # WarehouseCore
 
+## Release 5.9.88 – Geführte MCP-Lagerplatzanlage
+
+Der geschützte Admin-Endpunkt `POST /api/v1/admin/warehouse/locations` legt
+einen Lagerplatz mit explizitem Code an. Er prüft Elternknoten und Duplikate;
+Audit mit Herkunft `MCP/AI` und Idempotenzbeleg werden mit dem Datensatz
+transaktional gespeichert. Der bisherige UI-Endpunkt bleibt bestehen.
+
 ## Release 5.9.87 – Eigenständige Kategorieanlage per MCP
 
 Haupt-, Unter- und dritte Kategorien können per MCP unabhängig von einer

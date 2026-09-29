@@ -50,6 +50,7 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 		`CREATE TABLE categories(categoryid SERIAL PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10))`,
 		`CREATE TABLE subcategories(subcategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),categoryid INT REFERENCES categories(categoryid))`,
 		`CREATE TABLE subbiercategories(subbiercategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),subcategoryid VARCHAR(50) REFERENCES subcategories(subcategoryid))`,
+		`CREATE TABLE storage_zones(zone_id SERIAL PRIMARY KEY,code VARCHAR(50) UNIQUE,barcode VARCHAR(255),name VARCHAR(100),type TEXT,description TEXT,parent_zone_id INT REFERENCES storage_zones(zone_id),capacity NUMERIC,is_active BOOLEAN,location_kind TEXT,process_role TEXT,operational_status TEXT,is_storable BOOLEAN,pick_sequence INT,capacity_mode TEXT,max_weight_kg NUMERIC,max_volume_m3 NUMERIC,inventory_frequency_days INT,next_count_at TIMESTAMP)`,
 		`CREATE TABLE audit_log(id BIGSERIAL PRIMARY KEY,user_id BIGINT,action TEXT,entity_type TEXT,entity_id TEXT,old_values JSONB,new_values JSONB,ip_address TEXT,user_agent TEXT)`,
 		`CREATE TABLE warehouse_product_mutation_receipts(id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL,operation VARCHAR(80) NOT NULL,key_hash CHAR(64) NOT NULL,request_hash CHAR(64) NOT NULL,response JSONB NOT NULL DEFAULT '{}'::jsonb,status_code INTEGER NOT NULL DEFAULT 200,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(user_id,operation,key_hash))`,
 	} {
@@ -81,6 +82,8 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 			CreateSubcategory(w, r)
 		case "/api/v1/admin/subbiercategories":
 			CreateSubbiercategory(w, r)
+		case "/api/v1/admin/warehouse/locations":
+			CreateWarehouseLocation(w, r)
 		}
 		return w
 	}
@@ -170,5 +173,31 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts`).Scan(&receipts); err != nil || receipts != 5 {
 		t.Fatalf("master receipts: %d %v", receipts, err)
+	}
+	location := request("/api/v1/admin/warehouse/locations", "location-create-1", map[string]any{"code": "MAIN", "name": "Main Warehouse", "type": "warehouse", "is_storable": true})
+	if location.Code != http.StatusCreated {
+		t.Fatalf("location create: %d %s", location.Code, location.Body.String())
+	}
+	var zone struct {
+		ID int `json:"zone_id"`
+	}
+	if err := json.Unmarshal(location.Body.Bytes(), &zone); err != nil || zone.ID <= 0 {
+		t.Fatalf("location response: %s %v", location.Body.String(), err)
+	}
+	if replay := request("/api/v1/admin/warehouse/locations", "location-create-1", map[string]any{"code": "MAIN", "name": "Main Warehouse", "type": "warehouse", "is_storable": true}); replay.Code != http.StatusCreated {
+		t.Fatalf("location replay: %d %s", replay.Code, replay.Body.String())
+	}
+	if duplicate := request("/api/v1/admin/warehouse/locations", "location-create-2", map[string]any{"code": "main", "name": "Other", "is_storable": true}); duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate location accepted: %d %s", duplicate.Code, duplicate.Body.String())
+	}
+	child := request("/api/v1/admin/warehouse/locations", "location-create-3", map[string]any{"code": "SHELF-A", "name": "Shelf A", "parent_zone_id": zone.ID, "is_storable": true})
+	if child.Code != http.StatusCreated {
+		t.Fatalf("child location create: %d %s", child.Code, child.Body.String())
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE new_values->>'origin'='MCP/AI'`).Scan(&audits); err != nil || audits != 7 {
+		t.Fatalf("location audits: %d %v", audits, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts`).Scan(&receipts); err != nil || receipts != 7 {
+		t.Fatalf("location receipts: %d %v", receipts, err)
 	}
 }

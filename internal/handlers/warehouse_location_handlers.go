@@ -275,6 +275,10 @@ func CreateWarehouseLocation(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if isWarehouseMCPMutation(r) {
+		createWarehouseLocationMCP(w, r, input)
+		return
+	}
 	db := repository.GetSQLDB()
 	if err := validateWarehouseParent(db, 0, input.ParentZoneID); err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
