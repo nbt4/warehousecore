@@ -1,6 +1,13 @@
 # WarehouseCore
 
-## Release 5.9.86 – Versionierte MCP-Produktbeziehungen
+## Release 5.9.86 – MCP-Stammdaten und Produktbeziehungen
+
+Hersteller und Marken lassen sich für MCP/KI jetzt unabhängig von einer
+Produktanlage erstellen. Herstellername und Website werden validiert; eine
+Marke braucht eine vorhandene Hersteller-ID. Namensduplikate werden abgewiesen.
+Anlage, Audit mit Herkunft `MCP/AI` und dauerhafter Idempotenzbeleg sind
+jeweils transaktional. Bei fehlerhaften Typen im Produkt-Update nennt die API
+jetzt das betroffene Feld.
 
 `POST /api/v1/admin/products/{id}/dependencies` prüft für MCP/KI-Aufrufe
 beide aktiven Produkte und die exakte Quellproduktversion. Die typisierte

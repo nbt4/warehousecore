@@ -83,6 +83,10 @@ func CreateBrand(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
+	if isWarehouseMCPMutation(r) {
+		createBrandMCP(w, r, payload.Name, payload.ManufacturerID)
+		return
+	}
 
 	if payload.Name == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Name is required"})
@@ -252,6 +256,10 @@ func CreateManufacturer(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	if isWarehouseMCPMutation(r) {
+		createManufacturerMCP(w, r, payload.Name, payload.Website)
 		return
 	}
 

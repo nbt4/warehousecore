@@ -118,3 +118,13 @@ func TestWarehouseProductMCPRelationVersionAuditAndReplay(t *testing.T) {
 		t.Fatalf("receipts: %d %v", receiptCount, err)
 	}
 }
+
+func TestWarehouseProductUpdateReportsInvalidFieldType(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPut, "/api/v1/admin/products/1", strings.NewReader(`{"item_cost_per_day":"120.00"}`))
+	r = mux.SetURLVars(r, map[string]string{"id": "1"})
+	w := httptest.NewRecorder()
+	UpdateProduct(w, r)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "item_cost_per_day") {
+		t.Fatalf("type error should name rejected field: %d %s", w.Code, w.Body.String())
+	}
+}

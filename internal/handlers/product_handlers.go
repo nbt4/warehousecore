@@ -1087,6 +1087,11 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		ExpectedUpdatedAt string `json:"expectedUpdatedAt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		if typeError, ok := err.(*json.UnmarshalTypeError); ok {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Invalid request body: %s expects %s", typeError.Field, typeError.Type)})
+			return
+		}
+		log.Printf("Failed to decode product update body: %v", err)
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
