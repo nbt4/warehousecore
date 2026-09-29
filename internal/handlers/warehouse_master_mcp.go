@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -154,7 +155,7 @@ func normalizedManufacturerWebsite(raw *string) (*string, bool) {
 	return &value, true
 }
 
-func recordWarehouseMasterAudit(tx *sql.Tx, r *http.Request, entity string, id int, after any) error {
+func recordWarehouseMasterAudit(tx *sql.Tx, r *http.Request, entity string, id any, after any) error {
 	user, _ := middleware.GetUserFromContext(r)
 	if user == nil || user.UserID == 0 {
 		return &warehouseMutationError{http.StatusUnauthorized, "user_required", "A signed-in suite user is required"}
@@ -171,6 +172,6 @@ func recordWarehouseMasterAudit(tx *sql.Tx, r *http.Request, entity string, id i
 		ip = ip[:45]
 	}
 	_, err = tx.Exec(`INSERT INTO audit_log(user_id,action,entity_type,entity_id,old_values,new_values,ip_address,user_agent)
-		VALUES($1,$2,$3,$4,'{}'::jsonb,$5::jsonb,$6,$7)`, user.UserID, entity+".create", entity, strconv.Itoa(id), string(encoded), ip, r.UserAgent())
+		VALUES($1,$2,$3,$4,'{}'::jsonb,$5::jsonb,$6,$7)`, user.UserID, entity+".create", entity, fmt.Sprint(id), string(encoded), ip, r.UserAgent())
 	return err
 }

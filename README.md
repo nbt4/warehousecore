@@ -1,5 +1,13 @@
 # WarehouseCore
 
+## Release 5.9.87 – Eigenständige Kategorieanlage per MCP
+
+Haupt-, Unter- und dritte Kategorien können per MCP unabhängig von einer
+Produktanlage erstellt werden. Die API prüft Namen, Abkürzung, vorhandenen
+Elternknoten und Duplikate innerhalb des Elternknotens. Kategorie, Audit mit
+Herkunft `MCP/AI` und dauerhafter Idempotenzbeleg werden in einer Transaktion
+gespeichert. Wiederholungen mit demselben Schlüssel liefern dieselbe ID.
+
 ## Release 5.9.86 – MCP-Stammdaten und Produktbeziehungen
 
 Hersteller und Marken lassen sich für MCP/KI jetzt unabhängig von einer

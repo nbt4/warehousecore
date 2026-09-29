@@ -18,7 +18,7 @@ import (
 	"warehousecore/internal/repository"
 )
 
-func TestWarehouseMCPStandaloneManufacturerAndBrand(t *testing.T) {
+func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	dsn := os.Getenv("WAREHOUSE_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("set WAREHOUSE_TEST_DATABASE_URL to a disposable _test database")
@@ -47,6 +47,9 @@ func TestWarehouseMCPStandaloneManufacturerAndBrand(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE manufacturer(manufacturerid SERIAL PRIMARY KEY,name VARCHAR(255),website VARCHAR(255))`,
 		`CREATE TABLE brands(brandid SERIAL PRIMARY KEY,name VARCHAR(255),manufacturerid INT REFERENCES manufacturer(manufacturerid))`,
+		`CREATE TABLE categories(categoryid SERIAL PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10))`,
+		`CREATE TABLE subcategories(subcategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),categoryid INT REFERENCES categories(categoryid))`,
+		`CREATE TABLE subbiercategories(subbiercategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),subcategoryid VARCHAR(50) REFERENCES subcategories(subcategoryid))`,
 		`CREATE TABLE audit_log(id BIGSERIAL PRIMARY KEY,user_id BIGINT,action TEXT,entity_type TEXT,entity_id TEXT,old_values JSONB,new_values JSONB,ip_address TEXT,user_agent TEXT)`,
 		`CREATE TABLE warehouse_product_mutation_receipts(id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL,operation VARCHAR(80) NOT NULL,key_hash CHAR(64) NOT NULL,request_hash CHAR(64) NOT NULL,response JSONB NOT NULL DEFAULT '{}'::jsonb,status_code INTEGER NOT NULL DEFAULT 200,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(user_id,operation,key_hash))`,
 	} {
@@ -67,10 +70,17 @@ func TestWarehouseMCPStandaloneManufacturerAndBrand(t *testing.T) {
 		r.Header.Set("X-Cores-Origin", "MCP/AI")
 		r.Header.Set("Idempotency-Key", key)
 		w := httptest.NewRecorder()
-		if path == "/api/v1/admin/manufacturers" {
+		switch path {
+		case "/api/v1/admin/manufacturers":
 			CreateManufacturer(w, r)
-		} else {
+		case "/api/v1/admin/brands":
 			CreateBrand(w, r)
+		case "/api/v1/admin/categories":
+			CreateCategory(w, r)
+		case "/api/v1/admin/subcategories":
+			CreateSubcategory(w, r)
+		case "/api/v1/admin/subbiercategories":
+			CreateSubbiercategory(w, r)
 		}
 		return w
 	}
@@ -112,5 +122,53 @@ func TestWarehouseMCPStandaloneManufacturerAndBrand(t *testing.T) {
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts`).Scan(&receipts); err != nil || receipts != 2 {
 		t.Fatalf("receipts: %d %v", receipts, err)
+	}
+	category := request("/api/v1/admin/categories", "category-create-1", map[string]any{"name": "Lighting", "abbreviation": "LT"})
+	if category.Code != http.StatusCreated {
+		t.Fatalf("category create: %d %s", category.Code, category.Body.String())
+	}
+	var top struct {
+		ID int `json:"category_id"`
+	}
+	if err := json.Unmarshal(category.Body.Bytes(), &top); err != nil || top.ID <= 0 {
+		t.Fatalf("category response: %s %v", category.Body.String(), err)
+	}
+	if duplicate := request("/api/v1/admin/categories", "category-create-2", map[string]any{"name": "lighting", "abbreviation": "LT"}); duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate category accepted: %d %s", duplicate.Code, duplicate.Body.String())
+	}
+	sub := request("/api/v1/admin/subcategories", "subcategory-create-1", map[string]any{"name": "Control", "category_id": top.ID})
+	if sub.Code != http.StatusCreated {
+		t.Fatalf("subcategory create: %d %s", sub.Code, sub.Body.String())
+	}
+	var secondLevel struct {
+		ID string `json:"subcategory_id"`
+	}
+	if err := json.Unmarshal(sub.Body.Bytes(), &secondLevel); err != nil || secondLevel.ID == "" {
+		t.Fatalf("subcategory response: %s %v", sub.Body.String(), err)
+	}
+	if replay := request("/api/v1/admin/subcategories", "subcategory-create-1", map[string]any{"name": "Control", "category_id": top.ID}); replay.Code != http.StatusCreated {
+		t.Fatalf("subcategory replay: %d %s", replay.Code, replay.Body.String())
+	}
+	if conflict := request("/api/v1/admin/subcategories", "subcategory-create-1", map[string]any{"name": "Different", "category_id": top.ID}); conflict.Code != http.StatusConflict {
+		t.Fatalf("subcategory idempotency conflict: %d %s", conflict.Code, conflict.Body.String())
+	}
+	if missingParent := request("/api/v1/admin/subcategories", "subcategory-create-2", map[string]any{"name": "Missing", "category_id": 999999}); missingParent.Code != http.StatusNotFound {
+		t.Fatalf("subcategory missing parent: %d %s", missingParent.Code, missingParent.Body.String())
+	}
+	third := request("/api/v1/admin/subbiercategories", "third-category-create-1", map[string]any{"name": "Network", "subcategory_id": secondLevel.ID})
+	if third.Code != http.StatusCreated {
+		t.Fatalf("third category create: %d %s", third.Code, third.Body.String())
+	}
+	var thirdLevel struct {
+		ID string `json:"subbiercategory_id"`
+	}
+	if err := json.Unmarshal(third.Body.Bytes(), &thirdLevel); err != nil || thirdLevel.ID == "" {
+		t.Fatalf("third category response: %s %v", third.Body.String(), err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE new_values->>'origin'='MCP/AI'`).Scan(&audits); err != nil || audits != 5 {
+		t.Fatalf("master audits: %d %v", audits, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts`).Scan(&receipts); err != nil || receipts != 5 {
+		t.Fatalf("master receipts: %d %v", receipts, err)
 	}
 }

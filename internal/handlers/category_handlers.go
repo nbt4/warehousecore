@@ -63,6 +63,10 @@ func CreateCategory(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
+	if isWarehouseMCPMutation(r) {
+		createWarehouseCategoryMCP(w, r, "category", req.Name, req.Abbreviation, nil)
+		return
+	}
 
 	if req.Name == "" || req.Abbreviation == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Name and abbreviation are required"})
@@ -186,6 +190,10 @@ func CreateSubcategory(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
+	if isWarehouseMCPMutation(r) {
+		createWarehouseCategoryMCP(w, r, "subcategory", req.Name, req.Abbreviation, req.CategoryID)
+		return
+	}
 
 	if req.Name == "" || req.CategoryID == 0 {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Name and category_id are required"})
@@ -298,6 +306,10 @@ func CreateSubbiercategory(w http.ResponseWriter, r *http.Request) {
 	var req Subbiercategory
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	if isWarehouseMCPMutation(r) {
+		createWarehouseCategoryMCP(w, r, "third_category", req.Name, req.Abbreviation, req.SubcategoryID)
 		return
 	}
 
