@@ -26,6 +26,17 @@ var productDependenciesBootstrapStatements = []string{
 	`CREATE INDEX IF NOT EXISTS idx_product_dependencies_dep_product_id ON product_dependencies(dependency_product_id)`,
 }
 
+// Legacy aliases may coexist with user-created translated categories. Preserve
+// both IDs and their references rather than merging or deleting user data.
+const legacyCategoryNormalizationSQL = `
+UPDATE categories SET name='Ton',abbreviation='TON' WHERE LOWER(TRIM(name))='sound' AND NOT EXISTS(SELECT 1 FROM categories WHERE LOWER(TRIM(name))='ton');
+UPDATE categories SET name='Licht',abbreviation='LIC' WHERE LOWER(TRIM(name))='light' AND NOT EXISTS(SELECT 1 FROM categories WHERE LOWER(TRIM(name))='licht');
+UPDATE categories SET name='Bühne',abbreviation='BUE' WHERE LOWER(TRIM(name))='stage' AND NOT EXISTS(SELECT 1 FROM categories WHERE LOWER(TRIM(name))='bühne');
+UPDATE categories SET name='Effekte',abbreviation='EFF' WHERE LOWER(TRIM(name))='effect' AND NOT EXISTS(SELECT 1 FROM categories WHERE LOWER(TRIM(name))='effekte');
+UPDATE categories SET name='IT & Steuerung',abbreviation='ITS' WHERE LOWER(TRIM(name))='assets' AND NOT EXISTS(SELECT 1 FROM categories WHERE LOWER(TRIM(name))='it & steuerung');
+UPDATE categories SET name='Sonstiges',abbreviation='SON' WHERE LOWER(TRIM(name))='other' AND NOT EXISTS(SELECT 1 FROM categories WHERE LOWER(TRIM(name))='sonstiges');
+`
+
 // EnsureProductMasterSchema installs immutable suite-wide inventory codes and
 // the richer product master data model. All statements are intentionally
 // idempotent because WarehouseCore also upgrades installations that skipped
@@ -77,7 +88,8 @@ func EnsureProductMasterSchema() error {
 		`SELECT setval('device_master_code_seq',GREATEST((SELECT COUNT(*) FROM devices),COALESCE((SELECT MAX(SUBSTRING(deviceID FROM 5)::BIGINT) FROM devices WHERE deviceID ~ '^DEV-[0-9]+$'),0),(SELECT last_value FROM device_master_code_seq),1),TRUE)`,
 		`UPDATE cases SET barcode='CAS-' || LPAD(caseID::text, 8, '0') WHERE NULLIF(TRIM(barcode),'') IS NULL`,
 		`SELECT setval('case_master_code_seq',GREATEST(COALESCE((SELECT MAX(caseID) FROM cases),0),COALESCE((SELECT MAX(SUBSTRING(barcode FROM 5)::BIGINT) FROM cases WHERE barcode ~ '^CAS-[0-9]+$'),0),(SELECT last_value FROM case_master_code_seq),1),TRUE)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_brands_name_normalized ON brands(LOWER(TRIM(name)))`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_brands_manufacturer_name_normalized ON brands(manufacturerid,LOWER(TRIM(name))) NULLS NOT DISTINCT`,
+		`DROP INDEX IF EXISTS uq_brands_name_normalized`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_manufacturer_name_normalized ON manufacturer(LOWER(TRIM(name)))`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_name_normalized ON categories(LOWER(TRIM(name)))`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_subcategories_parent_name_normalized ON subcategories(categoryID,LOWER(TRIM(name)))`,
@@ -126,16 +138,9 @@ func EnsureProductMasterSchema() error {
 		`UPDATE cases c SET case_type='fixed' WHERE c.case_type='dynamic' AND EXISTS(SELECT 1 FROM devicescases dc WHERE dc.caseID=c.caseID)`,
 		`INSERT INTO case_content_templates(case_id,product_id,expected_quantity) SELECT dc.caseID,d.productID,COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE d.productID IS NOT NULL GROUP BY dc.caseID,d.productID ON CONFLICT(case_id,product_id) DO NOTHING`,
 		`UPDATE cases c SET workflow_status='complete' WHERE c.workflow_status='empty' AND c.case_type='fixed' AND EXISTS(SELECT 1 FROM devicescases dc WHERE dc.caseID=c.caseID)`,
-		`UPDATE categories SET name='Ton',abbreviation='TON' WHERE LOWER(TRIM(name))='sound'`,
-		`UPDATE categories SET name='Licht',abbreviation='LIC' WHERE LOWER(TRIM(name))='light'`,
-		`UPDATE categories SET name='Bühne',abbreviation='BUE' WHERE LOWER(TRIM(name))='stage'`,
-		`UPDATE categories SET name='Effekte',abbreviation='EFF' WHERE LOWER(TRIM(name))='effect'`,
-		`UPDATE categories SET name='IT & Steuerung',abbreviation='ITS' WHERE LOWER(TRIM(name))='assets'`,
-		`UPDATE categories SET name='Sonstiges',abbreviation='SON' WHERE LOWER(TRIM(name))='other' AND NOT EXISTS(SELECT 1 FROM categories x WHERE LOWER(TRIM(x.name))='sonstiges')`,
-		`DELETE FROM categories c WHERE LOWER(TRIM(c.name))='sonstiges' AND NOT EXISTS(SELECT 1 FROM subcategories s WHERE s.categoryID=c.categoryID) AND EXISTS(SELECT 1 FROM categories x WHERE LOWER(TRIM(x.name))='other')`,
-		`UPDATE categories SET name='Sonstiges',abbreviation='SON' WHERE LOWER(TRIM(name))='other'`,
+		legacyCategoryNormalizationSQL,
 		`DO $$ DECLARE cable_category_id INT; BEGIN INSERT INTO categories(name,abbreviation) VALUES('Kabel & Adapter','KAB') ON CONFLICT DO NOTHING; SELECT categoryID INTO cable_category_id FROM categories WHERE LOWER(TRIM(name))='kabel & adapter' LIMIT 1; INSERT INTO subcategories(subcategoryID,name,abbreviation,categoryID) VALUES ('KAB-AUDIO','Audio','AUD',cable_category_id),('KAB-POWER','Strom','PWR',cable_category_id),('KAB-DATA','Daten','DAT',cable_category_id),('KAB-COMBI','Kombikabel','KOM',cable_category_id) ON CONFLICT(subcategoryID) DO NOTHING; UPDATE products p SET categoryID=cable_category_id,subcategoryID=CASE WHEN LOWER(ct.name) LIKE '%audio%' THEN 'KAB-AUDIO' WHEN LOWER(ct.name) LIKE '%strom%' THEN 'KAB-POWER' WHEN LOWER(ct.name) LIKE '%kombi%' THEN 'KAB-COMBI' ELSE 'KAB-DATA' END FROM cable_products cp JOIN cable_types ct ON ct.cable_typesID=cp.cable_type_id WHERE p.productID=cp.product_id; END $$`,
-		`INSERT INTO warehouse_schema_migrations(version) VALUES('043_product_master_v2') ON CONFLICT(version) DO NOTHING`,
+		`INSERT INTO warehouse_schema_migrations(version) VALUES('043_product_master_v2'),('048_brand_manufacturer_identity') ON CONFLICT(version) DO NOTHING`,
 	}...)
 
 	for _, statement := range statements {

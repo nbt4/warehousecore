@@ -1,5 +1,16 @@
 # WarehouseCore
 
+## Release 5.9.91 – Robuster Stammdatenstart und Markenidentität
+
+Die historische Kategorieübersetzung lässt vorhandene englische und deutsche
+Kategorien mit ihren IDs und Zuordnungen bestehen. Ein Neustart scheitert damit
+nicht an gleichnamigen Übersetzungszielen; Kategorien werden nicht gelöscht.
+Migration `048_brand_manufacturer_identity` gleicht die eindeutige Markenidentität
+an die API an: Name und Hersteller bilden zusammen die Identität. Namen ohne
+Hersteller bleiben ebenfalls eindeutig. Unterschiedliche Hersteller dürfen
+jeweils dieselbe Markenbezeichnung führen. PostgreSQL 15 oder neuer ist nötig;
+der Suite-Stack verwendet PostgreSQL 16.
+
 ## Release 5.9.90 – Versionsgesicherte MCP-Hersteller- und Markenpflege
 
 `PUT /api/v1/admin/manufacturers/{id}` und `/brands/{id}` prüfen für MCP/KI

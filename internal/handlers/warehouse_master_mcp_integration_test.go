@@ -477,4 +477,55 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	}
 	assertStatus(putMaster("manufacturer", created.ManufacturerID, "manufacturer-stale-ui", manufacturerBody, true), http.StatusConflict)
 
+	// Reproduce the startup conflict with both legacy aliases and user-created
+	// translated categories; their IDs, abbreviations and references must survive.
+	if _, err := db.Exec(`CREATE UNIQUE INDEX uq_categories_name_normalized ON categories(lower(trim(name))); ALTER TABLE products ADD COLUMN categoryid INT REFERENCES categories(categoryid);
+INSERT INTO categories(name,abbreviation) VALUES('sound','SND'),('Ton','USER_TON'),('light','LGT'),('Licht','USER_LIC'),('stage','STG'),('other','OTR'),('Sonstiges','USER_SON');
+INSERT INTO products(name,categoryid) SELECT 'Legacy category fixture',categoryid FROM categories WHERE name='sound'`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := db.Exec(legacyCategoryNormalizationSQL); err != nil {
+			t.Fatalf("category normalization restart: %v", err)
+		}
+	}
+	var retained int
+	if err := db.QueryRow(`SELECT count(*) FROM categories WHERE lower(trim(name)) IN ('sound','ton','light','licht','other','sonstiges')`).Scan(&retained); err != nil || retained != 6 {
+		t.Fatalf("category identities lost: %d %v", retained, err)
+	}
+	var linkedCategory, abbreviation string
+	if err := db.QueryRow(`SELECT c.name FROM products p JOIN categories c ON c.categoryid=p.categoryid WHERE p.name='Legacy category fixture'`).Scan(&linkedCategory); err != nil || linkedCategory != "sound" {
+		t.Fatalf("category reference changed: %s %v", linkedCategory, err)
+	}
+	if err := db.QueryRow(`SELECT abbreviation FROM categories WHERE name='Ton'`).Scan(&abbreviation); err != nil || abbreviation != "USER_TON" {
+		t.Fatalf("target category changed: %s %v", abbreviation, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM categories WHERE name='Bühne' AND abbreviation='BUE'`).Scan(&retained); err != nil || retained != 1 {
+		t.Fatalf("safe category alias not translated: %d %v", retained, err)
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX uq_brands_name_normalized ON brands(lower(trim(name)))`); err != nil {
+		t.Fatal(err)
+	}
+	brandMigration, err := os.ReadFile("../../migrations/048_brand_manufacturer_identity.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := db.Exec(string(brandMigration)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO brands(name,manufacturerid) VALUES('Shared Name',$1),('Shared Name',$2)`, created.ManufacturerID, otherManufacturer); err != nil {
+		t.Fatalf("brand identity must include manufacturer: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO brands(name,manufacturerid) VALUES(' shared name ',$1)`, created.ManufacturerID); err == nil {
+		t.Fatal("duplicate brand within manufacturer accepted")
+	}
+	if _, err := db.Exec(`INSERT INTO brands(name) VALUES('Unassigned Name')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO brands(name) VALUES('unassigned name')`); err == nil {
+		t.Fatal("duplicate unassigned brand accepted")
+	}
+
 }
