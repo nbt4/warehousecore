@@ -1,5 +1,35 @@
 # WarehouseCore
 
+## Release 5.9.94 – MCP-Gerätepflege und Lebenszyklus
+
+Cores MCP `1.5.24` kann einzelne Geräte vollständig anlegen und ihre Metadaten
+bearbeiten. `product_id` muss auf ein aktives, einzeln verfolgtes Produkt zeigen.
+Seriennummer, Barcode und QR-Wert sind auch gegenüber archivierten Geräten
+reserviert; ausgelassene Scan-Kennungen werden bei der Anlage erzeugt. Ein
+optionaler Lagerplatz wird auf Verfügbarkeit, Hierarchie und Kapazität geprüft.
+Physischer Zustand und Betriebszustand werden bei Metadaten-Updates bewahrt.
+
+Archivieren und Wiederherstellen verwenden die bestehenden Admin-Gerätepfade
+mit MCP-Transaktion, exakter `expected_updated_at`-Version, Idempotenzschlüssel,
+`confirm_lifecycle=true` und `ARCHIVE|RESTORE WAREHOUSE DEVICE <ID>`.
+Aktive Jobs, Picklisten, Reservierungen, Cases, Komponenten, Aufgaben, Defekte,
+Wartungsaufträge und Wartungspläne sperren beide Aktionen. Historie bleibt;
+alle Scan-Kennungen werden deaktiviert bzw. reaktiviert. Restore prüft außerdem
+Produkt und Lagerkapazität erneut. Geräte werden dabei nicht endgültig gelöscht.
+
+`POST /api/v1/admin/devices/{id}/revert-update` setzt ausschließlich die eigene
+letzte unveränderte `device.update`-Änderung mit Herkunft `MCP/AI` zurück. Es
+braucht Audit-ID, Version, `confirm_revert=true` und
+`REVERT WAREHOUSE DEVICE <ID> UPDATE <AUDIT-ID>`. Jede spätere Geräteänderung
+oder jeder spätere Geräte-Audit sperrt diesen Rückweg. Referenzen und Identität
+werden erneut geprüft. Revert erhält einen eigenen Audit und Replay-Beleg.
+
+Migration `051_warehouse_device_version` (Umbrella `024`) versioniert alle
+Geräte-Schreiber und hält Scan-Kennungen am Archivstatus. Mutation, Audit und
+dauerhafter Replay-Beleg werden in einer Transaktion gespeichert. Die
+redigierte MCP-Gerätehistorie gibt keine Notizinhalte, IPs oder Roh-JSON aus.
+
+
 ## Release 5.9.93 – Geführte MCP-Produktpakete
 
 Die MCP-Pfade der Admin-Endpunkte `/product-packages` (POST) und

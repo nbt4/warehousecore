@@ -208,6 +208,10 @@ func normalizeLifecycleFilter(value string) (string, error) {
 
 // CreateDevice creates a single device or multiple devices with the admin service
 func CreateDevice(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseMCPMutation(r) {
+		mutateWarehouseDeviceMCP(w, r, "create", "")
+		return
+	}
 	var input models.DeviceCreateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -256,6 +260,10 @@ func CreateDevice(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDevice updates an existing device
 func UpdateDevice(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseMCPMutation(r) {
+		mutateWarehouseDeviceMCP(w, r, "update", mux.Vars(r)["id"])
+		return
+	}
 	vars := mux.Vars(r)
 	deviceID := vars["id"]
 	if deviceID == "" {
@@ -294,6 +302,10 @@ func UpdateDevice(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDevice deletes a device
 func DeleteDevice(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseMCPMutation(r) {
+		mutateWarehouseDeviceMCP(w, r, "archive", mux.Vars(r)["id"])
+		return
+	}
 	vars := mux.Vars(r)
 	deviceID := vars["id"]
 	if deviceID == "" {
@@ -318,6 +330,10 @@ func DeleteDevice(w http.ResponseWriter, r *http.Request) {
 
 // RestoreDevice reactivates an archived device.
 func RestoreDevice(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseMCPMutation(r) {
+		mutateWarehouseDeviceMCP(w, r, "restore", mux.Vars(r)["id"])
+		return
+	}
 	deviceID := mux.Vars(r)["id"]
 	if deviceID == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Device ID is required"})

@@ -234,6 +234,9 @@ func main() {
 	if err := handlers.EnsureDeviceLifecycleSchema(); err != nil {
 		log.Fatalf("Failed to initialize device lifecycle schema: %v", err)
 	}
+	if err := handlers.EnsureWarehouseDeviceVersionSchema(); err != nil {
+		log.Fatalf("Failed to initialize warehouse device versions: %v", err)
+	}
 	if err := handlers.EnsureLabelStudioSchema(); err != nil {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
@@ -579,6 +582,7 @@ func main() {
 	admin.HandleFunc("/devices/{id}", handlers.GetDeviceAdmin).Methods("GET")
 	admin.HandleFunc("/devices/{id}", handlers.UpdateDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}", handlers.DeleteDevice).Methods("DELETE")
+	admin.HandleFunc("/devices/{id}/revert-update", handlers.RevertDeviceUpdateMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/restore", handlers.RestoreDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}/permanent", handlers.PermanentlyDeleteDevice).Methods("DELETE")
 	admin.HandleFunc("/devices/{id}/qr", handlers.GenerateDeviceQR).Methods("GET")
