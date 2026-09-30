@@ -136,6 +136,10 @@ func GetProductPackage(w http.ResponseWriter, r *http.Request) {
 // CreateProductPackage creates a package directly in the shared package tables.
 // Packages intentionally do not create mirror rows in products.
 func CreateProductPackage(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseMCPMutation(r) {
+		mutateWarehousePackageMCP(w, r, 0)
+		return
+	}
 	var req productPackageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -197,6 +201,10 @@ func CreateProductPackage(w http.ResponseWriter, r *http.Request) {
 func UpdateProductPackage(w http.ResponseWriter, r *http.Request) {
 	id, ok := packageIDFromRequest(w, r, "id")
 	if !ok {
+		return
+	}
+	if isWarehouseMCPMutation(r) {
+		mutateWarehousePackageMCP(w, r, int64(id))
 		return
 	}
 	var req productPackageRequest
@@ -819,7 +827,7 @@ func isStorageNotFound(err error) bool {
 
 const packageCodeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-func generatePackageCode(db *sql.DB) (string, error) {
+func generatePackageCode(db interface{ QueryRow(string, ...any) *sql.Row }) (string, error) {
 	for attempts := 0; attempts < 20; attempts++ {
 		var value strings.Builder
 		for i := 0; i < 5; i++ {

@@ -1,5 +1,29 @@
 # WarehouseCore
 
+## Release 5.9.93 – Geführte MCP-Produktpakete
+
+Die MCP-Pfade der Admin-Endpunkte `/product-packages` (POST) und
+`/product-packages/{id}` (PUT) verwalten Name, Beschreibung, EUR-Preis,
+Kategorie, Website-Sichtbarkeit, Aliasse und vollständige Produktlisten mit
+Mengen und optionalen Bestandteilen. Adminrechte und Idempotenzschlüssel sind
+nötig; Updates verlangen die exakte Version des vorbereiteten Pakets.
+
+Pakete enthalten 1–200 verschiedene aktive Produkte mit ganzzahligen Mengen
+von 1 bis 1000000. Preis ist nichtnegativ mit höchstens zwei Nachkommastellen.
+Code und ID sind unveränderlich. Bereits in Jobs verwendete Pakete schützen
+Preis und Zusammensetzung auch für vergangene Jobs; Metadaten bleiben änderbar.
+Es entstehen keine Lagerbuchungen oder spiegelnden Produkte. Metadaten-Updates
+erhalten die IDs der Inhaltszeilen. Nullable Beschreibung, Preis und Kategorie
+lassen sich über den MCP-Entwurf ausdrücklich leeren.
+
+Paket, Inhalte, vollständiger Vorher/Nachher-Audit und dauerhafter
+Wiederholungsbeleg werden atomar gespeichert. Migration `050` versioniert
+Metadaten und jede Einfügung, Änderung oder Entfernung einer Produktzeile,
+auch über UI-/Importpfade. Der Start installiert Schema und Trigger idempotent.
+Cores MCP `1.5.23` liefert die vier geführten Werkzeuge mit Schema-Discovery,
+Dublettenprüfung, vollständiger Vorschau/Diff, expliziter Bestätigung und Dry-run.
+
+
 ## Release 5.9.92 – MCP-Kategoriepflege und kontrolliertes Entfernen
 
 Die Admin-Endpunkte für Haupt-, Unter- und dritte Kategorien erlauben MCP/KI
