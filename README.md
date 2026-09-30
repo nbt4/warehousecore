@@ -1,5 +1,20 @@
 # WarehouseCore
 
+## Release 5.9.89 – Versionsgesicherte MCP-Lagerplatzpflege
+
+`PUT /api/v1/admin/warehouse/locations/{id}` prüft für MCP/KI die exakte
+`expected_updated_at`-Version, Administratorrechte, Code-/Scan-Code-Duplikate,
+Elternhierarchie und Bestandsgrenzen. Ein belegter Platz darf kein reiner
+Strukturbereich werden; die Kapazität darf seine Belegung nicht unterschreiten.
+Die Belegung entspricht der Lagerplatzansicht: aktive Geräte im Lager, Cases
+und Mengenbestand. Ausgegebene oder archivierte Geräte zählen nicht mit.
+Archivierte Plätze und Änderungen des Betriebsstatus sind ausgeschlossen.
+Änderung, Vorher/Nachher-Audit und dauerhafter Idempotenzbeleg werden atomar
+gespeichert; unveränderte Felder erzeugen keinen neuen Vorgang. Eine reine
+Metadatenänderung verschiebt den Zähltermin nicht. Migration 046 aktualisiert
+`updated_at` bei jeder Datenbankänderung, auch aus dem Frontend oder einer
+Inventur, damit alte MCP-Vorschauen diese Änderungen nicht überschreiben.
+
 ## Release 5.9.88 – Geführte MCP-Lagerplatzanlage
 
 Der geschützte Admin-Endpunkt `POST /api/v1/admin/warehouse/locations` legt

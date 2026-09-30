@@ -46,6 +46,7 @@ type WarehouseLocation struct {
 }
 
 type warehouseLocationInput struct {
+	ExpectedUpdatedAt      string   `json:"expected_updated_at,omitempty"`
 	Code                   string   `json:"code"`
 	Barcode                *string  `json:"barcode"`
 	Name                   string   `json:"name"`
@@ -322,6 +323,10 @@ func UpdateWarehouseLocation(w http.ResponseWriter, r *http.Request) {
 	var input warehouseLocationInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültige Anfrage"})
+		return
+	}
+	if isWarehouseMCPMutation(r) {
+		updateWarehouseLocationMCP(w, r, id, input)
 		return
 	}
 	if err := validateWarehouseLocationInput(&input); err != nil {

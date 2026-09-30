@@ -5,13 +5,16 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
@@ -50,7 +53,11 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 		`CREATE TABLE categories(categoryid SERIAL PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10))`,
 		`CREATE TABLE subcategories(subcategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),categoryid INT REFERENCES categories(categoryid))`,
 		`CREATE TABLE subbiercategories(subbiercategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),subcategoryid VARCHAR(50) REFERENCES subcategories(subcategoryid))`,
-		`CREATE TABLE storage_zones(zone_id SERIAL PRIMARY KEY,code VARCHAR(50) UNIQUE,barcode VARCHAR(255),name VARCHAR(100),type TEXT,description TEXT,parent_zone_id INT REFERENCES storage_zones(zone_id),capacity NUMERIC,is_active BOOLEAN,location_kind TEXT,process_role TEXT,operational_status TEXT,is_storable BOOLEAN,pick_sequence INT,capacity_mode TEXT,max_weight_kg NUMERIC,max_volume_m3 NUMERIC,inventory_frequency_days INT,next_count_at TIMESTAMP)`,
+		`CREATE TABLE storage_zones(zone_id SERIAL PRIMARY KEY,code VARCHAR(50) UNIQUE,barcode VARCHAR(255),name VARCHAR(100),type TEXT,description TEXT,parent_zone_id INT REFERENCES storage_zones(zone_id),capacity NUMERIC,is_active BOOLEAN,location_kind TEXT,process_role TEXT,operational_status TEXT,is_storable BOOLEAN,pick_sequence INT,capacity_mode TEXT,max_weight_kg NUMERIC,max_volume_m3 NUMERIC,inventory_frequency_days INT,next_count_at TIMESTAMP,last_counted_at TIMESTAMP,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE warehouse_schema_migrations(version TEXT PRIMARY KEY)`,
+		`CREATE TABLE devices(deviceid TEXT PRIMARY KEY,zone_id INT,lifecycle_status TEXT,status TEXT)`,
+		`CREATE TABLE cases(caseid INT PRIMARY KEY,zone_id INT)`,
+		`CREATE TABLE product_locations(product_id INT,zone_id INT,quantity NUMERIC)`,
 		`CREATE TABLE audit_log(id BIGSERIAL PRIMARY KEY,user_id BIGINT,action TEXT,entity_type TEXT,entity_id TEXT,old_values JSONB,new_values JSONB,ip_address TEXT,user_agent TEXT)`,
 		`CREATE TABLE warehouse_product_mutation_receipts(id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL,operation VARCHAR(80) NOT NULL,key_hash CHAR(64) NOT NULL,request_hash CHAR(64) NOT NULL,response JSONB NOT NULL DEFAULT '{}'::jsonb,status_code INTEGER NOT NULL DEFAULT 200,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(user_id,operation,key_hash))`,
 	} {
@@ -200,4 +207,135 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts`).Scan(&receipts); err != nil || receipts != 7 {
 		t.Fatalf("location receipts: %d %v", receipts, err)
 	}
+	for i := 0; i < 2; i++ {
+		if err := EnsureWarehouseLocationVersionSchema(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	version := func() string {
+		var v string
+		if err := db.QueryRow(`SELECT to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM storage_zones WHERE zone_id=$1`, zone.ID).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	put := func(key string, body map[string]any, admin bool) *httptest.ResponseRecorder {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPut, "/api/v1/admin/warehouse/locations/1", bytes.NewReader(encoded))
+		r = mux.SetURLVars(r, map[string]string{"id": fmt.Sprint(zone.ID)})
+		r = r.WithContext(context.WithValue(r.Context(), middleware.UserContextKey, &models.User{UserID: 11, Username: "tester", IsAdmin: admin}))
+		r.Header.Set("X-Cores-Origin", "MCP/AI")
+		r.Header.Set("Idempotency-Key", key)
+		w := httptest.NewRecorder()
+		UpdateWarehouseLocation(w, r)
+		return w
+	}
+	body := map[string]any{"code": "MAIN", "barcode": "LOC-MAIN", "name": "Main Warehouse Updated", "type": "warehouse", "location_kind": "area", "process_role": "storage", "operational_status": "available", "capacity_mode": "item_count", "is_storable": true, "expected_updated_at": version()}
+	assertStatus := func(w *httptest.ResponseRecorder, want int) {
+		t.Helper()
+		if w.Code != want {
+			t.Fatalf("status %d want %d: %s", w.Code, want, w.Body.String())
+		}
+	}
+	assertStatus(put("location-update-no-admin", body, false), http.StatusForbidden)
+	original := version()
+	firstUpdate := put("location-update-1", body, true)
+	assertStatus(firstUpdate, http.StatusOK)
+	if version() == original {
+		t.Fatal("location version did not advance")
+	}
+	replay := put("location-update-1", body, true)
+	assertStatus(replay, http.StatusOK)
+	var firstResult, replayResult map[string]any
+	if err := json.Unmarshal(firstUpdate.Body.Bytes(), &firstResult); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(replay.Body.Bytes(), &replayResult); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(firstResult, replayResult) {
+		t.Fatal("replay changed response")
+	}
+	assertStatus(put("location-update-stale", body, true), http.StatusConflict)
+	body["name"] = "Different Name"
+	assertStatus(put("location-update-1", body, true), http.StatusConflict)
+	body["expected_updated_at"] = ""
+	assertStatus(put("location-update-no-version", body, true), http.StatusPreconditionRequired)
+	body["expected_updated_at"] = version()
+	body["parent_zone_id"] = zone.ID
+	assertStatus(put("location-update-cycle-self", body, true), http.StatusConflict)
+	var childID int
+	if err := db.QueryRow(`SELECT zone_id FROM storage_zones WHERE code='SHELF-A'`).Scan(&childID); err != nil {
+		t.Fatal(err)
+	}
+	body["parent_zone_id"] = childID
+	assertStatus(put("location-update-cycle-child", body, true), http.StatusConflict)
+	delete(body, "parent_zone_id")
+	body["code"] = "SHELF-A"
+	assertStatus(put("location-update-duplicate", body, true), http.StatusConflict)
+	body["code"] = "MAIN"
+	body["barcode"] = "LOC-SHELF-A"
+	assertStatus(put("location-update-duplicate-scan", body, true), http.StatusConflict)
+	body["barcode"] = "LOC-MAIN"
+	body["operational_status"] = "archived"
+	assertStatus(put("location-update-archive", body, true), http.StatusConflict)
+	body["operational_status"] = "available"
+	if _, err := db.Exec(`INSERT INTO devices VALUES('DEV-1',$1,'active','in_storage'),('DEV-2',$1,'active','checked_out'),('DEV-3',$1,'archived','in_storage');`, zone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO product_locations VALUES(1,$1,2)`, zone.ID); err != nil {
+		t.Fatal(err)
+	}
+	body["is_storable"] = false
+	assertStatus(put("location-update-nonstorable", body, true), http.StatusConflict)
+	body["is_storable"] = true
+	body["capacity"] = 2
+	assertStatus(put("location-update-full", body, true), http.StatusConflict)
+	body["capacity"] = 3.5
+	assertStatus(put("location-update-fraction", body, true), http.StatusBadRequest)
+	body["capacity"] = 3
+	body["inventory_frequency_days"] = 7
+	assertStatus(put("location-update-capacity", body, true), http.StatusOK)
+	var nextBefore string
+	if err := db.QueryRow(`SELECT next_count_at::text FROM storage_zones WHERE zone_id=$1`, zone.ID).Scan(&nextBefore); err != nil {
+		t.Fatal(err)
+	}
+	body["expected_updated_at"] = version()
+	body["name"] = "Metadata Edit"
+	assertStatus(put("location-update-metadata", body, true), http.StatusOK)
+	var nextAfter string
+	if err := db.QueryRow(`SELECT next_count_at::text FROM storage_zones WHERE zone_id=$1`, zone.ID).Scan(&nextAfter); err != nil || nextAfter != nextBefore {
+		t.Fatalf("count schedule moved: %s -> %s %v", nextBefore, nextAfter, err)
+	}
+	body["expected_updated_at"] = version()
+	assertStatus(put("location-update-noop", body, true), http.StatusConflict)
+	if _, err := db.Exec(`UPDATE storage_zones SET description='UI edit' WHERE zone_id=$1`, zone.ID); err != nil {
+		t.Fatal(err)
+	}
+	body["name"] = "After UI Edit"
+	assertStatus(put("location-update-after-ui", body, true), http.StatusConflict)
+	body["expected_updated_at"] = version()
+	body["description"] = "UI edit"
+	if _, err := db.Exec(`CREATE FUNCTION reject_location_audit() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'forced audit failure'; END $$ LANGUAGE plpgsql; CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_location_audit()`); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(put("location-update-audit-failure", body, true), http.StatusInternalServerError)
+	if body["expected_updated_at"] != version() {
+		t.Fatal("failed audit did not roll back location")
+	}
+	var failedReceipts int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts WHERE operation='location.update'`).Scan(&failedReceipts); err != nil || failedReceipts != 3 {
+		t.Fatalf("rollback/replay receipt count %d %v", failedReceipts, err)
+	}
+	if _, err := db.Exec(`DROP TRIGGER fail_audit ON audit_log`); err != nil {
+		t.Fatal(err)
+	}
+	var updates int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='storage_zone.update' AND old_values->>'name' IS NOT NULL AND new_values->>'origin'='MCP/AI'`).Scan(&updates); err != nil || updates != 3 {
+		t.Fatalf("update audit count %d %v", updates, err)
+	}
+
 }
