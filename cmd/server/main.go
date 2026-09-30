@@ -216,6 +216,9 @@ func main() {
 	if err := handlers.EnsureProductMasterSchema(); err != nil {
 		log.Fatalf("Failed to initialize product master schema: %v", err)
 	}
+	if err := handlers.EnsureWarehouseMasterVersionSchema(); err != nil {
+		log.Fatalf("Failed to initialize warehouse master versions: %v", err)
+	}
 	if err := handlers.EnsureDeviceStatusSchema(); err != nil {
 		log.Fatalf("Failed to initialize device status schema: %v", err)
 	}

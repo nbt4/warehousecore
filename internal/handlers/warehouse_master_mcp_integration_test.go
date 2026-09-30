@@ -50,6 +50,7 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE manufacturer(manufacturerid SERIAL PRIMARY KEY,name VARCHAR(255),website VARCHAR(255))`,
 		`CREATE TABLE brands(brandid SERIAL PRIMARY KEY,name VARCHAR(255),manufacturerid INT REFERENCES manufacturer(manufacturerid))`,
+		`CREATE TABLE products(productid SERIAL PRIMARY KEY,name TEXT,manufacturerid INT,brandid INT)`,
 		`CREATE TABLE categories(categoryid SERIAL PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10))`,
 		`CREATE TABLE subcategories(subcategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),categoryid INT REFERENCES categories(categoryid))`,
 		`CREATE TABLE subbiercategories(subbiercategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),subcategoryid VARCHAR(50) REFERENCES subcategories(subcategoryid))`,
@@ -337,5 +338,143 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='storage_zone.update' AND old_values->>'name' IS NOT NULL AND new_values->>'origin'='MCP/AI'`).Scan(&updates); err != nil || updates != 3 {
 		t.Fatalf("update audit count %d %v", updates, err)
 	}
+
+	for i := 0; i < 2; i++ {
+		if err := EnsureWarehouseMasterVersionSchema(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	masterVersion := func(entity string, id int) string {
+		var value string
+		query := `SELECT to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM manufacturer WHERE manufacturerid=$1`
+		if entity == "brand" {
+			query = `SELECT to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM brands WHERE brandid=$1`
+		}
+		if err := db.QueryRow(query, id).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	putMaster := func(entity string, id int, key string, body map[string]any, admin bool) *httptest.ResponseRecorder {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPut, "/api/v1/admin/"+entity+"s/"+fmt.Sprint(id), bytes.NewReader(encoded))
+		r = mux.SetURLVars(r, map[string]string{"id": fmt.Sprint(id)})
+		r = r.WithContext(context.WithValue(r.Context(), middleware.UserContextKey, &models.User{UserID: 11, Username: "tester", IsAdmin: admin}))
+		r.Header.Set("X-Cores-Origin", "MCP/AI")
+		r.Header.Set("Idempotency-Key", key)
+		w := httptest.NewRecorder()
+		if entity == "manufacturer" {
+			UpdateManufacturer(w, r)
+		} else {
+			UpdateBrand(w, r)
+		}
+		return w
+	}
+	for _, target := range []struct {
+		entity string
+		id     int
+		fields map[string]any
+	}{
+		{"manufacturer", created.ManufacturerID, map[string]any{"name": "MA Lighting Updated", "website": "www.malighting.com"}},
+		{"brand", brandID, map[string]any{"name": "grandMA3 Updated", "manufacturer_id": created.ManufacturerID}},
+	} {
+		body := target.fields
+		entity := target.entity
+		id := target.id
+		oldVersion := masterVersion(entity, id)
+		body["expected_updated_at"] = oldVersion
+		assertStatus(putMaster(entity, id, entity+"-update-no-admin", body, false), http.StatusForbidden)
+		body["expected_updated_at"] = ""
+		assertStatus(putMaster(entity, id, entity+"-update-no-version", body, true), http.StatusPreconditionRequired)
+		body["expected_updated_at"] = oldVersion
+		first := putMaster(entity, id, entity+"-update-1", body, true)
+		assertStatus(first, http.StatusOK)
+		if masterVersion(entity, id) == oldVersion {
+			t.Fatal("master version did not advance")
+		}
+		replay := putMaster(entity, id, entity+"-update-1", body, true)
+		assertStatus(replay, http.StatusOK)
+		var firstResult, replayResult map[string]any
+		if err := json.Unmarshal(first.Body.Bytes(), &firstResult); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(replay.Body.Bytes(), &replayResult); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(firstResult, replayResult) {
+			t.Fatal("master replay changed response")
+		}
+		assertStatus(putMaster(entity, id, entity+"-update-stale", body, true), http.StatusConflict)
+		body["name"] = "Other Name"
+		assertStatus(putMaster(entity, id, entity+"-update-1", body, true), http.StatusConflict)
+		body["expected_updated_at"] = masterVersion(entity, id)
+		body["name"] = target.entity + " unique updated"
+		if _, err := db.Exec(`CREATE TRIGGER fail_master_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_location_audit()`); err != nil {
+			t.Fatal(err)
+		}
+		assertStatus(putMaster(entity, id, entity+"-update-audit-failure", body, true), http.StatusInternalServerError)
+		if masterVersion(entity, id) != body["expected_updated_at"] {
+			t.Fatal("audit failure did not roll back master update")
+		}
+		if _, err := db.Exec(`DROP TRIGGER fail_master_audit ON audit_log`); err != nil {
+			t.Fatal(err)
+		}
+		var updateCount, receiptCount int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action=$1 AND old_values->>'name' IS NOT NULL AND new_values->>'origin'='MCP/AI'`, entity+".update").Scan(&updateCount); err != nil || updateCount != 1 {
+			t.Fatalf("master audits %d %v", updateCount, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM warehouse_product_mutation_receipts WHERE operation=$1`, entity+".update").Scan(&receiptCount); err != nil || receiptCount != 1 {
+			t.Fatalf("master receipts %d %v", receiptCount, err)
+		}
+	}
+	var otherManufacturer int
+	if err := db.QueryRow(`INSERT INTO manufacturer(name) VALUES('Robe Lighting') RETURNING manufacturerid`).Scan(&otherManufacturer); err != nil {
+		t.Fatal(err)
+	}
+	manufacturerBody := map[string]any{"name": "robe lighting", "website": nil, "expected_updated_at": masterVersion("manufacturer", created.ManufacturerID)}
+	assertStatus(putMaster("manufacturer", created.ManufacturerID, "manufacturer-duplicate-update", manufacturerBody, true), http.StatusConflict)
+	manufacturerBody["name"] = "MA Lighting Updated"
+	manufacturerBody["website"] = "ftp://invalid.example"
+	assertStatus(putMaster("manufacturer", created.ManufacturerID, "manufacturer-invalid-website", manufacturerBody, true), http.StatusBadRequest)
+	manufacturerBody["website"] = ""
+	assertStatus(putMaster("manufacturer", created.ManufacturerID, "manufacturer-clear-website", manufacturerBody, true), http.StatusOK)
+	var storedWebsite sql.NullString
+	if err := db.QueryRow(`SELECT website FROM manufacturer WHERE manufacturerid=$1`, created.ManufacturerID).Scan(&storedWebsite); err != nil || storedWebsite.Valid {
+		t.Fatalf("website not cleared: %#v %v", storedWebsite, err)
+	}
+	brandBody := map[string]any{"name": "grandMA3 Updated", "manufacturer_id": otherManufacturer, "expected_updated_at": masterVersion("brand", brandID)}
+	if _, err := db.Exec(`INSERT INTO products(name,manufacturerid,brandid) VALUES('Console',$1,$2)`, created.ManufacturerID, brandID); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(putMaster("brand", brandID, "brand-conflicting-products", brandBody, true), http.StatusConflict)
+	brandBody["manufacturer_id"] = 999999
+	assertStatus(putMaster("brand", brandID, "brand-missing-manufacturer", brandBody, true), http.StatusNotFound)
+	brandBody["manufacturer_id"] = otherManufacturer
+	if _, err := db.Exec(`DELETE FROM products`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO brands(name,manufacturerid) VALUES('grandMA3 Updated',$1)`, otherManufacturer); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(putMaster("brand", brandID, "brand-duplicate-update", brandBody, true), http.StatusConflict)
+	brandBody["name"] = "Reassigned Brand"
+	assertStatus(putMaster("brand", brandID, "brand-reassign-update", brandBody, true), http.StatusOK)
+	brandBody["expected_updated_at"] = masterVersion("brand", brandID)
+	assertStatus(putMaster("brand", brandID, "brand-update-noop", brandBody, true), http.StatusConflict)
+	if _, err := db.Exec(`UPDATE brands SET name='Legacy UI edit' WHERE brandid=$1`, brandID); err != nil {
+		t.Fatal(err)
+	}
+	brandBody["name"] = "After UI edit"
+	assertStatus(putMaster("brand", brandID, "brand-stale-ui", brandBody, true), http.StatusConflict)
+	brandBody["expected_updated_at"] = masterVersion("brand", brandID)
+	brandBody["manufacturer_id"] = nil
+	assertStatus(putMaster("brand", brandID, "brand-clear-manufacturer", brandBody, true), http.StatusOK)
+	if _, err := db.Exec(`UPDATE manufacturer SET name='Legacy manufacturer edit' WHERE manufacturerid=$1`, created.ManufacturerID); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(putMaster("manufacturer", created.ManufacturerID, "manufacturer-stale-ui", manufacturerBody, true), http.StatusConflict)
 
 }

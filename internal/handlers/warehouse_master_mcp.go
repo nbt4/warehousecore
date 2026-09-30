@@ -40,6 +40,11 @@ func createManufacturerMCP(w http.ResponseWriter, r *http.Request, rawName strin
 		respondJSON(w, http.StatusCreated, replay)
 		return
 	}
+	// Serialize duplicate checks with standalone master updates before querying.
+	if _, err := tx.Exec(`SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='15s'; LOCK TABLE manufacturer,brands IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
 	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "warehouse.manufacturer."+strings.ToLower(name)); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to lock manufacturer name"})
 		return
@@ -93,6 +98,11 @@ func createBrandMCP(w http.ResponseWriter, r *http.Request, rawName string, manu
 	}
 	if replay != nil {
 		respondJSON(w, http.StatusCreated, replay)
+		return
+	}
+	// Serialize duplicate checks with standalone master updates before querying.
+	if _, err := tx.Exec(`SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='15s'; LOCK TABLE manufacturer,brands IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		respondWarehouseMutationError(w, err)
 		return
 	}
 	var manufacturerName string

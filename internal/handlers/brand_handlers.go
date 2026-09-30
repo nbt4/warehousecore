@@ -134,12 +134,14 @@ func UpdateBrand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload struct {
-		Name           string `json:"name"`
-		ManufacturerID *int   `json:"manufacturer_id"`
-	}
+	var payload warehouseBrandUpdateInput
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	if isWarehouseMCPMutation(r) {
+		updateWarehouseMasterMCP(w, r, "brand", id, payload.Name, nil, payload.ManufacturerID, payload.ExpectedUpdatedAt)
 		return
 	}
 
@@ -297,12 +299,14 @@ func UpdateManufacturer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload struct {
-		Name    string  `json:"name"`
-		Website *string `json:"website"`
-	}
+	var payload warehouseManufacturerUpdateInput
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	if isWarehouseMCPMutation(r) {
+		updateWarehouseMasterMCP(w, r, "manufacturer", id, payload.Name, payload.Website, nil, payload.ExpectedUpdatedAt)
 		return
 	}
 

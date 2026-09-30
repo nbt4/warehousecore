@@ -1,5 +1,21 @@
 # WarehouseCore
 
+## Release 5.9.90 – Versionsgesicherte MCP-Hersteller- und Markenpflege
+
+`PUT /api/v1/admin/manufacturers/{id}` und `/brands/{id}` prüfen für MCP/KI
+Warehouse-Adminrechte, die exakte `expected_updated_at`, Namen, Websites,
+Herstellerreferenzen und Dubletten. Herstellerzuordnungen einer Marke können
+nur geändert werden, wenn ihre Produkte bereits zum vorgeschlagenen Hersteller
+passen. Eine leere Website wird entfernt; ungenutzte Marken können ausdrücklich
+ohne Hersteller geführt werden. Namensänderungen gelten in verknüpften Anzeigen.
+
+Änderung, Vorher/Nachher-Audit und dauerhafter Wiederholungsbeleg werden atomar
+gespeichert. Wiederholte identische Aufrufe erzeugen keine zusätzliche Änderung;
+veraltete Versionen und abweichende Wiederholungen werden zurückgewiesen.
+Die idempotente Migration `047_warehouse_master_version` installiert beim Start
+Versionstrigger für `manufacturer` und `brands`; dadurch machen auch normale
+Oberflächen- und Importänderungen eine alte Vorschau ungültig.
+
 ## Release 5.9.89 – Versionsgesicherte MCP-Lagerplatzpflege
 
 `PUT /api/v1/admin/warehouse/locations/{id}` prüft für MCP/KI die exakte
