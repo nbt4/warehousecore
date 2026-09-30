@@ -98,6 +98,11 @@ func UpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isWarehouseMCPMutation(r) {
+		updateWarehouseCategoryMCP(w, r, "category", strconv.Itoa(id))
+		return
+	}
+
 	var req Category
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -129,6 +134,11 @@ func DeleteCategory(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid category ID"})
+		return
+	}
+
+	if isWarehouseMCPMutation(r) {
+		deleteWarehouseCategoryMCP(w, r, "category", strconv.Itoa(id))
 		return
 	}
 
@@ -220,6 +230,11 @@ func UpdateSubcategory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	if isWarehouseMCPMutation(r) {
+		updateWarehouseCategoryMCP(w, r, "subcategory", id)
+		return
+	}
+
 	var req Subcategory
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -249,6 +264,11 @@ func UpdateSubcategory(w http.ResponseWriter, r *http.Request) {
 func DeleteSubcategory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	if isWarehouseMCPMutation(r) {
+		deleteWarehouseCategoryMCP(w, r, "subcategory", id)
+		return
+	}
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec("DELETE FROM subcategories WHERE subcategoryID = $1", id)
@@ -338,6 +358,11 @@ func UpdateSubbiercategory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	if isWarehouseMCPMutation(r) {
+		updateWarehouseCategoryMCP(w, r, "third_category", id)
+		return
+	}
+
 	var req Subbiercategory
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -367,6 +392,11 @@ func UpdateSubbiercategory(w http.ResponseWriter, r *http.Request) {
 func DeleteSubbiercategory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	if isWarehouseMCPMutation(r) {
+		deleteWarehouseCategoryMCP(w, r, "third_category", id)
+		return
+	}
 
 	db := repository.GetSQLDB()
 	result, err := db.Exec("DELETE FROM subbiercategories WHERE subbiercategoryID = $1", id)

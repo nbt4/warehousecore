@@ -1,5 +1,28 @@
 # WarehouseCore
 
+## Release 5.9.92 – MCP-Kategoriepflege und kontrolliertes Entfernen
+
+Die Admin-Endpunkte für Haupt-, Unter- und dritte Kategorien erlauben MCP/KI
+versionsgesicherte Änderungen von Name, Abkürzung und Elternzuordnung.
+Kategorienamen müssen 1–100 Zeichen enthalten, Abkürzungen höchstens 10;
+auf Hauptebene ist eine Abkürzung erforderlich. IDs bleiben erhalten.
+Elternwechsel werden gesperrt, wenn Produktzuordnungen einschließlich der
+Nachfahren widersprüchlich würden. Duplikate sind pro Elternknoten gesperrt.
+
+Die benannten DELETE-Endpunkte entfernen über MCP/KI nur ungenutzte Kategorien
+ohne Produkte oder Kinder. Adminrechte, exakte `expected_updated_at`,
+`confirm_delete=true`, die datensatzgebundene Phrase in `confirmation_text`
+und `Idempotency-Key` sind erforderlich. Zusätzliche Fremdschlüssel aus
+Erweiterungstabellen sperren das Entfernen bis zur gesonderten Prüfung.
+Es gibt kein Cascade, keine automatische Umzuordnung und kein MCP-Undo.
+Änderung bzw. Löschung, Vorher/Nachher-Audit und dauerhafter Wiederholungsbeleg
+werden atomar gespeichert; Audit bleibt nach der Löschung erhalten.
+
+Migration `049_warehouse_category_version` wird beim Start installiert und
+versioniert alle drei Kategorieebenen auch bei normalen UI-/Importänderungen.
+Cores MCP 1.5.22 nutzt für Änderungen `cores:warehouse:update`, für Entfernen
+`cores:warehouse:delete`; `cores:write` bleibt kompatibel.
+
 ## Release 5.9.91 – Robuster Stammdatenstart und Markenidentität
 
 Die historische Kategorieübersetzung lässt vorhandene englische und deutsche

@@ -53,6 +53,10 @@ func createWarehouseCategoryMCP(w http.ResponseWriter, r *http.Request, kind, ra
 		respondJSON(w, http.StatusCreated, replay)
 		return
 	}
+	if _, err := tx.Exec(`SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='15s'; LOCK TABLE categories,subcategories,subbiercategories IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
 	if kind != "category" {
 		var found int
 		var parentQuery string
