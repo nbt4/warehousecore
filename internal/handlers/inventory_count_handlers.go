@@ -46,7 +46,7 @@ func ListInventoryCounts(w http.ResponseWriter, r *http.Request) {
 		c.started_at,c.completed_at,c.created_at
 		FROM inventory_counts c JOIN storage_zones z ON z.zone_id=c.zone_id
 		LEFT JOIN inventory_count_lines l ON l.count_id=c.count_id
-		GROUP BY c.count_id,z.code,z.name ORDER BY c.created_at DESC LIMIT 200`)
+		WHERE NOT c.is_archived GROUP BY c.count_id,z.code,z.name ORDER BY c.created_at DESC LIMIT 200`)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
