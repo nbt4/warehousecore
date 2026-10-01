@@ -473,10 +473,10 @@ type warehouseTaskInput struct {
 
 func GetWarehouseTasks(w http.ResponseWriter, r *http.Request) {
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	query := `SELECT task_id,task_type,status,priority,from_zone_id,to_zone_id,case_id,device_id,product_id,quantity,job_id,due_at,notes,created_at,updated_at,completed_at FROM warehouse_tasks`
+	query := `SELECT task_id,task_type,status,priority,from_zone_id,to_zone_id,case_id,device_id,product_id,quantity,job_id,due_at,notes,created_at,updated_at,completed_at FROM warehouse_tasks WHERE NOT is_archived`
 	args := []interface{}{}
 	if status != "" {
-		query += ` WHERE status=$1`
+		query += ` AND status=$1`
 		args = append(args, status)
 	}
 	query += ` ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, priority DESC, due_at NULLS LAST, task_id`

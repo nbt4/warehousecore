@@ -62,7 +62,7 @@ func beginWarehouseProductMutation(tx *sql.Tx, r *http.Request, operation string
 		return 0, nil, err
 	}
 	if previousHash != requestHash {
-		return 0, nil, &warehouseMutationError{http.StatusConflict, "idempotency_payload_conflict", "The key was already used with different product data"}
+		return 0, nil, &warehouseMutationError{http.StatusConflict, "idempotency_payload_conflict", "The key was already used with different mutation data"}
 	}
 	return 0, response, nil
 }
@@ -84,5 +84,5 @@ func respondWarehouseMutationError(w http.ResponseWriter, err error) {
 		respondJSON(w, flow.status, map[string]string{"error": flow.text, "code": flow.code})
 		return
 	}
-	respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
+	respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Warehouse mutation failed"})
 }

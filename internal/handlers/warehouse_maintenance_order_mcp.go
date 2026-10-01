@@ -619,10 +619,10 @@ func WarehouseMaintenanceOrderMCP(w http.ResponseWriter, r *http.Request) {
 }
 
 func respondMaintenanceMCPError(w http.ResponseWriter, err error) {
-	log.Printf("[MAINTENANCE MCP] operation failed: %v", err)
+	log.Printf("[WAREHOUSE MCP] operation failed: %v", err)
 	if _, ok := err.(*warehouseMutationError); ok {
 		respondWarehouseMutationError(w, err)
 		return
 	}
-	respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Maintenance operation failed"})
+	respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Warehouse operation failed"})
 }
