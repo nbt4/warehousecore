@@ -37,7 +37,7 @@ type Subbiercategory struct {
 // GetCategories retrieves all categories
 func GetCategories(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
-	rows, err := db.Query("SELECT categoryID, name, abbreviation FROM categories ORDER BY name")
+	rows, err := db.Query("SELECT categoryID, name, abbreviation FROM categories WHERE lifecycle_status='active' ORDER BY name")
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch categories"})
 		return
@@ -168,11 +168,11 @@ func GetSubcategories(w http.ResponseWriter, r *http.Request) {
 
 	if categoryID != "" {
 		rows, err = db.Query(
-			"SELECT subcategoryID, name, abbreviation, categoryID FROM subcategories WHERE categoryID = $1 ORDER BY name",
+			"SELECT subcategoryID, name, abbreviation, categoryID FROM subcategories WHERE categoryID = $1 AND lifecycle_status='active' AND categoryid IN (SELECT categoryid FROM categories WHERE lifecycle_status='active') ORDER BY name",
 			categoryID,
 		)
 	} else {
-		rows, err = db.Query("SELECT subcategoryID, name, abbreviation, categoryID FROM subcategories ORDER BY name")
+		rows, err = db.Query("SELECT subcategoryID, name, abbreviation, categoryID FROM subcategories WHERE lifecycle_status='active' AND categoryid IN (SELECT categoryid FROM categories WHERE lifecycle_status='active') ORDER BY name")
 	}
 
 	if err != nil {
@@ -296,11 +296,11 @@ func GetSubbiercategories(w http.ResponseWriter, r *http.Request) {
 
 	if subcategoryID != "" {
 		rows, err = db.Query(
-			"SELECT subbiercategoryID, name, abbreviation, subcategoryID FROM subbiercategories WHERE subcategoryID = $1 ORDER BY name",
+			"SELECT subbiercategoryID, name, abbreviation, subcategoryID FROM subbiercategories WHERE subcategoryID = $1 AND lifecycle_status='active' AND subcategoryid IN (SELECT s.subcategoryid FROM subcategories s JOIN categories c ON c.categoryid=s.categoryid WHERE s.lifecycle_status='active' AND c.lifecycle_status='active') ORDER BY name",
 			subcategoryID,
 		)
 	} else {
-		rows, err = db.Query("SELECT subbiercategoryID, name, abbreviation, subcategoryID FROM subbiercategories ORDER BY name")
+		rows, err = db.Query("SELECT subbiercategoryID, name, abbreviation, subcategoryID FROM subbiercategories WHERE lifecycle_status='active' AND subcategoryid IN (SELECT s.subcategoryid FROM subcategories s JOIN categories c ON c.categoryid=s.categoryid WHERE s.lifecycle_status='active' AND c.lifecycle_status='active') ORDER BY name")
 	}
 
 	if err != nil {
