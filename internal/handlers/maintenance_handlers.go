@@ -232,7 +232,7 @@ func ListMaintenanceOrders(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Fällige Wartungsaufträge konnten nicht erzeugt werden"})
 		return
 	}
-	query := maintenanceOrderSelect + ` WHERE 1=1`
+	query := maintenanceOrderSelect + ` WHERE NOT o.is_archived`
 	args := []interface{}{}
 	qb := NewQueryBuilder()
 	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
