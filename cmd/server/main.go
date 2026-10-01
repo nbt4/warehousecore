@@ -497,6 +497,8 @@ func main() {
 	admin.Use(middleware.RequireAdmin)
 	admin.HandleFunc("/warehouse/locations", handlers.CreateWarehouseLocation).Methods("POST")
 	admin.HandleFunc("/warehouse/locations/{id}", handlers.UpdateWarehouseLocation).Methods("PUT")
+	admin.HandleFunc("/warehouse/locations/{id}/archive", handlers.ArchiveWarehouseLocationMCP).Methods("POST")
+	admin.HandleFunc("/warehouse/locations/{id}/restore", handlers.RestoreWarehouseLocationMCP).Methods("POST")
 	admin.HandleFunc("/zone-types", handlers.CreateZoneType).Methods("POST")
 	admin.HandleFunc("/zone-types/{id}", handlers.UpdateZoneType).Methods("PUT")
 	admin.HandleFunc("/zone-types/{id}", handlers.DeleteZoneType).Methods("DELETE")

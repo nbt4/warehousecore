@@ -86,18 +86,19 @@ func createWarehouseLocationMCP(w http.ResponseWriter, r *http.Request, input wa
 		return
 	}
 	var id int64
+	var version string
 	err = tx.QueryRow(`INSERT INTO storage_zones
 		(code,barcode,name,type,description,parent_zone_id,capacity,is_active,location_kind,process_role,operational_status,is_storable,pick_sequence,capacity_mode,max_weight_kg,max_volume_m3,inventory_frequency_days,next_count_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,TRUE,$8,$9,$10,$11,$12,$13,$14,$15,$16,
 		CASE WHEN $16::int > 0 THEN CURRENT_TIMESTAMP + ($16::text || ' days')::interval ELSE NULL END)
-		RETURNING zone_id`, input.Code, *input.Barcode, input.Name, input.Type, nullableStringPtr(input.Description), input.ParentZoneID, input.Capacity,
+		RETURNING zone_id,to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, input.Code, *input.Barcode, input.Name, input.Type, nullableStringPtr(input.Description), input.ParentZoneID, input.Capacity,
 		input.LocationKind, input.ProcessRole, input.OperationalStatus, input.IsStorable, input.PickSequence, input.CapacityMode,
-		input.MaxWeightKg, input.MaxVolumeM3, input.InventoryFrequencyDays).Scan(&id)
+		input.MaxWeightKg, input.MaxVolumeM3, input.InventoryFrequencyDays).Scan(&id, &version)
 	if err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": "Location could not be created"})
 		return
 	}
-	response := map[string]any{"zone_id": id, "code": input.Code, "barcode": *input.Barcode, "name": input.Name, "parent_zone_id": input.ParentZoneID}
+	response := map[string]any{"zone_id": id, "code": input.Code, "barcode": *input.Barcode, "name": input.Name, "parent_zone_id": input.ParentZoneID, "updated_at": version}
 	encoded, err := json.Marshal(input)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to encode location audit"})
@@ -108,7 +109,7 @@ func createWarehouseLocationMCP(w http.ResponseWriter, r *http.Request, input wa
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to encode location audit"})
 		return
 	}
-	after["origin"], after["zone_id"] = "MCP/AI", id
+	after["origin"], after["zone_id"], after["updated_at"], after["is_active"] = "MCP/AI", id, version, true
 	if err := recordWarehouseMasterAudit(tx, r, "storage_zone", id, after); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to audit location"})
 		return

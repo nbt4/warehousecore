@@ -1,5 +1,43 @@
 # WarehouseCore
 
+## Release 5.9.96 – MCP-Lagerplatz-Lebenszyklus
+
+Lagerplätze können über `warehouse.locations.prepare_archive`/`archive` und
+`prepare_restore`/`restore` archiviert und wiederhergestellt werden. Die Vorschau
+zeigt alle Metadaten, exakte Version, Betriebsstatus-Diff und Abhängigkeiten.
+Warehouse-Admin und `cores:warehouse:archive` (oder Legacy `cores:write`) sind
+nötig. Ausführung verlangt `expected_updated_at`, `idempotency_key`,
+`confirm_lifecycle=true` und exakt `ARCHIVE|RESTORE WAREHOUSE LOCATION <ID>`.
+Dry-run ist möglich.
+
+Aktive Geräte (auch auf Jobs), aktive Nachfahren, Cases am Platz oder mit diesem
+Heimatplatz, jede Mengenzeile mit Bestand sowie offene Aufgaben und Inventuren
+sperren beide Aktionen. Unbekannte Aufgaben-/Inventurstatus sperren ebenfalls;
+entgegengesetzte Bestandszeilen heben die Sperre nicht auf. Inventur-Betriebsstatus
+sperrt Archivierung. Historische abgeschlossene Vorgänge und archivierte Geräte
+bleiben erhalten. Keine Bestandsbewegung, Löschung oder Kaskade auf Kinder.
+
+Restore prüft alle gespeicherten Felder, Identität und die gesamte Elternhierarchie
+auf Aktivität, fehlende Knoten und Zyklen. Bei einer unveränderten, protokollierten
+MCP-Archivierung wird `available`, `blocked` oder `maintenance` aus dem Vorzustand
+wiederhergestellt. Ältere Archive ohne passenden Versionsbeleg oder später
+bearbeitete Archive werden als `blocked` aktiviert und benötigen eine bewusste
+Betriebsfreigabe im WarehouseCore. Beide Zustandswerte werden im Diff gezeigt.
+ID, Code, Scan-Code, Metadaten, Hierarchie, Inventurplanung und Historie bleiben.
+
+`warehouse.locations.audit_history` liefert Administratoren redigierte Ereignisse
+mit Nutzer, Herkunft, Zeitpunkt, Ergebnisversion und Statuswechsel. Beschreibungen,
+Roh-JSON, IP und User-Agent werden ausgeschlossen. Anlage und Bearbeitung schreiben
+jetzt ebenfalls die Ergebnisversion in den Audit. `cores.entities.schema` für
+`warehouse.locations` enthält `lifecycle_fields`. WarehouseCore prüft erneut und
+speichert Mutation, Audit und Replay atomar. Migration `046` / Umbrella `019`
+versioniert bereits alle Lagerplatz-Schreiber; keine neue Migration erforderlich.
+
+Die neuen geführten Admin-Endpunkte sind
+`POST /api/v1/admin/warehouse/locations/{id}/archive` und `/restore`.
+Die bestehende Archiv-Route nutzt bei MCP-Herkunft denselben strengen Pfad.
+
+
 ## Release 5.9.95 – MCP-Paket-Lebenszyklus
 
 Cores MCP `1.5.25` kann Produktpakete archivieren und wiederherstellen. Die

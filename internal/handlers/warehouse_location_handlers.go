@@ -367,6 +367,10 @@ func UpdateWarehouseLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func ArchiveWarehouseLocation(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseMCPMutation(r) {
+		ArchiveWarehouseLocationMCP(w, r)
+		return
+	}
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiger Lagerplatz"})
