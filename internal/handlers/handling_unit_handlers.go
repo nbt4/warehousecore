@@ -111,7 +111,7 @@ const handlingUnitSelect = `
 	FROM cases c LEFT JOIN storage_zones z ON z.zone_id=c.zone_id LEFT JOIN case_models cm ON cm.model_id=c.case_model_id`
 
 func ListHandlingUnits(w http.ResponseWriter, r *http.Request) {
-	query := handlingUnitSelect + ` WHERE 1=1`
+	query := handlingUnitSelect + ` WHERE c.lifecycle_status='active'`
 	args := []interface{}{}
 	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
 		args = append(args, "%"+search+"%")
@@ -164,7 +164,7 @@ func FindHandlingUnitByScan(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Scan-Code fehlt"})
 		return
 	}
-	item, err := scanHandlingUnit(repository.GetSQLDB().QueryRow(handlingUnitSelect+` WHERE LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='case' AND ii.entity_key=c.caseID::text AND ii.active AND LOWER(ii.code)=LOWER($1)) LIMIT 1`, code))
+	item, err := scanHandlingUnit(repository.GetSQLDB().QueryRow(handlingUnitSelect+` WHERE c.lifecycle_status='active' AND (LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='case' AND ii.entity_key=c.caseID::text AND ii.active AND LOWER(ii.code)=LOWER($1))) LIMIT 1`, code))
 	if errors.Is(err, sql.ErrNoRows) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Case nicht gefunden"})
 		return
@@ -546,7 +546,7 @@ func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
 	}
 	var childID int64
 	var childName, childStatus string
-	err = tx.QueryRow(`SELECT c.caseID,c.name,c.workflow_status FROM cases c WHERE LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='case' AND ii.entity_key=c.caseID::text AND ii.active AND LOWER(ii.code)=LOWER($1)) LIMIT 1`, code).Scan(&childID, &childName, &childStatus)
+	err = tx.QueryRow(`SELECT c.caseID,c.name,c.workflow_status FROM cases c WHERE c.lifecycle_status='active' AND (LOWER(COALESCE(c.barcode,''))=LOWER($1) OR LOWER(COALESCE(c.rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||c.caseID::text)=LOWER($1) OR EXISTS(SELECT 1 FROM inventory_identifiers ii WHERE ii.entity_type='case' AND ii.entity_key=c.caseID::text AND ii.active AND LOWER(ii.code)=LOWER($1))) LIMIT 1`, code).Scan(&childID, &childName, &childStatus)
 	if err == nil {
 		if childID == caseID {
 			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ein Case kann nicht in sich selbst gepackt werden"})

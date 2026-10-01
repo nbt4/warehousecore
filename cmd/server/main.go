@@ -237,6 +237,9 @@ func main() {
 	if err := handlers.EnsureWarehouseDeviceVersionSchema(); err != nil {
 		log.Fatalf("Failed to initialize warehouse device versions: %v", err)
 	}
+	if err := handlers.EnsureWarehouseCaseVersionSchema(); err != nil {
+		log.Fatalf("Failed to initialize warehouse case versions: %v", err)
+	}
 	if err := handlers.EnsureLabelStudioSchema(); err != nil {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
@@ -284,7 +287,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.89")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.97")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -586,6 +589,7 @@ func main() {
 	admin.HandleFunc("/devices/{id}", handlers.GetDeviceAdmin).Methods("GET")
 	admin.HandleFunc("/devices/{id}", handlers.UpdateDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}", handlers.DeleteDevice).Methods("DELETE")
+	admin.HandleFunc("/mcp/cases/{operation:create|update|archive|restore}", handlers.CaseMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/revert-update", handlers.RevertDeviceUpdateMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/restore", handlers.RestoreDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}/permanent", handlers.PermanentlyDeleteDevice).Methods("DELETE")

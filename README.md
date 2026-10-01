@@ -1,5 +1,26 @@
 # WarehouseCore
 
+## MCP-Cases — WarehouseCore 5.9.97 / Cores MCP 1.5.27
+
+Cases unterstützen prepare_create/create, prepare_update/update,
+prepare_archive/archive, prepare_restore/restore und redigierte audit_history.
+warehouse.case_models.search liefert vorhandene Modelle. Vollständige Vorschau,
+Diff, Warehouse-Admin und create/update/archive-Scope, explizite confirm_change,
+Idempotenz und exakte Mikrosekunden-Version sind erforderlich; Lifecycle verlangt
+zusätzlich ARCHIVE|RESTORE WAREHOUSE CASE <ID>. Keine Bestandsbewegung oder
+endgültige Löschung. Nullbare Felder sind über clear_fields ausdrücklich leerbar.
+
+Migration Warehouse 052 / Umbrella 025 versioniert Metadaten, Inhalte, Templates
+und verschachtelte Cases aller Schreibpfade. Archivierte Cases behalten IDs,
+Metadaten und Vorlagen; aktive Inhalte, Jobs, Aufgaben und Lagerabläufe sperren.
+Scannerkennungen werden deaktiviert und bleiben reserviert. Restore prüft
+Modell, Lagerhierarchie, Profil, Kapazität und aktive Template-Produkte erneut.
+Mutation, Vorher/Nachher-Audit mit MCP/AI und dauerhafter Replay-Beleg sind atomar.
+
+193 Tools: 69 Abfragen, 62 Vorschauen, 62 Ausführungen. Keine neue Konfiguration.
+Vollständiger Restumfang von #4/#5: [MCP-Abschlusscheck](https://github.com/nbt4/cores-mcp/blob/main/docs/ISSUE_COMPLETION.md).
+
+
 ## Release 5.9.96 – MCP-Lagerplatz-Lebenszyklus
 
 Lagerplätze können über `warehouse.locations.prepare_archive`/`archive` und

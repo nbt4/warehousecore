@@ -84,8 +84,8 @@ func EnsureLabelStudioSchema() error {
 		 SELECT 'case', caseid::text, label_path, updated_at FROM cases
 		 WHERE label_path IS NOT NULL AND label_path <> ''
 		 ON CONFLICT (target_type, target_id) DO NOTHING`,
-		`UPDATE devices SET label_path = NULL WHERE LOWER(COALESCE(label_path, '')) LIKE '%.png'`,
-		`UPDATE cases SET label_path = NULL WHERE LOWER(COALESCE(label_path, '')) LIKE '%.png'`,
+		`UPDATE devices SET label_path = NULL WHERE lifecycle_status='active' AND LOWER(COALESCE(label_path, '')) LIKE '%.png'`,
+		`UPDATE cases SET label_path = NULL WHERE lifecycle_status='active' AND LOWER(COALESCE(label_path, '')) LIKE '%.png'`,
 		`UPDATE storage_zones SET label_url = NULL WHERE LOWER(COALESCE(label_url, '')) LIKE '%.png'`,
 		`DELETE FROM label_assets WHERE LOWER(label_path) LIKE '%.png'`,
 		`INSERT INTO label_templates (name, description, width, height, template_json, is_default, target_type, revision)

@@ -115,7 +115,7 @@ func CreateInventoryCount(w http.ResponseWriter, r *http.Request) {
 		`INSERT INTO inventory_count_lines(count_id,item_type,item_key,expected_quantity)
 		 SELECT $1,'product',pl.product_id::text,pl.quantity FROM product_locations pl WHERE pl.zone_id=$2 AND pl.quantity<>0`,
 		`INSERT INTO inventory_count_lines(count_id,item_type,item_key,expected_quantity)
-		 SELECT $1,'case',c.caseID::text,1 FROM cases c WHERE c.zone_id=$2 AND NOT EXISTS(SELECT 1 FROM case_child_contents cc WHERE cc.child_case_id=c.caseID)`,
+		 SELECT $1,'case',c.caseID::text,1 FROM cases c WHERE c.lifecycle_status='active' AND c.zone_id=$2 AND NOT EXISTS(SELECT 1 FROM case_child_contents cc WHERE cc.child_case_id=c.caseID)`,
 	}
 	for _, statement := range statements {
 		if _, err = tx.Exec(statement, countID, input.ZoneID); err != nil {
@@ -249,7 +249,7 @@ func ScanInventoryCount(w http.ResponseWriter, r *http.Request) {
 			itemType, itemKey = "product", strconv.FormatInt(productID, 10)
 		} else {
 			var caseID int64
-			err = tx.QueryRow(`SELECT caseID,name FROM cases WHERE LOWER(COALESCE(barcode,''))=LOWER($1) OR LOWER(COALESCE(rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||caseID::text)=LOWER($1) LIMIT 1`, code).Scan(&caseID, &itemName)
+			err = tx.QueryRow(`SELECT caseID,name FROM cases WHERE lifecycle_status='active' AND (LOWER(COALESCE(barcode,''))=LOWER($1) OR LOWER(COALESCE(rfid_tag,''))=LOWER($1) OR LOWER('CASE-'||caseID::text)=LOWER($1)) LIMIT 1`, code).Scan(&caseID, &itemName)
 			if err == nil {
 				var nested bool
 				_ = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM case_child_contents WHERE child_case_id=$1)`, caseID).Scan(&nested)
