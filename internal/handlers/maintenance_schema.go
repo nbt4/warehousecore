@@ -118,7 +118,7 @@ func EnsureMaintenanceSchema() error {
 		 SELECT d.deviceID,'Regelmäßige Wartung','preventive',COALESCE(NULLIF(p.maintenanceinterval,0),365),14,
 		        d.nextmaintenance,d.lastmaintenance,TRUE
 		 FROM devices d LEFT JOIN products p ON p.productID=d.productID
-		 WHERE d.nextmaintenance IS NOT NULL
+		 WHERE d.nextmaintenance IS NOT NULL AND NOT EXISTS(SELECT 1 FROM maintenance_plans existing WHERE existing.device_id=d.deviceID)
 		 ON CONFLICT (device_id,name) DO NOTHING`,
 		`INSERT INTO warehouse_schema_migrations(version) VALUES ('042_maintenance_work_management') ON CONFLICT(version) DO NOTHING`,
 	}
