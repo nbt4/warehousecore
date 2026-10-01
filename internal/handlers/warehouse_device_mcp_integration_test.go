@@ -174,6 +174,10 @@ func TestWarehouseDeviceMCPAtomicWorkflows(t *testing.T) {
 	lifecycle := func(op string) map[string]any {
 		return map[string]any{"expected_updated_at": version(id), "confirm_lifecycle": true, "confirmation_text": strings.ToUpper(op) + " WAREHOUSE DEVICE " + id}
 	}
+	exec(`INSERT INTO jobs VALUES(3,NULL,NULL)`)
+	exec(`INSERT INTO job_devices VALUES($1,3,'pending')`, id)
+	status(request("archive", id, "unknown-job-status", lifecycle("archive"), 11, true), 409)
+	exec(`DELETE FROM job_devices WHERE jobid=3`)
 	// Every active relation independently prevents archival.
 	for i, tc := range []struct{ table, insert string }{{"job_devices", `INSERT INTO job_devices VALUES($1,1,'pending')`}, {"job_position_devices", `INSERT INTO job_position_devices VALUES($1,1)`}, {"job_package_reservations", `INSERT INTO job_package_reservations VALUES($1,'reserved')`}, {"devicescases", `INSERT INTO devicescases VALUES($1)`}, {"device_components", `INSERT INTO device_components VALUES($1,'other')`}, {"warehouse_tasks", `INSERT INTO warehouse_tasks VALUES($1,'open')`}, {"maintenance_orders", `INSERT INTO maintenance_orders VALUES($1,'scheduled')`}, {"maintenance_plans", `INSERT INTO maintenance_plans VALUES($1,true)`}, {"defect_reports", `INSERT INTO defect_reports VALUES($1,'open')`}} {
 		exec(tc.insert, id)

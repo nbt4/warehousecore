@@ -549,6 +549,8 @@ func main() {
 	admin.HandleFunc("/product-packages", handlers.CreateProductPackage).Methods("POST")
 	admin.HandleFunc("/product-packages/{id}", handlers.UpdateProductPackage).Methods("PUT")
 	admin.HandleFunc("/product-packages/{id}", handlers.DeleteProductPackage).Methods("DELETE")
+	admin.HandleFunc("/product-packages/{id}/archive", handlers.ArchiveProductPackageMCP).Methods("POST")
+	admin.HandleFunc("/product-packages/{id}/restore", handlers.RestoreProductPackageMCP).Methods("POST")
 	admin.HandleFunc("/product-packages/{id}/items", handlers.AddItemToPackage).Methods("POST")
 	admin.HandleFunc("/product-packages/{package_id}/items/{item_id}", handlers.RemoveItemFromPackage).Methods("DELETE")
 	admin.HandleFunc("/product-packages/{id}/pictures", handlers.UploadProductPackagePictures).Methods("POST")

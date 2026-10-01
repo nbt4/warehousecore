@@ -267,7 +267,7 @@ func mutateWarehousePackageMCP(w http.ResponseWriter, r *http.Request, id int64)
 		respondWarehouseMutationError(w, err)
 		return
 	}
-	newJSON, err := json.Marshal(map[string]any{"origin": "MCP/AI", "after": input.warehousePackageFields})
+	newJSON, err := json.Marshal(map[string]any{"origin": "MCP/AI", "after": input.warehousePackageFields, "updated_at": version, "is_active": true})
 	if err != nil {
 		respondWarehouseMutationError(w, err)
 		return

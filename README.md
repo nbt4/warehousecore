@@ -1,5 +1,26 @@
 # WarehouseCore
 
+## Release 5.9.95 – MCP-Paket-Lebenszyklus
+
+Cores MCP `1.5.25` kann Produktpakete archivieren und wiederherstellen. Die
+geführten Admin-Endpunkte `POST /api/v1/admin/product-packages/{id}/archive`
+und `/restore` brauchen MCP-Herkunft, Warehouse-Admin, exakte Paket-/Inhaltsversion,
+Idempotenzschlüssel, `confirm_lifecycle=true` und
+`ARCHIVE|RESTORE WAREHOUSE PACKAGE <ID>`.
+
+Aktive Jobs und nicht freigegebene Reservierungen sperren beide Aktionen.
+Geschlossene Jobhistorie bleibt erhalten; Jobs ohne Status gelten als offen.
+Restore prüft alle gespeicherten Felder und Bestandteile sowie aktive Produkte
+und eindeutigen Namen. Paket-ID, Code, Preise und Inhaltszeilen bleiben erhalten.
+Beide Aktionen deaktivieren `website_visible`; Veröffentlichung erfordert danach
+bewusst einen separaten Update. Keine Produkte oder Bestände werden bewegt.
+
+Mutation, Audit und dauerhafter Replay-Beleg werden atomar gespeichert. Die
+vorhandenen Versionstrigger aus Migration `050` / Root `023` gelten auch hier;
+es ist keine neue Migration erforderlich. Audit-Historie ist im MCP redigiert.
+Auch Geräte-Abhängigkeiten berücksichtigen jetzt Jobs ohne gesetzten Status.
+
+
 ## Release 5.9.94 – MCP-Gerätepflege und Lebenszyklus
 
 Cores MCP `1.5.24` kann einzelne Geräte vollständig anlegen und ihre Metadaten
