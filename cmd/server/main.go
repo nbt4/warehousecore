@@ -287,7 +287,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.97")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.98")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -589,6 +589,7 @@ func main() {
 	admin.HandleFunc("/devices/{id}", handlers.GetDeviceAdmin).Methods("GET")
 	admin.HandleFunc("/devices/{id}", handlers.UpdateDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}", handlers.DeleteDevice).Methods("DELETE")
+	admin.HandleFunc("/mcp/devices/bulk-create", handlers.CreateDevicesBulkMCP).Methods("POST")
 	admin.HandleFunc("/mcp/cases/{operation:create|update|archive|restore}", handlers.CaseMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/revert-update", handlers.RevertDeviceUpdateMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/restore", handlers.RestoreDevice).Methods("PUT")
