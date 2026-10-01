@@ -33,6 +33,7 @@ func GetBrands(w http.ResponseWriter, r *http.Request) {
 		SELECT b.brandID, b.name, b.manufacturerID, m.name
 		FROM brands b
 		LEFT JOIN manufacturer m ON b.manufacturerID = m.manufacturerID
+		WHERE b.lifecycle_status='active'
 		ORDER BY b.name
 	`)
 	if err != nil {
@@ -216,7 +217,7 @@ func DeleteBrand(w http.ResponseWriter, r *http.Request) {
 // GetManufacturers returns all manufacturers.
 func GetManufacturers(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
-	rows, err := db.Query("SELECT manufacturerID, name, website FROM manufacturer ORDER BY name")
+	rows, err := db.Query("SELECT manufacturerID, name, website FROM manufacturer WHERE lifecycle_status='active' ORDER BY name")
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch manufacturers"})
 		return

@@ -32,7 +32,7 @@ func EnsureWarehouseMasterVersionSchema() error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(warehouseMasterVersionSQL); err != nil {
+	if _, err = tx.Exec(warehouseMasterVersionSQL + warehouseMasterLifecycleSQL); err != nil {
 		return fmt.Errorf("apply warehouse master version schema: %w", err)
 	}
 	return tx.Commit()

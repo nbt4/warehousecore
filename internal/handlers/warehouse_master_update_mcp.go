@@ -77,13 +77,13 @@ func updateWarehouseMasterMCP(w http.ResponseWriter, r *http.Request, entity str
 		respondWarehouseMutationError(w, err)
 		return
 	}
-	var currentName, version string
+	var currentName, version, lifecycle string
 	var currentWebsite sql.NullString
 	var currentManufacturer sql.NullInt64
 	if entity == "manufacturer" {
-		err = tx.QueryRow(`SELECT name,website,to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM manufacturer WHERE manufacturerid=$1 FOR UPDATE`, id).Scan(&currentName, &currentWebsite, &version)
+		err = tx.QueryRow(`SELECT name,website,lifecycle_status,to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM manufacturer WHERE manufacturerid=$1 FOR UPDATE`, id).Scan(&currentName, &currentWebsite, &lifecycle, &version)
 	} else {
-		err = tx.QueryRow(`SELECT name,manufacturerid,to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM brands WHERE brandid=$1 FOR UPDATE`, id).Scan(&currentName, &currentManufacturer, &version)
+		err = tx.QueryRow(`SELECT name,manufacturerid,lifecycle_status,to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM brands WHERE brandid=$1 FOR UPDATE`, id).Scan(&currentName, &currentManufacturer, &lifecycle, &version)
 	}
 	if err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Master record not found"})
@@ -91,6 +91,10 @@ func updateWarehouseMasterMCP(w http.ResponseWriter, r *http.Request, entity str
 	}
 	if err != nil {
 		respondWarehouseMutationError(w, err)
+		return
+	}
+	if lifecycle != "active" {
+		respondJSON(w, 409, map[string]string{"error": "Restore archived master record before editing"})
 		return
 	}
 	if expected != version {
@@ -113,7 +117,7 @@ func updateWarehouseMasterMCP(w http.ResponseWriter, r *http.Request, entity str
 		before["manufacturer_id"] = previous
 		if manufacturerID != nil {
 			var exists bool
-			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM manufacturer WHERE manufacturerid=$1)`, *manufacturerID).Scan(&exists); err != nil {
+			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM manufacturer WHERE manufacturerid=$1 AND lifecycle_status='active')`, *manufacturerID).Scan(&exists); err != nil {
 				respondWarehouseMutationError(w, err)
 				return
 			}
@@ -170,7 +174,7 @@ func updateWarehouseMasterMCP(w http.ResponseWriter, r *http.Request, entity str
 		respondWarehouseMutationError(w, err)
 		return
 	}
-	newJSON, err := json.Marshal(map[string]any{"origin": "MCP/AI", "after": after})
+	newJSON, err := json.Marshal(map[string]any{"origin": "MCP/AI", "after": after, "updated_at": version})
 	if err != nil {
 		respondWarehouseMutationError(w, err)
 		return

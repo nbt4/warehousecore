@@ -1,5 +1,27 @@
 # WarehouseCore
 
+## MCP-Hersteller und Marken — WarehouseCore 5.9.99 / Cores MCP 1.5.29
+
+Hersteller und Marken unterstützen `prepare_archive`/`archive`,
+`prepare_restore`/`restore` und redigierte `audit_history`. Warehouse-Admin,
+`cores:warehouse:archive` (oder Legacy `cores:write`), vollständige Vorschau,
+exakte Version, `confirm_lifecycle`, Idempotenz und
+`ARCHIVE|RESTORE WAREHOUSE MANUFACTURER|BRAND <ID>` sind erforderlich.
+
+Aktive Produkte sperren beide Stammdatenarchive; aktive Marken sperren das
+Herstellerarchiv zusätzlich. Historische Produktbeziehungen, Felder und IDs
+bleiben erhalten. Restore prüft Identität und aktiven Hersteller der Marke.
+Migration Warehouse `053` / Umbrella `026` schützt diese Regeln auch bei
+bestehenden Schreibpfaden. Archivierte Datensätze sind vor Bearbeitung zu
+restaurieren. Aktive Produkt-/Markenzuordnungen dürfen nicht auf archivierte
+Stammdaten zeigen. Normale Auswahllisten zeigen aktive Hersteller und Marken;
+MCP-Auflösung zeigt archivierte Identitäten mit Status für Duplikatprüfung.
+Mutation, vollständiger Vorher/Nachher-Audit und dauerhafter Replay sind atomar.
+Die Historientools liefern keine Roh-JSON, Website, IP oder User-Agent.
+
+205 Tools: 71 Abfragen, 67 Vorschauen, 67 Ausführungen. Keine neue Konfiguration.
+Der übrige Umfang von #4/#5 bleibt im [Abschlusscheck](https://github.com/nbt4/cores-mcp/blob/main/docs/ISSUE_COMPLETION.md) dokumentiert.
+
 ## Atomare MCP-Gerätestapel — WarehouseCore 5.9.98 / Cores MCP 1.5.28
 
 `warehouse.devices.prepare_bulk_create` und `warehouse.devices.bulk_create`

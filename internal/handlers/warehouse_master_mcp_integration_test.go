@@ -50,7 +50,7 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE manufacturer(manufacturerid SERIAL PRIMARY KEY,name VARCHAR(255),website VARCHAR(255))`,
 		`CREATE TABLE brands(brandid SERIAL PRIMARY KEY,name VARCHAR(255),manufacturerid INT REFERENCES manufacturer(manufacturerid))`,
-		`CREATE TABLE products(productid SERIAL PRIMARY KEY,name TEXT,manufacturerid INT,brandid INT)`,
+		`CREATE TABLE products(productid SERIAL PRIMARY KEY,name TEXT,manufacturerid INT,brandid INT,lifecycle_status TEXT NOT NULL DEFAULT 'active')`,
 		`CREATE TABLE categories(categoryid SERIAL PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10))`,
 		`CREATE TABLE subcategories(subcategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),categoryid INT REFERENCES categories(categoryid))`,
 		`CREATE TABLE subbiercategories(subbiercategoryid VARCHAR(50) PRIMARY KEY,name VARCHAR(100),abbreviation VARCHAR(10),subcategoryid VARCHAR(50) REFERENCES subcategories(subcategoryid))`,
@@ -69,6 +69,9 @@ func TestWarehouseMCPStandaloneMasterCreation(t *testing.T) {
 	previousDB := repository.DB
 	repository.DB = db
 	defer func() { repository.DB = previousDB }()
+	if err := EnsureWarehouseMasterVersionSchema(); err != nil {
+		t.Fatal(err)
+	}
 	request := func(path, key string, body map[string]any) *httptest.ResponseRecorder {
 		encoded, err := json.Marshal(body)
 		if err != nil {

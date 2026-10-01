@@ -106,7 +106,7 @@ func createBrandMCP(w http.ResponseWriter, r *http.Request, rawName string, manu
 		return
 	}
 	var manufacturerName string
-	if err := tx.QueryRow(`SELECT name FROM manufacturer WHERE manufacturerid=$1 FOR KEY SHARE`, *manufacturerID).Scan(&manufacturerName); err == sql.ErrNoRows {
+	if err := tx.QueryRow(`SELECT name FROM manufacturer WHERE manufacturerid=$1 AND lifecycle_status='active' FOR KEY SHARE`, *manufacturerID).Scan(&manufacturerName); err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Manufacturer not found"})
 		return
 	} else if err != nil {
