@@ -80,9 +80,10 @@ func LoadPackingList(db *sql.DB, jobID int) (*PackingList, error) {
 			       t.quantity * COALESCE(pd.default_quantity, 1), 'Stück', t.depth + 1,
 			       t.path || child.productid, true
 			FROM tree t
-			JOIN product_dependencies pd ON pd.product_id = t.productid
+			JOIN products source ON source.productid=t.productid AND source.lifecycle_status='active'
+			JOIN product_dependencies pd ON pd.product_id = t.productid AND pd.lifecycle_status='active'
 			JOIN products child ON child.productid = pd.dependency_product_id
-			WHERE t.depth < 5 AND NOT child.productid = ANY(t.path)
+			WHERE child.lifecycle_status='active' AND t.depth < 5 AND NOT child.productid = ANY(t.path)
 		)
 		SELECT productid, name, quantity::float8, unit, depth, accessory
 		FROM tree

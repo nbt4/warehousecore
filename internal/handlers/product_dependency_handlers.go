@@ -45,7 +45,7 @@ func GetProductDependencies(w http.ResponseWriter, r *http.Request) {
 		FROM product_dependencies pd
 		JOIN products p ON pd.dependency_product_id = p.productid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		WHERE pd.product_id = ?
+		WHERE pd.product_id = ? AND pd.lifecycle_status='active' AND p.lifecycle_status='active' AND EXISTS(SELECT 1 FROM products source WHERE source.productid=pd.product_id AND source.lifecycle_status='active')
 		ORDER BY pd.created_at DESC
 	`, productID).Scan(&dependencies).Error
 
@@ -179,7 +179,7 @@ func CreateProductDependency(w http.ResponseWriter, r *http.Request) {
 		FROM product_dependencies pd
 		JOIN products p ON pd.dependency_product_id = p.productid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		WHERE pd.product_id = ? AND pd.dependency_product_id = ?
+		WHERE pd.product_id = ? AND pd.dependency_product_id = ? AND pd.lifecycle_status='active' AND p.lifecycle_status='active' AND EXISTS(SELECT 1 FROM products source WHERE source.productid=pd.product_id AND source.lifecycle_status='active')
 	`, productID, req.DependencyProductID).Scan(&dependency).Error
 
 	if err != nil {
