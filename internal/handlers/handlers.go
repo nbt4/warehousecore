@@ -1761,7 +1761,7 @@ func GetJobRequirements(w http.ResponseWriter, r *http.Request) {
 		JOIN products p ON jpr.product_id = p.productid
 		LEFT JOIN job_devices jd ON jd.jobid = jpr.job_id
 		LEFT JOIN devices d ON d.deviceid = jd.deviceid AND d.productid = jpr.product_id
-		WHERE jpr.job_id = $1
+		WHERE jpr.job_id = $1 AND COALESCE(to_jsonb(jpr)->>'deleted_at','')=''
 		GROUP BY jpr.id, jpr.product_id, p.name, jpr.quantity
 		ORDER BY p.name
 	`

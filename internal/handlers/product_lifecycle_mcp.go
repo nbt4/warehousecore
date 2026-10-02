@@ -39,7 +39,7 @@ func productArchiveDependencies(tx *sql.Tx, productID int) (int, int, error) {
 	var openRequirements, packedDevices int
 	err := tx.QueryRow(`SELECT COUNT(*) FROM job_product_requirements r
 		JOIN jobs j ON j.jobid=r.job_id JOIN status s ON s.statusid=j.statusid
-		WHERE r.product_id=$1 AND j.deleted_at IS NULL
+		WHERE r.product_id=$1 AND j.deleted_at IS NULL AND COALESCE(to_jsonb(r)->>'deleted_at','')=''
 		AND lower(trim(s.status)) NOT IN ('abgeschlossen','storniert','completed','paid','canceled','cancelled','abgerechnet')`, productID).Scan(&openRequirements)
 	if err != nil {
 		return 0, 0, err

@@ -18,8 +18,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 
-	commonbranding "github.com/nbt4/cores-common/pkg/branding"
-	commonhealth "github.com/nbt4/cores-common/pkg/health"
 	"warehousecore/config"
 	"warehousecore/internal/handlers"
 	"warehousecore/internal/led"
@@ -27,9 +25,13 @@ import (
 	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	commonbranding "github.com/nbt4/cores-common/pkg/branding"
+	commonhealth "github.com/nbt4/cores-common/pkg/health"
+
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var brandingSvc *services.BrandingService
@@ -308,7 +310,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.105")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.106")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")

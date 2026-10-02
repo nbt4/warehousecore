@@ -16,7 +16,7 @@ CREATE OR REPLACE FUNCTION warehouse_relation_active_jobs(pid INT) RETURNS JSONB
  ), affected AS (
   SELECT DISTINCT j.jobid,s.status,j.updated_at,j.startdate,j.enddate FROM jobs j LEFT JOIN status s ON s.statusid=j.statusid
   WHERE j.deleted_at IS NULL AND NOT warehouse_job_status_is_closed(COALESCE(s.status,'')) AND (
-   EXISTS(SELECT 1 FROM job_product_requirements r WHERE r.job_id=j.jobid AND r.product_id IN (SELECT product_id FROM ancestors)) OR
+   EXISTS(SELECT 1 FROM job_product_requirements r WHERE r.job_id=j.jobid AND COALESCE(to_jsonb(r)->>'deleted_at','')='' AND r.product_id IN (SELECT product_id FROM ancestors)) OR
    EXISTS(SELECT 1 FROM job_positions p WHERE p.job_id=j.jobid AND p.product_id IN (SELECT product_id FROM ancestors)) OR
    EXISTS(SELECT 1 FROM job_devices jd JOIN devices d ON d.deviceid=jd.deviceid WHERE jd.jobid=j.jobid AND d.productid IN (SELECT product_id FROM ancestors)))
   ORDER BY j.jobid LIMIT 1001

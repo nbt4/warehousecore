@@ -55,19 +55,25 @@ func LoadPackingList(db *sql.DB, jobID int) (*PackingList, error) {
 	}
 
 	rows, err := db.Query(`
-		WITH RECURSIVE roots AS (
+		WITH RECURSIVE position_roots AS (
 			SELECT jp.product_id, SUM(jp.quantity)::numeric AS quantity,
 			       MIN(jp.unit) AS unit, MIN(jp.sort_order) AS sort_order
 			FROM job_positions jp
 			WHERE jp.job_id = $1 AND jp.position_type = 'product' AND jp.product_id IS NOT NULL
 			GROUP BY jp.product_id
+		), roots AS (
+			SELECT pr.product_id,
+			       pr.quantity + COALESCE((to_jsonb(jpr)->>'manual_quantity')::numeric,0) AS quantity,
+			       pr.unit,pr.sort_order
+			FROM position_roots pr
+			LEFT JOIN job_product_requirements jpr ON jpr.job_id=$1 AND jpr.product_id=pr.product_id
+			 AND COALESCE(to_jsonb(jpr)->>'deleted_at','')=''
 			UNION ALL
 			SELECT jpr.product_id, jpr.quantity::numeric, 'Stück', 100000 + jpr.id::int
 			FROM job_product_requirements jpr
-			WHERE jpr.job_id = $1
+			WHERE jpr.job_id = $1 AND COALESCE(to_jsonb(jpr)->>'deleted_at','')=''
 			  AND NOT EXISTS (
-				SELECT 1 FROM job_positions jp
-				WHERE jp.job_id = jpr.job_id AND jp.product_id = jpr.product_id
+				SELECT 1 FROM position_roots pr WHERE pr.product_id=jpr.product_id
 			  )
 		), tree AS (
 			SELECT r.sort_order AS root_order, p.productid, p.name, r.quantity,
