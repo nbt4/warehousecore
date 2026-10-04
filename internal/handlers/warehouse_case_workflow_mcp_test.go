@@ -49,6 +49,8 @@ func TestWarehouseCaseWorkflowAtomicTreeSchedulingInspectionAndRetention(t *test
 	exec(inventoryMCPFixtureSQL)
 	exec(caseContentFixtureSQL)
 	exec(caseWorkflowFixtureSQL)
+	// Fresh suite migration must create events before the operations bootstrap.
+	exec(`DROP TABLE case_events`)
 	old := repository.DB
 	repository.DB = db
 	defer func() { repository.DB = old }()

@@ -6,6 +6,14 @@ import (
 )
 
 const warehouseCaseWorkflowRetentionSQL = `-- Preserve case identities and physical movement history across lifecycle.
+-- Fresh suite initialization runs before the owning-Core operations bootstrap.
+CREATE TABLE IF NOT EXISTS case_events (
+ event_id BIGSERIAL PRIMARY KEY,case_id INT NOT NULL REFERENCES cases(caseid) ON DELETE CASCADE,
+ event_type VARCHAR(40) NOT NULL,device_id VARCHAR(255),product_id INT,
+ quantity NUMERIC(12,3),zone_id INT,job_id BIGINT,
+ metadata JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_case_events_case_created ON case_events(case_id,created_at DESC);
 CREATE OR REPLACE FUNCTION retain_warehouse_case_identity() RETURNS TRIGGER AS $$
 BEGIN RAISE EXCEPTION 'Archive cases; physical history and case identity cannot be deleted';END;
 $$ LANGUAGE plpgsql;
