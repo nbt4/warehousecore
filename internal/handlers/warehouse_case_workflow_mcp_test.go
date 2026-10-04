@@ -269,7 +269,7 @@ func TestWarehouseCaseWorkflowAtomicTreeSchedulingInspectionAndRetention(t *test
 const caseWorkflowFixtureSQL = `
 ALTER TABLE storage_zones ADD COLUMN process_role TEXT DEFAULT 'storage';UPDATE storage_zones SET process_role='inspection' WHERE zone_id=3;
 ALTER TABLE job_devices ADD COLUMN pack_ts TIMESTAMP;ALTER TABLE job_devices ADD CONSTRAINT workflow_job_device UNIQUE(deviceid,jobid);
-ALTER TABLE job_package_reservations ADD COLUMN reservation_id BIGSERIAL;ALTER TABLE job_package_reservations ADD COLUMN quantity NUMERIC DEFAULT 1;ALTER TABLE job_package_reservations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE job_package_reservations ADD COLUMN reservation_id BIGSERIAL;ALTER TABLE job_package_reservations ADD COLUMN quantity NUMERIC DEFAULT 1;ALTER TABLE job_package_reservations ADD COLUMN reserved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;ALTER TABLE job_package_reservations ADD COLUMN assigned_at TIMESTAMP;ALTER TABLE job_package_reservations ADD COLUMN released_at TIMESTAMP;
 ALTER TABLE case_events ADD COLUMN job_id BIGINT;ALTER TABLE case_events ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 CREATE TABLE job_edit_sessions(job_id INT,user_id INT,last_seen TIMESTAMP);
 CREATE TABLE job_history(history_id BIGSERIAL PRIMARY KEY,job_id INT,user_id INT,change_type TEXT,field_name TEXT,old_value TEXT,new_value TEXT,description TEXT,user_agent TEXT);
