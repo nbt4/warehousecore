@@ -310,7 +310,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.106")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.107")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -619,6 +619,8 @@ func main() {
 	admin.HandleFunc("/mcp/product-relations/{operation:create|link|update|archive|restore}", handlers.WarehouseProductRelationMCP).Methods("POST")
 	admin.HandleFunc("/mcp/{entity:category|subcategory|third_category}/{operation:archive|restore}", handlers.WarehouseCategoryLifecycleMCP).Methods("POST")
 	admin.HandleFunc("/mcp/{entity:manufacturer|brand}/{operation:archive|restore}", handlers.WarehouseMasterLifecycleMCP).Methods("POST")
+	admin.HandleFunc("/mcp/products/bulk-create", handlers.CreateProductsBulkMCP).Methods("POST")
+	admin.HandleFunc("/mcp/products/extract-url", handlers.ExtractProductURLMCP).Methods("POST")
 	admin.HandleFunc("/mcp/devices/bulk-create", handlers.CreateDevicesBulkMCP).Methods("POST")
 	admin.HandleFunc("/mcp/cases/{operation:create|update|archive|restore}", handlers.CaseMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/revert-update", handlers.RevertDeviceUpdateMCP).Methods("POST")

@@ -953,109 +953,8 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(replay)
 		return
 	}
-	if err := resolveProductMasterInputs(tx, r, &req); err != nil {
-		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := validateProductRelations(tx, &req, 0); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	if len(req.Attributes) == 0 {
-		req.Attributes = json.RawMessage(`{}`)
-	}
-
-	initialStock := 0.0
-	if req.TrackingMode == "quantity" && req.StockQuantity != nil {
-		initialStock = *req.StockQuantity
-	}
-	if req.InitialZoneID != nil {
-		incoming := float64(req.InitialDeviceQty)
-		if req.TrackingMode == "quantity" {
-			incoming = initialStock
-		}
-		if err := services.ValidateStorageDestination(tx, int64(*req.InitialZoneID), incoming); err != nil {
-			respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
-	}
-	var id int64
-	err = tx.QueryRow(`
-		INSERT INTO products (
-			name, categoryID, subcategoryID, subbiercategoryID, manufacturerid, brandid,
-			description, maintenanceinterval, itemcostperday, weight, height, width, depth,
-			powerconsumption, pos_in_category, is_accessory, is_consumable, count_type_id,
-			stock_quantity, min_stock_level, generic_barcode, price_per_unit,
-			product_type, tracking_mode, lifecycle_status, product_kind, model_number,
-			manufacturer_part_number, ean, attributes, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 'active', $25, $26, $27, $28, $29::jsonb, CURRENT_TIMESTAMP)
-		RETURNING productID, product_code, generic_barcode
-	`,
-		req.Name, req.CategoryID, req.SubcategoryID, req.SubbiercategoryID,
-		req.ManufacturerID, req.BrandID, req.Description, req.MaintenanceInterval,
-		req.ItemCostPerDay, req.Weight, req.Height, req.Width, req.Depth,
-		req.PowerConsumption, req.PosInCategory, req.IsAccessory, req.IsConsumable,
-		req.CountTypeID, 0, req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
-		req.ProductType, req.TrackingMode, req.ProductKind, req.ModelNumber,
-		req.ManufacturerPartNo, req.EAN, string(req.Attributes),
-	).Scan(&id, &req.ProductCode, &req.GenericBarcode)
-
-	if err != nil {
-		log.Printf("Failed to create product: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
-		return
-	}
-	if req.ProcurementProductID != nil {
-		var procurementExists bool
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proc_products WHERE id=$1 AND active=TRUE)`, *req.ProcurementProductID).Scan(&procurementExists); err != nil || !procurementExists {
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Procurement-Produkt wurde nicht gefunden oder ist deaktiviert"})
-			return
-		}
-		linkedBy, linkedName := int64(0), ""
-		if user, ok := middleware.GetUserFromContext(r); ok && user != nil {
-			linkedBy, linkedName = int64(user.UserID), user.Username
-		}
-		if _, err := tx.Exec(`INSERT INTO core_product_links(procurement_product_id,warehouse_product_id,link_method,linked_by,linked_by_name) VALUES($1,$2,'import',$3,$4)`, *req.ProcurementProductID, id, linkedBy, linkedName); err != nil {
-			respondJSON(w, http.StatusConflict, map[string]string{"error": "Procurement-Produkt oder Warehouse-Produkt ist bereits verknüpft"})
-			return
-		}
-	}
-	if req.TrackingMode == "quantity" && initialStock > 0 {
-		if _, err := tx.Exec(`INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, $2, $3)`, id, req.InitialZoneID, initialStock); err != nil {
-			log.Printf("Failed to create initial stock for product %d: %v", id, err)
-			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create initial product stock"})
-			return
-		}
-	}
-	if req.TrackingMode == "individual" && req.InitialDeviceQty > 0 {
-		status := "location_unknown"
-		location := "location_unknown"
-		if req.InitialZoneID != nil {
-			status = "in_storage"
-			location = "warehouse"
-		}
-		for i := 0; i < req.InitialDeviceQty; i++ {
-			var deviceID string
-			if err := tx.QueryRow(`INSERT INTO devices(productID,status,condition_status,current_location,zone_id) VALUES($1,$2,'available',$3,$4) RETURNING deviceID`, id, status, location, req.InitialZoneID).Scan(&deviceID); err != nil {
-				log.Printf("Failed to create initial device for product %d: %v", id, err)
-				respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Product and devices could not be created atomically"})
-				return
-			}
-			req.CreatedDeviceIDs = append(req.CreatedDeviceIDs, deviceID)
-		}
-	}
-
-	req.ProductID = int(id)
-	req.LifecycleStatus = "active"
-	if req.TrackingMode == "quantity" {
-		req.StockQuantity = &initialStock
-	}
-	var auditAfter any = req
-	if isWarehouseMCPMutation(r) {
-		auditAfter = map[string]any{"origin": "MCP/AI", "after": req}
-	}
-	if err := recordProductAudit(tx, r, "product.create", int(id), nil, auditAfter); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to record product change"})
+	if err := createProductInTransaction(tx, r, &req); err != nil {
+		respondWarehouseMutationError(w, err)
 		return
 	}
 	if err := completeWarehouseProductMutation(tx, receiptID, http.StatusCreated, req); err != nil {
@@ -2165,4 +2064,106 @@ func buildPublicImageURLs(productID int, files []string) []string {
 		out = append(out, fmt.Sprintf("/api/v1/public/products/%d/pictures/%s?variant=preview&format=webp", productID, url.PathEscape(f)))
 	}
 	return out
+}
+
+// createProductInTransaction is shared by single creation and atomic product batches.
+func createProductInTransaction(tx *sql.Tx, r *http.Request, req *Product) error {
+	var err error
+	if err := resolveProductMasterInputs(tx, r, req); err != nil {
+		return &warehouseMutationError{http.StatusConflict, "product_create_rejected", err.Error()}
+	}
+	if err := validateProductRelations(tx, req, 0); err != nil {
+		return &warehouseMutationError{http.StatusBadRequest, "product_create_rejected", err.Error()}
+	}
+	if len(req.Attributes) == 0 {
+		req.Attributes = json.RawMessage(`{}`)
+	}
+
+	initialStock := 0.0
+	if req.TrackingMode == "quantity" && req.StockQuantity != nil {
+		initialStock = *req.StockQuantity
+	}
+	if req.InitialZoneID != nil {
+		incoming := float64(req.InitialDeviceQty)
+		if req.TrackingMode == "quantity" {
+			incoming = initialStock
+		}
+		if err := services.ValidateStorageDestination(tx, int64(*req.InitialZoneID), incoming); err != nil {
+			return &warehouseMutationError{http.StatusConflict, "product_create_rejected", err.Error()}
+		}
+	}
+	var id int64
+	err = tx.QueryRow(`
+		INSERT INTO products (
+			name, categoryID, subcategoryID, subbiercategoryID, manufacturerid, brandid,
+			description, maintenanceinterval, itemcostperday, weight, height, width, depth,
+			powerconsumption, pos_in_category, is_accessory, is_consumable, count_type_id,
+			stock_quantity, min_stock_level, generic_barcode, price_per_unit,
+			product_type, tracking_mode, lifecycle_status, product_kind, model_number,
+			manufacturer_part_number, ean, attributes, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 'active', $25, $26, $27, $28, $29::jsonb, CURRENT_TIMESTAMP)
+		RETURNING productID, product_code, generic_barcode
+	`,
+		req.Name, req.CategoryID, req.SubcategoryID, req.SubbiercategoryID,
+		req.ManufacturerID, req.BrandID, req.Description, req.MaintenanceInterval,
+		req.ItemCostPerDay, req.Weight, req.Height, req.Width, req.Depth,
+		req.PowerConsumption, req.PosInCategory, req.IsAccessory, req.IsConsumable,
+		req.CountTypeID, 0, req.MinStockLevel, req.GenericBarcode, req.PricePerUnit,
+		req.ProductType, req.TrackingMode, req.ProductKind, req.ModelNumber,
+		req.ManufacturerPartNo, req.EAN, string(req.Attributes),
+	).Scan(&id, &req.ProductCode, &req.GenericBarcode)
+
+	if err != nil {
+		log.Printf("Failed to create product: %v", err)
+		return &warehouseMutationError{http.StatusInternalServerError, "product_create_rejected", "Failed to create product"}
+	}
+	if req.ProcurementProductID != nil {
+		var procurementExists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM proc_products WHERE id=$1 AND active=TRUE)`, *req.ProcurementProductID).Scan(&procurementExists); err != nil || !procurementExists {
+			return &warehouseMutationError{http.StatusBadRequest, "product_create_rejected", "Procurement-Produkt wurde nicht gefunden oder ist deaktiviert"}
+		}
+		linkedBy, linkedName := int64(0), ""
+		if user, ok := middleware.GetUserFromContext(r); ok && user != nil {
+			linkedBy, linkedName = int64(user.UserID), user.Username
+		}
+		if _, err := tx.Exec(`INSERT INTO core_product_links(procurement_product_id,warehouse_product_id,link_method,linked_by,linked_by_name) VALUES($1,$2,'import',$3,$4)`, *req.ProcurementProductID, id, linkedBy, linkedName); err != nil {
+			return &warehouseMutationError{http.StatusConflict, "product_create_rejected", "Procurement-Produkt oder Warehouse-Produkt ist bereits verknüpft"}
+		}
+	}
+	if req.TrackingMode == "quantity" && initialStock > 0 {
+		if _, err := tx.Exec(`INSERT INTO product_locations (product_id, zone_id, quantity) VALUES ($1, $2, $3)`, id, req.InitialZoneID, initialStock); err != nil {
+			log.Printf("Failed to create initial stock for product %d: %v", id, err)
+			return &warehouseMutationError{http.StatusInternalServerError, "product_create_rejected", "Failed to create initial product stock"}
+		}
+	}
+	if req.TrackingMode == "individual" && req.InitialDeviceQty > 0 {
+		status := "location_unknown"
+		location := "location_unknown"
+		if req.InitialZoneID != nil {
+			status = "in_storage"
+			location = "warehouse"
+		}
+		for i := 0; i < req.InitialDeviceQty; i++ {
+			var deviceID string
+			if err := tx.QueryRow(`INSERT INTO devices(productID,status,condition_status,current_location,zone_id) VALUES($1,$2,'available',$3,$4) RETURNING deviceID`, id, status, location, req.InitialZoneID).Scan(&deviceID); err != nil {
+				log.Printf("Failed to create initial device for product %d: %v", id, err)
+				return &warehouseMutationError{http.StatusInternalServerError, "product_create_rejected", "Product and devices could not be created atomically"}
+			}
+			req.CreatedDeviceIDs = append(req.CreatedDeviceIDs, deviceID)
+		}
+	}
+
+	req.ProductID = int(id)
+	req.LifecycleStatus = "active"
+	if req.TrackingMode == "quantity" {
+		req.StockQuantity = &initialStock
+	}
+	var auditAfter any = req
+	if isWarehouseMCPMutation(r) {
+		auditAfter = map[string]any{"origin": "MCP/AI", "after": req}
+	}
+	if err := recordProductAudit(tx, r, "product.create", int(id), nil, auditAfter); err != nil {
+		return &warehouseMutationError{http.StatusInternalServerError, "product_create_rejected", "Failed to record product change"}
+	}
+	return nil
 }
