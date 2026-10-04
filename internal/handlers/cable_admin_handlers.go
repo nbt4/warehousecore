@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gorilla/mux"
-	"github.com/lib/pq"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
+
+	"github.com/gorilla/mux"
+	"github.com/lib/pq"
 )
 
 const (
@@ -852,7 +853,7 @@ func syncCableProductStock(tx *sql.Tx, productID int, mode string) error {
 	if mode == cableTrackingIndividual {
 		query = `UPDATE products SET stock_quantity = (SELECT COUNT(*) FROM devices WHERE productid = $1 AND lifecycle_status='active'), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
 	} else {
-		query = `UPDATE products SET stock_quantity = (SELECT COALESCE(SUM(quantity), 0) FROM product_locations WHERE product_id = $1), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
+		query = `UPDATE products SET stock_quantity = (SELECT COALESCE(SUM(quantity), 0) FROM product_locations WHERE product_id = $1) + (SELECT COALESCE(SUM(quantity),0) FROM case_product_contents WHERE product_id=$1), updated_at = CURRENT_TIMESTAMP WHERE productid = $1`
 	}
 	_, err := tx.Exec(query, productID)
 	return err

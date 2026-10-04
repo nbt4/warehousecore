@@ -233,6 +233,10 @@ func decodeHandlingUnitInput(r *http.Request) (handlingUnitInput, error) {
 }
 
 func CreateHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	input, err := decodeHandlingUnitInput(r)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -261,6 +265,10 @@ func CreateHandlingUnit(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
@@ -290,6 +298,10 @@ func UpdateHandlingUnit(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
@@ -438,6 +450,10 @@ type packScanInput struct {
 }
 
 func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	caseID, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
@@ -585,6 +601,10 @@ func PackHandlingUnitScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func RemoveHandlingUnitDevice(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	caseID, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
@@ -622,6 +642,10 @@ type removeProductInput struct {
 }
 
 func RemoveHandlingUnitProduct(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	caseID, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
@@ -678,6 +702,10 @@ func RemoveHandlingUnitProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func RemoveHandlingUnitChild(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	childID, _ := strconv.ParseInt(mux.Vars(r)["child_id"], 10, 64)
 	var input struct {
@@ -763,6 +791,10 @@ func DeleteHandlingUnitTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func SealHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	var input struct {
 		Force bool `json:"force"`
@@ -789,6 +821,10 @@ func SealHandlingUnit(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Case versiegelt"})
 }
 func UnsealHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	result, err := repository.GetSQLDB().Exec(`UPDATE cases SET workflow_status='packing',sealed_at=NULL WHERE caseID=$1 AND workflow_status<>'on_job'`, caseID)
 	if err != nil {
@@ -809,6 +845,10 @@ type dispatchInput struct {
 }
 
 func DispatchHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	var input dispatchInput
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.JobID <= 0 {
@@ -888,6 +928,10 @@ type moveHandlingUnitInput struct {
 // Devices and quantities remain packed and therefore inherit the root case's
 // physical location.
 func MoveHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	caseID, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
@@ -931,6 +975,10 @@ func MoveHandlingUnit(w http.ResponseWriter, r *http.Request) {
 }
 
 func ReturnHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	var input returnInput
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.DestinationZoneID <= 0 {
@@ -1007,6 +1055,10 @@ type unpackInput struct {
 }
 
 func UnpackHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	var input unpackInput
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.DestinationZoneID <= 0 {

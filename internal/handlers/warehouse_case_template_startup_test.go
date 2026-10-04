@@ -48,6 +48,7 @@ func TestWarehouseCaseTemplateStartupRetainsStockReferenceVersions(t *testing.T)
 	if err = EnsureProductManagementSchema(); err != nil {
 		t.Fatal(err)
 	}
+	exec(`INSERT INTO cases(caseid,zone_id,lifecycle_status) VALUES(1,NULL,'active');INSERT INTO case_product_contents(case_id,product_id,quantity) VALUES(1,1,1);UPDATE product_locations SET quantity=1.5 WHERE product_id=1;`)
 	exec(`CREATE FUNCTION guard_startup_product() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN IF OLD.lifecycle_status='archived' THEN RAISE EXCEPTION 'archived product cannot be edited';END IF;NEW.updated_at:=GREATEST(clock_timestamp(),OLD.updated_at+INTERVAL '1 microsecond');RETURN NEW;END $$;CREATE TRIGGER guard_startup_product BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION guard_startup_product();`)
 	snapshot := func() string {
 		t.Helper()

@@ -21,6 +21,7 @@ func EnsureProductManagementSchema() error {
 	defer tx.Rollback()
 
 	statements := []string{
+		`CREATE TABLE IF NOT EXISTS case_product_contents(content_id BIGSERIAL PRIMARY KEY,case_id INT NOT NULL REFERENCES cases(caseid) ON DELETE CASCADE,product_id INT NOT NULL REFERENCES products(productid) ON DELETE RESTRICT,quantity NUMERIC(12,3) NOT NULL CHECK(quantity>0),added_from_zone_id INT REFERENCES storage_zones(zone_id) ON DELETE SET NULL,created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(case_id,product_id))`,
 		`CREATE TABLE IF NOT EXISTS warehouse_product_mutation_receipts (
 			id BIGSERIAL PRIMARY KEY,
 			user_id BIGINT NOT NULL,
@@ -100,42 +101,9 @@ func EnsureProductManagementSchema() error {
 		 WHERE p.tracking_mode = 'quantity'
 		   AND COALESCE(p.stock_quantity, 0) > 0
 		   AND NOT EXISTS (SELECT 1 FROM product_locations pl WHERE pl.product_id = p.productid)
+           AND NOT EXISTS (SELECT 1 FROM case_product_contents pc WHERE pc.product_id=p.productid)
 		 ON CONFLICT (product_id, zone_id) DO NOTHING`,
-		`UPDATE products p
-		 SET stock_quantity = COALESCE((
-		   SELECT SUM(pl.quantity) FROM product_locations pl WHERE pl.product_id = p.productid
-		 ), 0), updated_at = CURRENT_TIMESTAMP
-		 WHERE p.tracking_mode = 'quantity' AND p.stock_quantity IS DISTINCT FROM COALESCE((SELECT SUM(pl.quantity) FROM product_locations pl WHERE pl.product_id=p.productid),0)`,
-		`CREATE OR REPLACE FUNCTION sync_product_stock_from_locations()
-		 RETURNS TRIGGER AS $$
-		 DECLARE affected_product_id INT;
-		 BEGIN
-		   IF TG_OP = 'DELETE' THEN
-		     affected_product_id := OLD.product_id;
-		   ELSE
-		     affected_product_id := NEW.product_id;
-		   END IF;
-
-		   UPDATE products
-		   SET stock_quantity = COALESCE((
-		     SELECT SUM(quantity) FROM product_locations WHERE product_id = affected_product_id
-		   ), 0), updated_at = CURRENT_TIMESTAMP
-		   WHERE productid = affected_product_id AND tracking_mode = 'quantity';
-
-		   IF TG_OP = 'UPDATE' AND OLD.product_id IS DISTINCT FROM NEW.product_id THEN
-		     UPDATE products
-		     SET stock_quantity = COALESCE((
-		       SELECT SUM(quantity) FROM product_locations WHERE product_id = OLD.product_id
-		     ), 0), updated_at = CURRENT_TIMESTAMP
-		     WHERE productid = OLD.product_id AND tracking_mode = 'quantity';
-		   END IF;
-
-		   IF TG_OP = 'DELETE' THEN
-		     RETURN OLD;
-		   END IF;
-		   RETURN NEW;
-		 END;
-		 $$ LANGUAGE plpgsql`,
+		warehouseCaseStockSQL,
 		`DROP TRIGGER IF EXISTS product_locations_sync_stock ON product_locations`,
 		`CREATE TRIGGER product_locations_sync_stock
 		 AFTER INSERT OR UPDATE OR DELETE ON product_locations

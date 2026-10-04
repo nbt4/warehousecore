@@ -2138,6 +2138,10 @@ func GetCaseContents(w http.ResponseWriter, r *http.Request) {
 
 // CreateCase creates a new case
 func CreateCase(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	var req struct {
 		Name        string   `json:"name"`
 		Description *string  `json:"description"`
@@ -2191,6 +2195,10 @@ func CreateCase(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCase updates an existing case
 func UpdateCase(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	vars := mux.Vars(r)
 	caseID := vars["id"]
 
@@ -2253,6 +2261,10 @@ func UpdateCase(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCase deletes a case
 func DeleteCase(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
+		return
+	}
 	vars := mux.Vars(r)
 	caseID := vars["id"]
 
@@ -2302,6 +2314,10 @@ func DeleteCase(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/cases/{id}/devices
 // Body: {"device_ids": ["DEV001", "DEV002"]}
 func AddDevicesToCase(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	vars := mux.Vars(r)
 	caseIDStr := vars["id"]
 
@@ -2410,6 +2426,10 @@ func AddDevicesToCase(w http.ResponseWriter, r *http.Request) {
 // RemoveDeviceFromCase removes a device from a case
 // DELETE /api/v1/cases/{id}/devices/{device_id}
 func RemoveDeviceFromCase(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use the reviewed case-content MCP operation"})
+		return
+	}
 	vars := mux.Vars(r)
 	caseIDStr := vars["id"]
 	deviceID := vars["device_id"]

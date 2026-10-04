@@ -245,6 +245,9 @@ func main() {
 	if err := handlers.EnsureWarehouseCaseTemplateLifecycleSchema(); err != nil {
 		log.Fatalf("Case template lifecycle schema: %v", err)
 	}
+	if err := handlers.EnsureWarehouseCaseContentSafetySchema(); err != nil {
+		log.Fatalf("Case content safety schema: %v", err)
+	}
 	if err := handlers.EnsureWarehouseMaintenanceVersionSchema(); err != nil {
 		log.Fatalf("Failed to initialize maintenance versions: %v", err)
 	}
@@ -313,7 +316,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.108")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.109")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -625,6 +628,7 @@ func main() {
 	admin.HandleFunc("/mcp/products/bulk-create", handlers.CreateProductsBulkMCP).Methods("POST")
 	admin.HandleFunc("/mcp/products/extract-url", handlers.ExtractProductURLMCP).Methods("POST")
 	admin.HandleFunc("/mcp/devices/bulk-create", handlers.CreateDevicesBulkMCP).Methods("POST")
+	admin.HandleFunc("/mcp/case-contents/{operation:pack_device|pack_product|pack_case|unpack_device|unpack_product|unpack_case|unpack_all}", handlers.CaseContentMCP).Methods("POST")
 	admin.HandleFunc("/mcp/case-templates/{operation:create|update|archive|restore}", handlers.CaseTemplateMCP).Methods("POST")
 	admin.HandleFunc("/mcp/cases/{operation:create|update|archive|restore}", handlers.CaseMCP).Methods("POST")
 	admin.HandleFunc("/devices/{id}/revert-update", handlers.RevertDeviceUpdateMCP).Methods("POST")
