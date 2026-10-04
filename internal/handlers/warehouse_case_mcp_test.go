@@ -6,16 +6,19 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
+
+	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/mux"
 )
 
 const warehouseCaseFixtureSQL = `
@@ -73,6 +76,8 @@ func TestWarehouseCaseMCPAtomicLifecycle(t *testing.T) {
 	exec(`DROP SCHEMA IF EXISTS warehouse_case_mcp_test CASCADE;CREATE SCHEMA warehouse_case_mcp_test;SET search_path TO warehouse_case_mcp_test`)
 	defer db.Exec(`DROP SCHEMA warehouse_case_mcp_test CASCADE`)
 	exec(warehouseCaseFixtureSQL)
+	exec(`CREATE TABLE users(userid INT PRIMARY KEY,is_active BOOL,is_admin BOOL);INSERT INTO users VALUES(11,true,true)`)
+	t.Setenv("CORES_JWT_SECRET", strings.Repeat("k", 48))
 	old := repository.DB
 	repository.DB = db
 	defer func() { repository.DB = old }()
@@ -86,9 +91,18 @@ func TestWarehouseCaseMCPAtomicLifecycle(t *testing.T) {
 		raw, _ := json.Marshal(in)
 		r := httptest.NewRequest(http.MethodPost, "/case", bytes.NewReader(raw))
 		r = mux.SetURLVars(r, map[string]string{"operation": op})
-		r = r.WithContext(context.WithValue(r.Context(), middleware.UserContextKey, &models.User{UserID: 11, IsAdmin: admin}))
+		r = r.WithContext(context.WithValue(r.Context(), middleware.UserContextKey, &models.User{UserID: 11, IsActive: true, IsAdmin: admin}))
 		r.Header.Set("X-Cores-Origin", "MCP/AI")
 		r.Header.Set("Idempotency-Key", key)
+		scope := op
+		if op == "restore" {
+			scope = "archive"
+		}
+		token, e := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"uid": 11, "mcp_scope": "cores:warehouse:" + scope, "exp": time.Now().Add(time.Hour).Unix()}).SignedString([]byte(strings.Repeat("k", 48)))
+		if e != nil {
+			t.Fatal(e)
+		}
+		r.AddCookie(&http.Cookie{Name: "cores_token", Value: token})
 		w := httptest.NewRecorder()
 		CaseMCP(w, r)
 		var out map[string]any
@@ -150,6 +164,12 @@ func TestWarehouseCaseMCPAtomicLifecycle(t *testing.T) {
 	if replay["audit_id"] != created["audit_id"] || count("cases") != 1 {
 		t.Fatal("durable replay failed", replay)
 	}
+	exec(`UPDATE users SET is_admin=false WHERE userid=11`)
+	call("create", "case-create-1", initial, 403)
+	exec(`UPDATE users SET is_admin=true,is_active=false WHERE userid=11`)
+	call("create", "case-create-1", initial, 403)
+	exec(`UPDATE users SET is_active=true WHERE userid=11`)
+
 	initial["name"] = "Changed payload"
 	call("create", "case-create-1", initial, 409)
 	stale := body("update")

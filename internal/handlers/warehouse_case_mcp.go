@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gorilla/mux"
-	"warehousecore/internal/middleware"
 	"warehousecore/internal/repository"
+
+	"github.com/gorilla/mux"
 )
 
 // A dedicated business endpoint; fields and operations are closed and are
@@ -214,18 +214,18 @@ func validateCaseMCP(tx *sql.Tx, fields map[string]any, id int64, allowDuplicate
 }
 
 func CaseMCP(w http.ResponseWriter, r *http.Request) {
-	user, ok := middleware.GetUserFromContext(r)
-	if !ok || user == nil || user.UserID == 0 || !user.IsAdmin {
-		respondJSON(w, 403, map[string]string{"error": "Warehouse administrator required"})
-		return
-	}
-	if !isWarehouseMCPMutation(r) {
-		respondJSON(w, 400, map[string]string{"error": "MCP origin required"})
-		return
-	}
 	op := mux.Vars(r)["operation"]
 	if !map[string]bool{"create": true, "update": true, "archive": true, "restore": true}[op] {
 		respondJSON(w, 400, map[string]string{"error": "Unsupported case operation"})
+		return
+	}
+	scope := op
+	if op == "restore" {
+		scope = "archive"
+	}
+	user, _, err := warehouseScopedAdminActor(r, "cores:warehouse:"+scope)
+	if err != nil {
+		respondWarehouseMutationError(w, err)
 		return
 	}
 	var in warehouseCaseRequest
@@ -251,6 +251,10 @@ func CaseMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='15s'`); err != nil {
+		respondWarehouseMutationError(w, err)
+		return
+	}
+	if err = lockProductImportActor(tx, user); err != nil {
 		respondWarehouseMutationError(w, err)
 		return
 	}

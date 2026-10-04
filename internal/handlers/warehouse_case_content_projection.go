@@ -30,6 +30,15 @@ func caseContentDeviceBlocked(d map[string]any) bool {
 	deps, _ := d["dependencies"].(map[string]int64)
 	return deps["components"] > 0 || deps["maintenance_orders"] > 0 || deps["defects"] > 0
 }
+func caseContentMembershipInvalid(d map[string]any) bool {
+	deps, _ := d["dependencies"].(map[string]int64)
+	expected := int64(1)
+	if d["current_case_id"] != nil {
+		expected++
+	}
+	return deps["cases"] != expected || d["current_case_id"] != nil && caseContentID(d["current_case_id"]) != caseContentID(d["packed_case_id"])
+}
+
 func caseContentTreeBlocked(row map[string]any) bool {
 	for _, c := range caseContentRows(row, "case_tree") {
 		if c["lifecycle_status"] != "active" || c["status"] != "free" || c["current_job_id"] != nil || c["workflow_status"] == "on_job" || c["workflow_status"] == "maintenance" {
@@ -37,7 +46,7 @@ func caseContentTreeBlocked(row map[string]any) bool {
 		}
 	}
 	for _, d := range caseContentRows(row, "packed_devices") {
-		if caseContentDeviceBlocked(d) {
+		if caseContentDeviceBlocked(d) || caseContentMembershipInvalid(d) {
 			return true
 		}
 	}

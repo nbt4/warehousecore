@@ -297,38 +297,7 @@ func UpdateHandlingUnit(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Case aktualisiert"})
 }
 
-func DeleteHandlingUnit(w http.ResponseWriter, r *http.Request) {
-	if isWarehouseDelegatedRequest(r) {
-		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
-		return
-	}
-	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
-	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültiges Case"})
-		return
-	}
-	db := repository.GetSQLDB()
-	var contents int
-	err = db.QueryRow(`SELECT (SELECT COUNT(*) FROM devicescases WHERE caseID=$1)+(SELECT COUNT(*) FROM case_product_contents WHERE case_id=$1)+(SELECT COUNT(*) FROM case_child_contents WHERE parent_case_id=$1)+(SELECT COUNT(*) FROM case_child_contents WHERE child_case_id=$1)`, id).Scan(&contents)
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	if contents > 0 {
-		respondJSON(w, http.StatusConflict, map[string]string{"error": "Case ist nicht leer und kann nicht gelöscht werden"})
-		return
-	}
-	result, err := db.Exec(`DELETE FROM cases WHERE caseID=$1`, id)
-	if err != nil {
-		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	}
-	if n, _ := result.RowsAffected(); n == 0 {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Case nicht gefunden"})
-		return
-	}
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Case gelöscht"})
-}
+func DeleteHandlingUnit(w http.ResponseWriter, r *http.Request) { archiveNativeCase(w, r) }
 
 type huDevice struct {
 	DeviceID              string `json:"device_id"`

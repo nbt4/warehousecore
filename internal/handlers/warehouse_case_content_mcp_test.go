@@ -241,6 +241,15 @@ func TestWarehouseCaseContentAtomicConservationContextAndReplay(t *testing.T) {
 		t.Fatal("storage numeric overflow accepted", overflow)
 	}
 
+	// Simulate retained pre-guard ambiguity in this owned schema only. Unpacking
+	// one membership must not strand the same device in another physical case.
+	exec(`ALTER TABLE devicescases DISABLE TRIGGER devicescases_guard_physical;INSERT INTO devicescases(caseid,deviceid) VALUES(1,'DEV-00000001'),(4,'DEV-00000001');ALTER TABLE devicescases ENABLE TRIGGER devicescases_guard_physical`)
+	state := snapshot()
+	ambiguous := run("unpack_device", "", map[string]any{"case_id": 1, "device_id": "DEV-00000001", "destination_zone_id": 3}, 200)
+	if ambiguous["ready_to_execute"] != false || snapshot() != state {
+		t.Fatal("ambiguous physical membership accepted", ambiguous)
+	}
+
 	for _, bad := range []map[string]any{{"case_id": 1, "device_id": "DEV-00000001", "quantity": 1}, {"case_id": 1, "device_id": "DEV-00000001", "unexpected": true}} {
 		run("pack_device", "", bad, 400)
 	}

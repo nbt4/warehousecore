@@ -1826,10 +1826,13 @@ func GetCases(w http.ResponseWriter, r *http.Request) {
 		FROM cases c
 		LEFT JOIN devicescases dc ON c.caseID = dc.caseID
 		LEFT JOIN storage_zones z ON c.zone_id = z.zone_id
-		WHERE 1=1
+		WHERE c.lifecycle_status='active'
 	`
 
 	args := []interface{}{}
+	if r.URL.Query().Get("include_archived") == "true" {
+		query = strings.Replace(query, "WHERE c.lifecycle_status='active'", "WHERE 1=1", 1)
+	}
 
 	if search != "" {
 		query += " AND (c.name LIKE " + qb.NextPlaceholder() + " OR c.description LIKE " + qb.NextPlaceholder() + ")"
@@ -2259,56 +2262,8 @@ func UpdateCase(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Case updated successfully"})
 }
 
-// DeleteCase deletes a case
-func DeleteCase(w http.ResponseWriter, r *http.Request) {
-	if isWarehouseDelegatedRequest(r) {
-		respondJSON(w, 403, map[string]string{"error": "Use the reviewed owning-Core MCP case workflow"})
-		return
-	}
-	vars := mux.Vars(r)
-	caseID := vars["id"]
-
-	db := repository.GetSQLDB()
-
-	// Check if case has devices
-	var deviceCount int
-	err := db.QueryRow("SELECT COUNT(*) FROM devicescases WHERE caseID = $1", caseID).Scan(&deviceCount)
-	if err != nil {
-		log.Printf("DeleteCase check devices error: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to check case devices"})
-		return
-	}
-
-	if deviceCount > 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "Cannot delete case with devices",
-			"message": fmt.Sprintf("Case contains %d device(s). Please remove devices first.", deviceCount),
-		})
-		return
-	}
-
-	// Delete the case
-	result, err := db.Exec("DELETE FROM cases WHERE caseID = $1", caseID)
-	if err != nil {
-		log.Printf("DeleteCase error: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete case"})
-		return
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		log.Printf("DeleteCase RowsAffected error: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify deletion"})
-		return
-	}
-
-	if rowsAffected == 0 {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Case not found"})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Case deleted successfully"})
-}
+// DeleteCase retains the removed case through the shared archive workflow.
+func DeleteCase(w http.ResponseWriter, r *http.Request) { archiveNativeCase(w, r) }
 
 // AddDevicesToCase adds multiple devices to a case
 // POST /api/v1/cases/{id}/devices
