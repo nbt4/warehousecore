@@ -35,7 +35,7 @@ CREATE TABLE devices(deviceid TEXT,barcode TEXT,qr_code TEXT,current_case_id INT
 CREATE TABLE devicescases(deviceid TEXT,caseid INT);
 CREATE TABLE case_product_contents(case_id INT,product_id INT,quantity NUMERIC);
 CREATE TABLE case_child_contents(parent_case_id INT,child_case_id INT);
-CREATE TABLE case_content_templates(case_id INT,product_id INT,expected_quantity NUMERIC);
+CREATE TABLE case_content_templates(case_id INT,product_id INT,expected_quantity NUMERIC,lifecycle_status TEXT DEFAULT 'active');
 CREATE TABLE warehouse_tasks(case_id INT,status TEXT);
 CREATE TABLE jobs(jobid INT,statusid INT,deleted_at TIMESTAMP);
 CREATE TABLE status(statusid INT,status TEXT);
@@ -190,7 +190,7 @@ func TestWarehouseCaseMCPAtomicLifecycle(t *testing.T) {
 		exec(dep.clear)
 	}
 	// Templates remain but restore must validate their references.
-	exec(`INSERT INTO case_content_templates VALUES(1,1,2)`)
+	exec(`INSERT INTO case_content_templates(case_id,product_id,expected_quantity) VALUES(1,1,2)`)
 	archive := body("archive")
 	noPhrase := body("archive")
 	noPhrase["confirmation_text"] = "wrong"

@@ -11,11 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	jwt "github.com/golang-jwt/jwt/v5"
 	"warehousecore/internal/middleware"
 	"warehousecore/internal/models"
 	"warehousecore/internal/repository"
 	"warehousecore/internal/services"
+
+	jwt "github.com/golang-jwt/jwt/v5"
 )
 
 // The import contract accepts creation fields only; IDs, website publishing and
@@ -75,13 +76,17 @@ type warehouseProductBatchRequest struct {
 }
 
 func productImportActor(r *http.Request) (*models.User, bool, error) {
+	return warehouseScopedAdminActor(r, "cores:warehouse:create")
+}
+
+func warehouseScopedAdminActor(r *http.Request, requiredScope string) (*models.User, bool, error) {
 	user, ok := middleware.GetUserFromContext(r)
 	if !ok || user == nil || user.UserID == 0 || !user.IsActive || !user.IsAdmin || !isWarehouseMCPMutation(r) {
 		return nil, false, &warehouseMutationError{403, "admin_required", "An active signed-in warehouse administrator and MCP origin are required"}
 	}
 	cookie, err := r.Cookie("cores_token")
 	if err != nil {
-		return nil, false, &warehouseMutationError{403, "scope_required", "A signed warehouse create scope is required"}
+		return nil, false, &warehouseMutationError{403, "scope_required", "A signed warehouse action scope is required"}
 	}
 	claims := struct {
 		UserID    uint   `json:"uid"`
@@ -94,8 +99,8 @@ func productImportActor(r *http.Request) (*models.User, bool, error) {
 		secret = os.Getenv("JWT_SECRET")
 	}
 	token, err := jwt.ParseWithClaims(cookie.Value, &claims, func(*jwt.Token) (any, error) { return []byte(secret), nil }, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
-	if secret == "" || err != nil || token == nil || !token.Valid || claims.UserID != user.UserID || claims.Scope != "cores:warehouse:create" {
-		return nil, false, &warehouseMutationError{403, "scope_required", "The matching signed warehouse create scope is required"}
+	if secret == "" || err != nil || token == nil || !token.Valid || claims.UserID != user.UserID || claims.Scope != requiredScope {
+		return nil, false, &warehouseMutationError{403, "scope_required", "The matching signed warehouse action scope is required"}
 	}
 	return user, claims.Financial, nil
 }
@@ -549,4 +554,26 @@ func CreateProductsBulkMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	websiteRevalidator.Revalidate("/products")
 	respondJSON(w, 201, response)
+}
+
+// Origin and the authenticated delegation both identify the guided MCP path.
+// Removing the origin header must not reopen legacy unconfirmed writers.
+func isWarehouseDelegatedRequest(r *http.Request) bool {
+	if isWarehouseMCPMutation(r) {
+		return true
+	}
+	cookie, err := r.Cookie("cores_token")
+	if err != nil {
+		return false
+	}
+	secret := os.Getenv("CORES_JWT_SECRET")
+	if secret == "" {
+		secret = os.Getenv("JWT_SECRET")
+	}
+	if secret == "" {
+		return false
+	}
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(*jwt.Token) (any, error) { return []byte(secret), nil }, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
+	return err == nil && token != nil && token.Valid && claims["mcp_scope"] != nil && claims["mcp_scope"] != ""
 }

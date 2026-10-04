@@ -363,7 +363,7 @@ func CaseMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	if op == "restore" {
 		var invalid int64
-		err = tx.QueryRow(`SELECT count(*) FROM case_content_templates ct LEFT JOIN products p ON p.productid=ct.product_id WHERE ct.case_id=$1 AND (p.productid IS NULL OR p.lifecycle_status<>'active')`, in.CaseID).Scan(&invalid)
+		err = tx.QueryRow(`SELECT count(*) FROM case_content_templates ct LEFT JOIN products p ON p.productid=ct.product_id WHERE ct.case_id=$1 AND ct.lifecycle_status='active' AND (p.productid IS NULL OR p.lifecycle_status<>'active')`, in.CaseID).Scan(&invalid)
 		if err != nil {
 			respondWarehouseMutationError(w, err)
 			return

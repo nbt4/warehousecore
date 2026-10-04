@@ -52,7 +52,7 @@ func EnsureProductManagementSchema() error {
 		`UPDATE products p
 		 SET tracking_mode = cp.tracking_mode
 		 FROM cable_products cp
-		 WHERE cp.product_id = p.productid`,
+		 WHERE cp.product_id = p.productid AND p.tracking_mode IS DISTINCT FROM cp.tracking_mode`,
 		`UPDATE products SET lifecycle_status = 'active'
 		 WHERE lifecycle_status IS NULL OR lifecycle_status = ''`,
 		`ALTER TABLE products ALTER COLUMN product_type SET DEFAULT 'equipment'`,
@@ -105,7 +105,7 @@ func EnsureProductManagementSchema() error {
 		 SET stock_quantity = COALESCE((
 		   SELECT SUM(pl.quantity) FROM product_locations pl WHERE pl.product_id = p.productid
 		 ), 0), updated_at = CURRENT_TIMESTAMP
-		 WHERE p.tracking_mode = 'quantity'`,
+		 WHERE p.tracking_mode = 'quantity' AND p.stock_quantity IS DISTINCT FROM COALESCE((SELECT SUM(pl.quantity) FROM product_locations pl WHERE pl.product_id=p.productid),0)`,
 		`CREATE OR REPLACE FUNCTION sync_product_stock_from_locations()
 		 RETURNS TRIGGER AS $$
 		 DECLARE affected_product_id INT;

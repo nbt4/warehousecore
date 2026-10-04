@@ -101,10 +101,10 @@ const handlingUnitSelect = `
 	       (SELECT COUNT(*) FROM case_product_contents pc WHERE pc.case_id=c.caseID),
 	       COALESCE((SELECT SUM(pc.quantity) FROM case_product_contents pc WHERE pc.case_id=c.caseID),0),
 	       (SELECT COUNT(*) FROM case_child_contents cc WHERE cc.parent_case_id=c.caseID),
-	       (SELECT COUNT(*) FROM case_content_templates ct WHERE ct.case_id=c.caseID),
+	       (SELECT COUNT(*) FROM case_content_templates ct WHERE ct.lifecycle_status='active' AND ct.case_id=c.caseID),
 	       CASE WHEN NOT EXISTS (
 	         SELECT 1 FROM case_content_templates ct
-	         WHERE ct.case_id=c.caseID AND COALESCE((
+	         WHERE ct.lifecycle_status='active' AND ct.case_id=c.caseID AND COALESCE((
 	           SELECT COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE dc.caseID=c.caseID AND d.productID=ct.product_id
 	         ),0) + COALESCE((SELECT pc.quantity FROM case_product_contents pc WHERE pc.case_id=c.caseID AND pc.product_id=ct.product_id),0) < ct.expected_quantity
 	       ) THEN TRUE ELSE FALSE END
@@ -393,7 +393,7 @@ func GetHandlingUnitInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	template := []huTemplateLine{}
-	rows, err = db.Query(`SELECT ct.product_id,p.name,ct.expected_quantity,COALESCE((SELECT COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE dc.caseID=ct.case_id AND d.productID=ct.product_id),0)+COALESCE((SELECT pc.quantity FROM case_product_contents pc WHERE pc.case_id=ct.case_id AND pc.product_id=ct.product_id),0) FROM case_content_templates ct JOIN products p ON p.productID=ct.product_id WHERE ct.case_id=$1 ORDER BY p.name`, id)
+	rows, err = db.Query(`SELECT ct.product_id,p.name,ct.expected_quantity,COALESCE((SELECT COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE dc.caseID=ct.case_id AND d.productID=ct.product_id),0)+COALESCE((SELECT pc.quantity FROM case_product_contents pc WHERE pc.case_id=ct.case_id AND pc.product_id=ct.product_id),0) FROM case_content_templates ct JOIN products p ON p.productID=ct.product_id WHERE ct.lifecycle_status='active' AND ct.case_id=$1 ORDER BY p.name`, id)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -715,6 +715,10 @@ type templateInput struct {
 }
 
 func UpsertHandlingUnitTemplate(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use confirmed, versioned case template MCP workflows"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	var input templateInput
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.ExpectedQuantity <= 0 {
@@ -732,7 +736,7 @@ func UpsertHandlingUnitTemplate(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Artikel und Sollmenge sind erforderlich"})
 		return
 	}
-	_, err := repository.GetSQLDB().Exec(`INSERT INTO case_content_templates(case_id,product_id,expected_quantity) VALUES($1,$2,$3) ON CONFLICT(case_id,product_id) DO UPDATE SET expected_quantity=EXCLUDED.expected_quantity,updated_at=CURRENT_TIMESTAMP`, caseID, input.ProductID, input.ExpectedQuantity)
+	_, err := repository.GetSQLDB().Exec(`INSERT INTO case_content_templates(case_id,product_id,expected_quantity) VALUES($1,$2,$3) ON CONFLICT(case_id,product_id) DO UPDATE SET expected_quantity=EXCLUDED.expected_quantity,lifecycle_status='active',updated_at=CURRENT_TIMESTAMP`, caseID, input.ProductID, input.ExpectedQuantity)
 	if err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -740,9 +744,13 @@ func UpsertHandlingUnitTemplate(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Soll-Inhalt gespeichert"})
 }
 func DeleteHandlingUnitTemplate(w http.ResponseWriter, r *http.Request) {
+	if isWarehouseDelegatedRequest(r) {
+		respondJSON(w, 403, map[string]string{"error": "Use confirmed, versioned case template MCP workflows"})
+		return
+	}
 	caseID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	productID, _ := strconv.ParseInt(mux.Vars(r)["product_id"], 10, 64)
-	result, err := repository.GetSQLDB().Exec(`DELETE FROM case_content_templates WHERE case_id=$1 AND product_id=$2`, caseID, productID)
+	result, err := repository.GetSQLDB().Exec(`UPDATE case_content_templates SET lifecycle_status='archived' WHERE case_id=$1 AND product_id=$2 AND lifecycle_status='active'`, caseID, productID)
 	if err != nil {
 		respondJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -763,7 +771,7 @@ func SealHandlingUnit(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	var caseType string
 	var missing int
-	err := db.QueryRow(`SELECT case_type,(SELECT COUNT(*) FROM case_content_templates ct WHERE ct.case_id=c.caseID AND COALESCE((SELECT COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE dc.caseID=c.caseID AND d.productID=ct.product_id),0)+COALESCE((SELECT quantity FROM case_product_contents pc WHERE pc.case_id=c.caseID AND pc.product_id=ct.product_id),0)<ct.expected_quantity) FROM cases c WHERE c.caseID=$1`, caseID).Scan(&caseType, &missing)
+	err := db.QueryRow(`SELECT case_type,(SELECT COUNT(*) FROM case_content_templates ct WHERE ct.lifecycle_status='active' AND ct.case_id=c.caseID AND COALESCE((SELECT COUNT(*) FROM devicescases dc JOIN devices d ON d.deviceID=dc.deviceID WHERE dc.caseID=c.caseID AND d.productID=ct.product_id),0)+COALESCE((SELECT quantity FROM case_product_contents pc WHERE pc.case_id=c.caseID AND pc.product_id=ct.product_id),0)<ct.expected_quantity) FROM cases c WHERE c.caseID=$1`, caseID).Scan(&caseType, &missing)
 	if err != nil {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Case nicht gefunden"})
 		return

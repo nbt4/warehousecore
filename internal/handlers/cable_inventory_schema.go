@@ -87,7 +87,7 @@ func EnsureCableInventorySchema() error {
 			UPDATE product_locations pl
 			SET quantity = totals.quantity, updated_at = CURRENT_TIMESTAMP
 			FROM totals
-			WHERE pl.location_id = totals.keep_id
+			WHERE pl.location_id = totals.keep_id AND pl.quantity IS DISTINCT FROM totals.quantity
 		)
 		DELETE FROM product_locations pl
 		USING totals
