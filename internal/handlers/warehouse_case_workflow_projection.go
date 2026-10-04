@@ -65,7 +65,7 @@ func caseWorkflowProjection(tx *sql.Tx, op string, in warehouseCaseWorkflowReque
 		if c["lifecycle_status"] != "active" {
 			missing = append(missing, "active_complete_case_tree")
 		}
-		if (op == "seal" || op == "dispatch") && (c["status"] != "free" || !map[string]bool{"empty": true, "packing": true, "complete": true, "return_check": true, "sealed": true, "staged": true}[fmt.Sprint(c["workflow_status"])]) {
+		if (op == "seal" || op == "dispatch" || op == "inspect_return") && (c["status"] != "free" || !map[string]bool{"empty": true, "packing": true, "complete": true, "return_check": true, "sealed": true, "staged": true}[fmt.Sprint(c["workflow_status"])]) {
 			missing = append(missing, "operational_complete_case_tree")
 		}
 		if op == "return" {
@@ -84,7 +84,7 @@ func caseWorkflowProjection(tx *sql.Tx, op string, in warehouseCaseWorkflowReque
 		if d["current_case_id"] != nil {
 			expected++
 		}
-		if membership != expected || (d["current_case_id"] != nil && caseContentID(d["current_case_id"]) != caseContentID(d["packed_case_id"])) {
+		if d["current_case_id"] == nil || membership != expected || (d["current_case_id"] != nil && caseContentID(d["current_case_id"]) != caseContentID(d["packed_case_id"])) {
 			missing = append(missing, "consistent_device_case_membership")
 		}
 		if d["lifecycle_status"] != "active" || d["product_lifecycle"] != "active" {

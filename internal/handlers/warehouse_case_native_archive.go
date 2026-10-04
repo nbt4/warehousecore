@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Existing native removal keeps its authenticated-user permission. AI
+// Native removal requires a current authenticated warehouse user. AI
 // delegation must use the separately confirmed administrator lifecycle API.
 func archiveNativeCase(w http.ResponseWriter, r *http.Request) {
 	if isWarehouseDelegatedRequest(r) {

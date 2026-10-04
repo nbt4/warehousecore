@@ -124,6 +124,15 @@ func TestWarehouseCaseWorkflowAtomicTreeSchedulingInspectionAndRetention(t *test
 	}
 
 	exec(`INSERT INTO devicescases(caseid,deviceid) VALUES(1,'DEV-00000001'),(2,'DEV-00000003');INSERT INTO case_child_contents(parent_case_id,child_case_id) VALUES(1,2);INSERT INTO case_product_contents(case_id,product_id,quantity) VALUES(2,3,1.5);UPDATE cases SET zone_id=NULL WHERE caseid=2;UPDATE cases SET case_type='fixed' WHERE caseid=1;INSERT INTO case_content_templates(case_id,product_id,expected_quantity) VALUES(1,1,2)`)
+	exec(`UPDATE cases SET workflow_status='maintenance' WHERE caseid=2`)
+	if run("seal", "", map[string]any{"case_id": 1, "accept_incomplete_template": true}, 200)["ready_to_execute"] != false {
+		t.Fatal("maintenance child accepted")
+	}
+	exec(`UPDATE cases SET workflow_status='empty' WHERE caseid=2;UPDATE devices SET current_case_id=NULL WHERE deviceid='DEV-00000001'`)
+	if run("seal", "", map[string]any{"case_id": 1, "accept_incomplete_template": true}, 200)["ready_to_execute"] != false {
+		t.Fatal("missing native membership accepted")
+	}
+	exec(`UPDATE devices SET current_case_id=1 WHERE deviceid='DEV-00000001'`)
 	before := snapshot()
 	incomplete := run("seal", "", map[string]any{"case_id": 1}, 200)
 	if incomplete["ready_to_execute"] != false || snapshot() != before {
