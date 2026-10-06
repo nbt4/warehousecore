@@ -1,11 +1,4 @@
-package handlers
-
-import (
-	"fmt"
-	"warehousecore/internal/repository"
-)
-
-const warehouseProductRelationLifecycleSQL = `ALTER TABLE product_dependencies ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK(lifecycle_status IN ('active','archived'));
+ALTER TABLE product_dependencies ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK(lifecycle_status IN ('active','archived'));
 ALTER TABLE product_dependencies ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP;
 CREATE OR REPLACE FUNCTION warehouse_relation_active_jobs(pid INT) RETURNS JSONB AS $$
  WITH RECURSIVE ancestors AS (
@@ -63,20 +56,3 @@ END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS products_guard_relation_jobs ON products;
 CREATE TRIGGER products_guard_relation_jobs BEFORE UPDATE OF lifecycle_status ON products FOR EACH ROW EXECUTE FUNCTION guard_warehouse_product_relation_jobs();
 INSERT INTO warehouse_schema_migrations(version) VALUES('059_warehouse_product_relation_lifecycle') ON CONFLICT DO NOTHING;
-`
-
-func EnsureWarehouseProductRelationLifecycleSchema() error {
-	db := repository.GetSQLDB()
-	if db == nil {
-		return fmt.Errorf("database is not initialized")
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err = tx.Exec(warehouseProductRelationLifecycleSQL); err != nil {
-		return fmt.Errorf("apply warehouse product relation lifecycle: %w", err)
-	}
-	return tx.Commit()
-}

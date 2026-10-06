@@ -59,7 +59,7 @@ func LoadPackingList(db *sql.DB, jobID int) (*PackingList, error) {
 			SELECT jp.product_id, SUM(jp.quantity)::numeric AS quantity,
 			       MIN(jp.unit) AS unit, MIN(jp.sort_order) AS sort_order
 			FROM job_positions jp
-			WHERE jp.job_id = $1 AND jp.position_type = 'product' AND jp.product_id IS NOT NULL
+			WHERE jp.job_id = $1 AND jp.position_type = 'product' AND COALESCE(to_jsonb(jp)->>'deleted_at','')='' AND jp.product_id IS NOT NULL
 			GROUP BY jp.product_id
 		), roots AS (
 			SELECT pr.product_id,

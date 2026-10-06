@@ -36,7 +36,7 @@ func GetJobPicklist(w http.ResponseWriter, r *http.Request) {
 		FROM job_positions jp
 		LEFT JOIN products p ON p.productid = jp.product_id
 		LEFT JOIN job_position_devices jpd ON jpd.position_id = jp.position_id
-		WHERE jp.job_id = $1 AND jp.position_type = 'product'
+		WHERE jp.job_id = $1 AND jp.position_type = 'product' AND COALESCE(to_jsonb(jp)->>'deleted_at','')=''
 		GROUP BY jp.position_id, jp.product_id, p.name, jp.description, jp.quantity, jp.sort_order
 		ORDER BY jp.sort_order ASC, jp.position_id ASC
 	`, jobID)
@@ -158,7 +158,7 @@ func ScanDeviceToPicklist(w http.ResponseWriter, r *http.Request) {
 			SELECT position_id, COUNT(*) AS cnt FROM job_position_devices GROUP BY position_id
 		) counts ON counts.position_id = jp.position_id
 		WHERE jp.job_id = $1
-		  AND jp.position_type = 'product'
+		  AND jp.position_type = 'product' AND COALESCE(to_jsonb(jp)->>'deleted_at','')=''
 		  AND d.deviceid = $2
 		  AND d.lifecycle_status = 'active'
 		  AND COALESCE(counts.cnt, 0) < jp.quantity
