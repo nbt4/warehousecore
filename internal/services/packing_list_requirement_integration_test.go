@@ -51,6 +51,12 @@ CREATE TABLE product_dependencies(product_id INT,dependency_product_id INT,defau
 	if quantities[1] != 5 || quantities[2] != 4 || quantities[3] != 0 || quantities[4] != 10 || len(list.Items) != 3 {
 		t.Fatal("wrong combined/archived demand", list.Items)
 	}
+	exec(`ALTER TABLE job_positions ADD COLUMN deleted_at TIMESTAMPTZ;INSERT INTO job_positions VALUES(1,3,'product',7,'Stück',2,NOW())`)
+	list, err = LoadPackingList(db, 1)
+	if err != nil || len(list.Items) != 3 {
+		t.Fatal("archived position remained in packing list", list, err)
+	}
+
 	exec(`UPDATE job_product_requirements SET deleted_at=NOW() WHERE product_id=2`)
 	list, err = LoadPackingList(db, 1)
 	if err != nil || len(list.Items) != 2 {
