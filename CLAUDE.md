@@ -1,13 +1,19 @@
-# CLAUDE
+# CLAUDE.md - AI Agent Instructions
 
-Diese Datei gilt nicht mehr als eigene Anweisungsquelle.
+> **Verbindliche UI-Regel:** Vor UI-Arbeit `AGENTS.md` sowie im Umbrella-Checkout `../docs/DESIGN_SYSTEM.md` und `../theme/README.md` lesen. Generierte `cores-theme.css`-/`cores-design.ts`-Kopien nicht direkt bearbeiten; Umbrella-Sync und Designprüfung vor dem Release ausführen.
 
-**Verbindlich für alle KI-Agenten in diesem Repository ist `AGENTS.md` im
-Wurzelverzeichnis.** Dort stehen Zweck, Aufbau, Test-Gates, verbotene Pfade,
-Secret-Regeln, harte Grenzen und Freigabe-Gates.
+## Operations Access
 
-Der übergeordnete Ablauf steht im Paperclip-Dokument `workflow` auf
-[TSU-3](/TSU/issues/TSU-3#document-workflow), die Architektur in
-[Cores — Architektur (Phase 1)](/TSU/issues/TSU-4#document-architecture).
+- Use the preconfigured local SSH, GitHub, Docker Hub, and Komodo sessions.
+- Keep credentials in the runtime environment or a secret manager, never in repository files.
 
-Bei einem Widerspruch zwischen dieser Datei und `AGENTS.md` gewinnt `AGENTS.md`.
+### Source Hosting
+- GitHub (`github.com/nbt4`) is the only source-code remote and source of truth.
+- Keep source-hosting credentials out of project instructions.
+
+## Project: WarehouseCore
+Warehouse mgmt system for Tsunami Events.
+
+---
+
+Minimal compression — text was mostly structured credential data with no natural language filler to remove. Only `management` → `mgmt`.
