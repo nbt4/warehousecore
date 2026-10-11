@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { apiErrorMessage } from '../../lib/api-errors';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Save, Lightbulb, RefreshCcw, SlidersHorizontal, FileText, Square } from 'lucide-react';
 import { api, ledApi, zonesApi, type LEDAppearance, type LEDJobHighlightSettings, type LEDMapping, type Zone } from '../../lib/api';
 import { toast } from '../../lib/toast';
@@ -41,6 +42,16 @@ const defaultJobSettings: LEDJobHighlightSettings = {
     intensity: 160,
     speed: 1200,
   },
+};
+
+const rebuildPixelInputs = (mappingData: LEDMapping): Record<string, string> => {
+  const next: Record<string, string> = {};
+  mappingData.shelves.forEach((shelf, shelfIndex) => {
+    shelf.bins.forEach((bin, binIndex) => {
+      next[`${shelfIndex}:${binIndex}`] = bin.pixels.join(', ');
+    });
+  });
+  return next;
 };
 
 export function LEDSettingsTab() {
@@ -103,7 +114,6 @@ export function LEDSettingsTab() {
     loadDefaults();
     loadJobSettings();
     loadZoneTypes();
-    loadMapping();
   }, []);
 
   useEffect(() => {
@@ -150,31 +160,14 @@ export function LEDSettingsTab() {
     }
   };
 
-  const rebuildPixelInputs = (mappingData: LEDMapping): Record<string, string> => {
-    const next: Record<string, string> = {};
-    mappingData.shelves.forEach((shelf, shelfIndex) => {
-      shelf.bins.forEach((bin, binIndex) => {
-        next[`${shelfIndex}:${binIndex}`] = bin.pixels.join(', ');
-      });
-    });
-    return next;
-  };
-
-  const loadMapping = async () => {
+  const loadMapping = useCallback(async () => {
     setMappingLoading(true);
     try {
       const { data } = await ledApi.getMapping();
       setMapping(data);
       setPixelsInput(rebuildPixelInputs(data));
-      if (!previewBinId.trim()) {
-        const firstShelf = data.shelves.find((shelf) => shelf.bins.length > 0);
-        if (firstShelf) {
-          const firstBin = firstShelf.bins[0]?.bin_id;
-          if (firstBin) {
-            setPreviewBinId(firstBin);
-          }
-        }
-      }
+      const firstBin = data.shelves.find((shelf) => shelf.bins.length > 0)?.bins[0]?.bin_id;
+      setPreviewBinId((current) => current.trim() ? current : firstBin || current);
       setMappingMessage('');
     } catch (error) {
       toast.error('Failed to load LED mapping:' + " " + String(error));
@@ -184,7 +177,11 @@ export function LEDSettingsTab() {
     } finally {
       setMappingLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadMapping();
+  }, [loadMapping]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -194,8 +191,8 @@ export function LEDSettingsTab() {
       await api.put('/admin/led/single-bin-default', defaults);
       setMessage('✓ Einstellungen gespeichert');
       setTimeout(() => setMessage(''), 3000);
-    } catch (error: any) {
-      setMessage('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      setMessage('Fehler: ' + apiErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -216,8 +213,8 @@ export function LEDSettingsTab() {
       await ledApi.updateJobSettings(jobSettings);
       setJobMessage('✓ Job-Highlight gespeichert');
       setTimeout(() => setJobMessage(''), 3000);
-    } catch (error: any) {
-      setJobMessage('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      setJobMessage('Fehler: ' + apiErrorMessage(error));
     } finally {
       setJobSaving(false);
     }
@@ -238,8 +235,8 @@ export function LEDSettingsTab() {
         const errors = Array.isArray(data.errors) ? data.errors.join(', ') : 'Unbekannter Fehler';
         setMappingMessage('⚠️ ' + errors);
       }
-    } catch (error: any) {
-      setMappingMessage('Fehler: ' + (error.response?.data?.error || error.message || error.toString()));
+    } catch (error: unknown) {
+      setMappingMessage('Fehler: ' + apiErrorMessage(error));
     } finally {
       setMappingValidating(false);
     }
@@ -256,8 +253,8 @@ export function LEDSettingsTab() {
       await ledApi.updateMapping(mapping);
       setMappingMessage('✓ Mapping gespeichert');
       setTimeout(() => setMappingMessage(''), 4000);
-    } catch (error: any) {
-      setMappingMessage('Fehler: ' + (error.response?.data?.error || error.message || error.toString()));
+    } catch (error: unknown) {
+      setMappingMessage('Fehler: ' + apiErrorMessage(error));
     } finally {
       setMappingSaving(false);
     }
@@ -398,8 +395,8 @@ export function LEDSettingsTab() {
           : '✓ Vorschau gestartet – „Vorschau stoppen“ beendet das Leuchten.'
       );
       setTimeout(() => setPreviewMessage(''), 4000);
-    } catch (error: any) {
-      setPreviewMessage('Fehler bei der Vorschau: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      setPreviewMessage('Fehler bei der Vorschau: ' + apiErrorMessage(error));
       setPreviewActive(false);
       setPreviewTarget(null);
     } finally {
@@ -415,8 +412,8 @@ export function LEDSettingsTab() {
       setPreviewTarget(null);
       setPreviewMessage('✓ Vorschau gestoppt.');
       setTimeout(() => setPreviewMessage(''), 3000);
-    } catch (error: any) {
-      setPreviewMessage('Fehler beim Stoppen: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      setPreviewMessage('Fehler beim Stoppen: ' + apiErrorMessage(error));
     } finally {
       setStopLoading(false);
     }
@@ -457,10 +454,10 @@ export function LEDSettingsTab() {
       });
       setZoneTypeFeedback(zoneType.id, '✓ Lagertyp gespeichert');
       loadZoneTypes();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setZoneTypeFeedback(
         zoneType.id,
-        'Fehler: ' + (error.response?.data?.error || error.message)
+        'Fehler: ' + apiErrorMessage(error)
       );
     } finally {
       setZoneTypeSaving(null);
@@ -890,7 +887,7 @@ export function LEDSettingsTab() {
           <h3 className="text-lg font-semibold text-white">LED-Mapping konfigurieren</h3>
         </div>
         <p className="text-sm text-gray-400">
-          Weise einzelnen Bereichen (z. B. Fächer, Gitterboxen) ihre LED-Pixel zu. Die Konfiguration wird im Container persistiert und survive Deployments.
+          Weise einzelnen Bereichen (z. B. Fächer, Gitterboxen) ihre LED-Pixel zu. Die Konfiguration wird im Container persistiert und survive Deployments.
         </p>
 
         {mappingLoading ? (
@@ -1027,7 +1024,7 @@ export function LEDSettingsTab() {
                   <div key={`${shelf.shelf_id}-${shelfIndex}`} className="glass-dark rounded-xl p-5 space-y-4 border border-white/10">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="flex-1">
-                        <label className="block text-xs font-semibold text-gray-400 mb-1">Gruppenkennung (z. B. Regal A, Gitterbox 1)</label>
+                        <label className="block text-xs font-semibold text-gray-400 mb-1">Gruppenkennung (z. B. Regal A, Gitterbox 1)</label>
                         <input
                           type="text"
                           value={shelf.shelf_id}

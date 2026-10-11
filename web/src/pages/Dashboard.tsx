@@ -9,7 +9,7 @@ import { dashboardApi, warehouseApi } from '../lib/api';
 import type { DashboardStats, Movement, WarehouseOverview } from '../lib/api';
 import { LowStockAlertsWidget } from '../components/LowStockAlertsWidget';
 import { toast } from '../lib/toast';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { suiteGreeting, suiteLocale } from '../lib/cores-design';
 
 const emptyStats: DashboardStats = {

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 
 interface RoleGuardProps {
   requiredRoles: string[];
@@ -17,7 +17,7 @@ export function RoleGuard({ requiredRoles, children }: RoleGuardProps) {
     );
   }
 
-  const roles = (user?.roles ?? []) as any[];
+  const roles: Array<{ name?: string; Name?: string }> = user?.roles ?? [];
   const hasRequiredRole = roles.some((role) => {
     const name = (role?.name || role?.Name || '').toString().toLowerCase();
     return requiredRoles.some((required) => required.toLowerCase() === name);

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../lib/api-errors';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Clock, ScanLine, Package } from 'lucide-react';
@@ -51,8 +52,8 @@ export function JobPicklistPage() {
       setFeedback({ type: 'success', msg: `✓ ${deviceId} zugewiesen` });
       setScanInput('');
       loadPicklist();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || 'Kein passender Platz gefunden';
+    } catch (err: unknown) {
+      const msg = apiErrorMessage(err, 'Kein passender Platz gefunden');
       setFeedback({ type: 'error', msg: `✗ ${msg}` });
     } finally {
       setScanning(false);

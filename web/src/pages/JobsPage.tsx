@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../lib/api-errors';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Package, CheckCircle, XCircle, Calendar, User, ArrowRight, Lightbulb, LightbulbOff, ClipboardList, ScanLine, Download, RefreshCw } from 'lucide-react';
@@ -80,13 +81,6 @@ export function JobsPage() {
       return () => clearInterval(interval);
     }
   }, [selectedJob, activeTab]);
-
-  // Load requirements when switching to packlist tab
-  useEffect(() => {
-    if (selectedJob && activeTab === 'packlist' && requirements.length === 0) {
-      loadRequirements(selectedJob.job_id);
-    }
-  }, [activeTab]);
 
   // Cleanup LEDs when leaving the page or unmounting
   useEffect(() => {
@@ -203,11 +197,11 @@ export function JobsPage() {
 
         await loadJobDetails(numericPart, { highlight: true });
         setScanResult({ success: true, message: `Job ${normalizedCode} geladen` });
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast.error('Job scan failed:' + " " + String(error));
         setScanResult({
           success: false,
-          message: error.response?.data?.error || error.message || 'Job nicht gefunden',
+          message: apiErrorMessage(error) || 'Job nicht gefunden',
         });
       } finally {
         setScanCode('');
@@ -250,11 +244,11 @@ export function JobsPage() {
       if (data.success) {
         await refreshJobDetails(selectedJob.job_id);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Scan failed:' + " " + String(error));
       setScanResult({
         success: false,
-        message: error.response?.data?.error || 'Scan fehlgeschlagen',
+        message: apiErrorMessage(error, 'Scan fehlgeschlagen'),
       });
     } finally {
       setScanLoading(false);
@@ -296,9 +290,9 @@ export function JobsPage() {
         await ledApi.highlightJob(selectedJob.job_id);
         setLedActive(true);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('LED toggle failed:' + " " + String(error));
-      alert(error.response?.data?.error || 'LED-Steuerung fehlgeschlagen');
+      alert(apiErrorMessage(error, 'LED-Steuerung fehlgeschlagen'));
     } finally {
       setLedLoading(false);
     }

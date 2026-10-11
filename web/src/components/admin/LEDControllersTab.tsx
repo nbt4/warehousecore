@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useEffect, useMemo, useState } from 'react';
 import { ledApi, api, type LEDController, type LEDControllerPayload, type ZoneTypeDefinition } from '../../lib/api';
 import { Plus, Save, X, RefreshCcw, Trash2, Cpu, Settings, RotateCw } from 'lucide-react';
@@ -163,8 +164,8 @@ export function LEDControllersTab() {
       }
       resetEditor();
       loadData();
-    } catch (error: any) {
-      const msg = error.response?.data?.error || error.message || 'Unbekannter Fehler';
+    } catch (error: unknown) {
+      const msg = apiErrorMessage(error) || 'Unbekannter Fehler';
       alert('Fehler: ' + msg);
     } finally {
       setSaving(false);
@@ -181,8 +182,8 @@ export function LEDControllersTab() {
         resetEditor();
       }
       loadData();
-    } catch (error: any) {
-      const msg = error.response?.data?.error || error.message || 'Unbekannter Fehler';
+    } catch (error: unknown) {
+      const msg = apiErrorMessage(error) || 'Unbekannter Fehler';
       alert('Fehler: ' + msg);
     }
   };
@@ -207,8 +208,8 @@ export function LEDControllersTab() {
       setMessage(`✓ Hardware-Konfiguration gesendet.`);
       // Reload after 2 seconds to show updated values
       setTimeout(() => loadData(), 2000);
-    } catch (error: any) {
-      const msg = error.response?.data?.error || error.message || 'Unbekannter Fehler';
+    } catch (error: unknown) {
+      const msg = apiErrorMessage(error) || 'Unbekannter Fehler';
       alert('Fehler beim Senden der Hardware-Konfiguration: ' + msg);
     } finally {
       setConfiguring(false);
@@ -227,8 +228,8 @@ export function LEDControllersTab() {
         loadData();
         setRestarting(null);
       }, 10000);
-    } catch (error: any) {
-      const msg = error.response?.data?.error || error.message || 'Unbekannter Fehler';
+    } catch (error: unknown) {
+      const msg = apiErrorMessage(error) || 'Unbekannter Fehler';
       alert('Fehler: ' + msg);
       setRestarting(null);
     }
@@ -252,8 +253,8 @@ export function LEDControllersTab() {
       await Promise.all(offlineControllers.map(c => ledApi.deleteController(c.id)));
       setMessage(`✓ ${offlineControllers.length} offline Controller gelöscht`);
       loadData();
-    } catch (error: any) {
-      const msg = error.response?.data?.error || error.message || 'Unbekannter Fehler';
+    } catch (error: unknown) {
+      const msg = apiErrorMessage(error) || 'Unbekannter Fehler';
       alert('Fehler: ' + msg);
     }
   };
