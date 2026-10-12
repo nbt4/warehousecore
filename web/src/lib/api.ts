@@ -86,6 +86,10 @@ export interface DeviceTreeDevice {
   last_maintenance?: string;
   next_maintenance?: string;
   notes?: string;
+  is_consumable?: boolean;
+  is_accessory?: boolean;
+  stock_quantity?: number;
+  unit?: string;
 }
 
 export interface DeviceTreeSubbiercategory {
@@ -1056,7 +1060,10 @@ export const labelsApi = {
   updateTemplate: (id: number, updates: Partial<LabelTemplate>) => api.put(`/labels/templates/${id}`, updates),
   deleteTemplate: (id: number) => api.delete(`/labels/templates/${id}`),
   generateDeviceLabel: (deviceId: string, templateId: number) => api.post(`/labels/device/${deviceId}`, { template_id: templateId }),
-  generateCaseLabel: (caseId: number, templateId: number) => api.post(`/labels/case/${caseId}`, { template_id: templateId }),
+  generateCaseLabel: (caseId: number, templateId: number) => api.post<{
+    template: LabelTemplate;
+    elements: Array<LabelElement & { style: LabelElement['style'] & { fontSize?: number; fontWeight?: string } }>;
+  }>(`/labels/case/${caseId}`, { template_id: templateId }),
   saveLabel: (deviceId: string, imageData: string) =>
     api.post<{ label_path: string; message: string }>('/labels/save', {
       device_id: deviceId,

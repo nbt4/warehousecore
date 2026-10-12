@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MapPin, Package, ChevronRight, ArrowLeft, Plus, Trash2, FlaskConical } from 'lucide-react';
 import { zonesApi, type ProductInZone } from '../lib/api';
@@ -81,6 +81,36 @@ export function ZoneDetailPage() {
     return map;
   }, [zoneTypeDefs]);
 
+  const loadZoneDetails = useCallback(async () => {
+    try {
+      const { data } = await zonesApi.getById(Number(id));
+      setZone(data as ZoneDetails);
+    } catch (error) {
+      toast.error('Failed to load zone details:' + " " + String(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  const loadDevices = useCallback(async () => {
+    try {
+      const response = await fetch(appPath(`/api/v1/zones/${id}/devices`));
+      const data = await response.json();
+      setDevices(data);
+    } catch (error) {
+      toast.error('Failed to load devices:' + " " + String(error));
+    }
+  }, [id]);
+
+  const loadProducts = useCallback(async () => {
+    try {
+      const { data } = await zonesApi.getProducts(Number(id));
+      setProducts(data);
+    } catch (error) {
+      toast.error('Failed to load products:' + " " + String(error));
+    }
+  }, [id]);
+
   useEffect(() => {
     if (id) {
       loadZoneDetails();
@@ -112,37 +142,7 @@ export function ZoneDetailPage() {
         clearInterval(interval);
       };
     }
-  }, [id]);
-
-  const loadZoneDetails = async () => {
-    try {
-      const { data } = await zonesApi.getById(Number(id));
-      setZone(data as ZoneDetails);
-    } catch (error) {
-      toast.error('Failed to load zone details:' + " " + String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDevices = async () => {
-    try {
-      const response = await fetch(appPath(`/api/v1/zones/${id}/devices`));
-      const data = await response.json();
-      setDevices(data);
-    } catch (error) {
-      toast.error('Failed to load devices:' + " " + String(error));
-    }
-  };
-
-  const loadProducts = async () => {
-    try {
-      const { data } = await zonesApi.getProducts(Number(id));
-      setProducts(data);
-    } catch (error) {
-      toast.error('Failed to load products:' + " " + String(error));
-    }
-  };
+  }, [id, loadZoneDetails, loadDevices, loadProducts]);
 
   const handleZoneClick = (zoneId: number) => {
     navigate(`/zones/${zoneId}`);
@@ -198,7 +198,7 @@ export function ZoneDetailPage() {
     }
   };
 
-  const handleDeleteSubzone = async (e: React.MouseEvent, subzone: any) => {
+  const handleDeleteSubzone = async (e: React.MouseEvent, subzone: ZoneDetails['subzones'][number]) => {
     e.stopPropagation(); // Prevent navigation when clicking delete
 
     if (!confirm(`Zone "${subzone.name}" (${subzone.code}) wirklich löschen?`)) {

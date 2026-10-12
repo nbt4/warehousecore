@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -33,7 +34,7 @@ export function CountTypesTab() {
     try {
       const { data } = await api.get<CountType[]>('/admin/count-types');
       setCountTypes(data || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to load measurement units:' + " " + String(error));
       setMessage('Mess-Einheiten konnten nicht geladen werden.');
     } finally {
@@ -67,9 +68,9 @@ export function CountTypesTab() {
       await loadCountTypes();
       resetForm();
       setMessage('Mess-Einheit gespeichert.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to save measurement unit:' + " " + String(error));
-      setMessage(error?.response?.data?.error || 'Speichern fehlgeschlagen.');
+      setMessage(apiErrorMessage(error, 'Speichern fehlgeschlagen.'));
     } finally {
       setSaving(false);
     }
@@ -82,9 +83,9 @@ export function CountTypesTab() {
       await api.delete(`/admin/count-types/${id}`);
       await loadCountTypes();
       resetForm();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to delete measurement unit:' + " " + String(error));
-      setMessage(error?.response?.data?.error || 'Löschen fehlgeschlagen.');
+      setMessage(apiErrorMessage(error, 'Löschen fehlgeschlagen.'));
     }
   };
 

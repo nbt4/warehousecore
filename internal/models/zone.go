@@ -9,13 +9,13 @@ import (
 type ZoneKind string
 
 const (
-    ZoneKindShelf     ZoneKind = "shelf"
-    ZoneKindRack      ZoneKind = "rack"
-    ZoneKindCase      ZoneKind = "case"
-    ZoneKindVehicle   ZoneKind = "vehicle"
-    ZoneKindStage     ZoneKind = "stage"
-    ZoneKindWarehouse ZoneKind = "warehouse"
-    ZoneKindOther     ZoneKind = "other"
+	ZoneKindShelf     ZoneKind = "shelf"
+	ZoneKindRack      ZoneKind = "rack"
+	ZoneKindCase      ZoneKind = "case"
+	ZoneKindVehicle   ZoneKind = "vehicle"
+	ZoneKindStage     ZoneKind = "stage"
+	ZoneKindWarehouse ZoneKind = "warehouse"
+	ZoneKindOther     ZoneKind = "other"
 )
 
 // Zone represents a logical storage area in the warehouse
@@ -39,7 +39,7 @@ type Zone struct {
 // ZoneWithDetails includes device and case counts
 type ZoneWithDetails struct {
 	Zone
-	DeviceCount int    `json:"device_count" db:"device_count"`
-	CaseCount   int    `json:"case_count" db:"case_count"`
+	DeviceCount    int    `json:"device_count" db:"device_count"`
+	CaseCount      int    `json:"case_count" db:"case_count"`
 	ParentZoneName string `json:"parent_zone_name,omitempty" db:"parent_zone_name"`
 }

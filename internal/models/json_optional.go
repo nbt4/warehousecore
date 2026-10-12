@@ -47,4 +47,3 @@ func (o Optional[T]) Ptr() *T {
 	val := o.Value
 	return &val
 }
-

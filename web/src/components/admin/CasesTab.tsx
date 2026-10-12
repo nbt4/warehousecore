@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Eye,
@@ -195,10 +196,10 @@ export function CasesTab() {
       setModalOpen(false);
       setFormData(initialFormData);
       await fetchCases();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setActionMessage({
         type: 'error',
-        text: error.response?.data?.error || 'Fehler beim Speichern',
+        text: apiErrorMessage(error, 'Fehler beim Speichern'),
       });
     } finally {
       setSubmitting(false);
@@ -215,10 +216,10 @@ export function CasesTab() {
       await casesApi.delete(caseId);
       setActionMessage({ type: 'success', text: 'Case erfolgreich gelöscht' });
       await fetchCases();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setActionMessage({
         type: 'error',
-        text: error.response?.data?.message || error.response?.data?.error || 'Fehler beim Löschen',
+        text: apiErrorMessage(error, 'Fehler beim Löschen', ['message', 'error']),
       });
     } finally {
       clearActionMessage();
@@ -267,7 +268,7 @@ export function CasesTab() {
               <button onclick="window.print()">Drucken</button>
             </div>
             <div class="label-preview" style="width: ${labelData.template.width}mm; height: ${labelData.template.height}mm;">
-              ${labelData.elements.map((elem: any) => {
+              ${labelData.elements.map((elem) => {
                 if (elem.type === 'text') {
                   return `<div class="element text" style="left: ${elem.x}mm; top: ${elem.y}mm; font-size: ${elem.style?.fontSize || 12}px; font-weight: ${elem.style?.fontWeight || 'normal'};">${elem.content || ''}</div>`;
                 } else if (elem.type === 'qrcode' || elem.type === 'barcode' || elem.type === 'image') {
@@ -283,9 +284,9 @@ export function CasesTab() {
 
       labelWindow.document.write(html);
       labelWindow.document.close();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to generate label:' + " " + String(error));
-      alert('Fehler beim Erstellen des Labels: ' + (error.response?.data?.error || error.message));
+      alert('Fehler beim Erstellen des Labels: ' + apiErrorMessage(error));
     }
   };
 
@@ -642,7 +643,7 @@ export function CasesTab() {
                   </label>
                   <select
                     value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as CaseFormData['status'] })}
                     className="input-field w-full"
                     required
                   >

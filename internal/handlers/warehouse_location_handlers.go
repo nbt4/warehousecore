@@ -565,7 +565,7 @@ func UpdateWarehouseTaskStatus(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Ungültige Anfrage"})
 		return
 	}
-	result, err := repository.GetSQLDB().Exec(`UPDATE warehouse_tasks SET status=$1,updated_at=CURRENT_TIMESTAMP,completed_at=CASE WHEN $1='done' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE task_id=$2`, input.Status, id)
+	result, err := repository.GetSQLDB().Exec(`UPDATE warehouse_tasks SET status=$1::text,updated_at=CURRENT_TIMESTAMP,completed_at=CASE WHEN $1::text='done' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE task_id=$2`, input.Status, id)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

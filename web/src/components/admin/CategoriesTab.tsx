@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -31,7 +32,9 @@ export function CategoriesTab() {
   const [subbiercategories, setSubbiercategories] = useState<Subbiercategory[]>([]);
   const [activeLevel, setActiveLevel] = useState<Level>('category');
   const [editing, setEditing] = useState<number | string | 'new' | null>(null);
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<{
+    name?: string; abbreviation?: string; category_id?: number; subcategory_id?: string;
+  }>({});
   const [subcategoryFilter, setSubcategoryFilter] = useState<number | ''>('');
   const [subbiercategoryFilter, setSubbiercategoryFilter] = useState<string | ''>('');
 
@@ -78,8 +81,8 @@ export function CategoriesTab() {
       loadCategories();
       setEditing(null);
       setFormData({});
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -93,8 +96,8 @@ export function CategoriesTab() {
       loadSubcategories();
       setEditing(null);
       setFormData({});
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -108,8 +111,8 @@ export function CategoriesTab() {
       loadSubbiercategories();
       setEditing(null);
       setFormData({});
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -121,8 +124,8 @@ export function CategoriesTab() {
       if (level === 'category') loadCategories();
       else if (level === 'subcategory') loadSubcategories();
       else loadSubbiercategories();
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 

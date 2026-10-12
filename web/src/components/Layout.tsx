@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Boxes, Tag, Cable, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { useBranding } from '../hooks/useBranding';
 import { suiteGreetingName } from '../lib/cores-design';
 import { SuiteLanguageSwitcher } from '../lib/SuiteLanguageSwitcher';

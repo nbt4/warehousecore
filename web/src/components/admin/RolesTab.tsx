@@ -1,7 +1,8 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useState, useEffect, useMemo } from 'react';
 import { Users, Shield, Save } from 'lucide-react';
 import { api } from '../../lib/api';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../contexts/useAuth';
 import { toast } from '../../lib/toast';
 
 interface Role {
@@ -90,8 +91,8 @@ export function RolesTab() {
       await loadData();
       setSelectedUser(null);
       alert('Rollen erfolgreich aktualisiert');
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     } finally {
       setSaving(false);
     }

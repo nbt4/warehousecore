@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X, Building2, Tag, Globe } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -23,7 +24,9 @@ export function BrandsManufacturersTab() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [activeLevel, setActiveLevel] = useState<Level>('manufacturers');
   const [editing, setEditing] = useState<number | 'new' | null>(null);
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<{
+    name?: string; website?: string; manufacturer_id?: number | null;
+  }>({});
   const [manufacturerFilter, setManufacturerFilter] = useState<number | ''>('');
 
   useEffect(() => {
@@ -59,8 +62,8 @@ export function BrandsManufacturersTab() {
       loadManufacturers();
       setEditing(null);
       setFormData({});
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -78,8 +81,8 @@ export function BrandsManufacturersTab() {
       loadBrands();
       setEditing(null);
       setFormData({});
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -89,8 +92,8 @@ export function BrandsManufacturersTab() {
     try {
       await api.delete(`/admin/manufacturers/${id}`);
       loadManufacturers();
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -100,8 +103,8 @@ export function BrandsManufacturersTab() {
     try {
       await api.delete(`/admin/brands/${id}`);
       loadBrands();
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 

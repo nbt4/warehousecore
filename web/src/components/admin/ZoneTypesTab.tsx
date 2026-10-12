@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -53,8 +54,8 @@ export function ZoneTypesTab() {
       loadZoneTypes();
       setEditing(null);
       setFormData({ key: '', label: '', description: '' });
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 
@@ -63,8 +64,8 @@ export function ZoneTypesTab() {
     try {
       await api.delete(`/admin/zone-types/${id}`);
       loadZoneTypes();
-    } catch (error: any) {
-      alert('Fehler: ' + (error.response?.data?.error || error.message));
+    } catch (error: unknown) {
+      alert('Fehler: ' + apiErrorMessage(error));
     }
   };
 

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../lib/api-errors';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -112,9 +113,9 @@ export function DeviceTreeTab() {
       const tree = data.treeData || [];
       const sortedTree = sortDeviceTree(tree);
       setTreeData(sortedTree);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Failed to load device tree:' + " " + String(error));
-      setTreeError(error?.response?.data?.error || 'Gerätebaum konnte nicht geladen werden.');
+      setTreeError(apiErrorMessage(error, 'Gerätebaum konnte nicht geladen werden.'));
     } finally {
       setTreeLoading(false);
     }
@@ -148,10 +149,10 @@ export function DeviceTreeTab() {
         type: 'success',
         text: `Fach ${device.zone_code} wird hervorgehoben.`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setActionMessage({
         type: 'error',
-        text: 'LED-Befehl fehlgeschlagen: ' + (error.response?.data?.error || error.message || error.toString()),
+        text: 'LED-Befehl fehlgeschlagen: ' + apiErrorMessage(error),
       });
     } finally {
       clearActionMessage();
@@ -590,10 +591,10 @@ interface DeviceTreeItemProps {
 }
 
 function DeviceTreeItem({ device, onOpenDevice, onLocateDevice, onOpenZone }: DeviceTreeItemProps) {
-  const isConsumable = (device as any).is_consumable === true;
-  const isAccessory = (device as any).is_accessory === true;
-  const stockQuantity = (device as any).stock_quantity;
-  const unit = (device as any).unit;
+  const isConsumable = device.is_consumable === true;
+  const isAccessory = device.is_accessory === true;
+  const stockQuantity = device.stock_quantity;
+  const unit = device.unit;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -796,7 +797,6 @@ function filterTreeData(treeData: DeviceTreeCategory[], term: string) {
     category.subcategories.forEach((subcategory) => {
       const subcategoryMatches = subcategory.name.toLowerCase().includes(trimmed);
       const filteredGroups: DeviceTreeSubbiercategory[] = [];
-      let subcategoryDeviceCount = 0;
 
       subcategory.subbiercategories.forEach((group) => {
         const groupMatches = group.name.toLowerCase().includes(trimmed);
@@ -812,7 +812,6 @@ function filterTreeData(treeData: DeviceTreeCategory[], term: string) {
           };
 
           filteredGroups.push(newGroup);
-          subcategoryDeviceCount += newGroup.device_count;
 
           autoExpandKeys.add(categoryNodeKey(category.id));
           autoExpandKeys.add(subcategoryNodeKey(subcategory.id));
