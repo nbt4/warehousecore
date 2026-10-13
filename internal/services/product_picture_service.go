@@ -2,19 +2,18 @@ package services
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/chai2010/webp"
-	"github.com/disintegration/imaging"
 
 	"warehousecore/internal/services/storage"
 )
@@ -27,6 +26,14 @@ type ProductPictureService struct {
 	allowedTypes map[string]bool
 	rootFolder   string
 	cacheDir     string
+	listMu       sync.Mutex
+	listings     map[string]pictureListing
+	listingLocks sync.Map
+	listVersions map[string]uint64
+	uploading    chan struct{}
+	variantLocks sync.Map
+	processing   chan struct{}
+	warming      chan struct{}
 }
 
 type ProductPictureInfo struct {
@@ -58,8 +65,13 @@ func NewProductPictureServiceFromEnv() *ProductPictureService {
 			"image/webp": true,
 			"image/heic": true,
 		},
-		rootFolder: path.Join("warehousecore", "pictures"),
-		cacheDir:   cacheDir,
+		rootFolder:   path.Join("warehousecore", "pictures"),
+		cacheDir:     cacheDir,
+		listings:     make(map[string]pictureListing),
+		listVersions: make(map[string]uint64),
+		uploading:    make(chan struct{}, 3),
+		processing:   make(chan struct{}, 2),
+		warming:      make(chan struct{}, 8),
 	}
 
 	if ncURL == "" || ncUser == "" || ncPass == "" {
@@ -103,6 +115,8 @@ func (s *ProductPictureService) UploadPicture(productName string, file multipart
 		return "", fmt.Errorf("product pictures not configured")
 	}
 
+	s.uploading <- struct{}{}
+	defer func() { <-s.uploading }()
 	defer file.Seek(0, io.SeekStart) // ensure caller can reuse/close safely
 
 	buf := bytes.Buffer{}
@@ -114,13 +128,11 @@ func (s *ProductPictureService) UploadPicture(productName string, file multipart
 		return "", fmt.Errorf("file exceeds limit of %d bytes", s.maxFileSize)
 	}
 
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" && buf.Len() > 0 {
-		contentType = http.DetectContentType(buf.Bytes())
-	}
+	contentType := pictureContentType(buf.Bytes())
 	if !s.allowedTypes[contentType] {
-		return "", fmt.Errorf("unsupported file type: %s", contentType)
+		return "", fmt.Errorf("unsupported image content")
 	}
+	header.Header.Set("Content-Type", contentType)
 
 	filename := sanitizeFileName(header.Filename)
 	base := strings.TrimSuffix(filename, filepath.Ext(filename))
@@ -128,13 +140,20 @@ func (s *ProductPictureService) UploadPicture(productName string, file multipart
 	if base == "" {
 		base = "bild"
 	}
-	storedName := fmt.Sprintf("%s_%d%s", base, time.Now().Unix(), ext)
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return "", err
+	}
+	storedName := fmt.Sprintf("%s_%s%s", base, hex.EncodeToString(suffix[:]), ext)
 
 	relPath := s.productFilePath(productName, storedName)
 	if err := s.client.Upload(relPath, bytes.NewReader(buf.Bytes()), contentType); err != nil {
 		return "", fmt.Errorf("upload to nextcloud: %w", err)
 	}
 
+	_ = writePictureCache(s.cachedPath(productName, storedName, "original", ""), buf.Bytes())
+	_ = writePictureCache(s.cachedPath(productName, storedName, "original", "")+".mime", []byte(contentType))
+	s.rememberPicture(productName, ProductPictureInfo{FileName: storedName, Size: int64(buf.Len()), ContentType: contentType, ModifiedAt: time.Now()})
 	return storedName, nil
 }
 
@@ -143,35 +162,54 @@ func (s *ProductPictureService) ListPictures(productName string) ([]ProductPictu
 	if !s.Enabled() {
 		return nil, fmt.Errorf("product pictures not configured")
 	}
-	folder := s.productFolder(productName)
-	// Ensure folder hierarchy exists so PROPFIND does not 404 on first access.
-	_ = s.client.EnsureCollections(path.Join(folder, ".placeholder"))
-	entries, err := s.client.List(folder)
-	if err != nil {
-		return nil, fmt.Errorf("list nextcloud folder: %w", err)
-	}
-
-	pictures := make([]ProductPictureInfo, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir {
-			continue
+	value, _ := s.listingLocks.LoadOrStore(productName, &sync.Mutex{})
+	lock := value.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	for attempt := 0; attempt < 3; attempt++ {
+		s.listMu.Lock()
+		if listing, ok := s.listings[productName]; ok && time.Now().Before(listing.expires) {
+			copy := append([]ProductPictureInfo(nil), listing.items...)
+			s.listMu.Unlock()
+			return copy, nil
 		}
-		if !isImageFile(entry) {
-			continue
+		version := s.listVersions[productName]
+		s.listMu.Unlock()
+		entries, err := s.client.List(s.productFolder(productName))
+		if err != nil {
+			if strings.Contains(err.Error(), "404") {
+				return []ProductPictureInfo{}, nil
+			}
+			return nil, fmt.Errorf("list nextcloud folder: %w", err)
 		}
-		pictures = append(pictures, ProductPictureInfo{
-			FileName:    path.Base(entry.Path),
-			Size:        entry.Size,
-			ContentType: entry.ContentType,
-			ModifiedAt:  entry.ModTime,
-		})
+		pictures := make([]ProductPictureInfo, 0, len(entries))
+		for _, entry := range entries {
+			if !entry.IsDir && isImageFile(entry) {
+				pictures = append(pictures, ProductPictureInfo{FileName: path.Base(entry.Path), Size: entry.Size, ContentType: entry.ContentType, ModifiedAt: entry.ModTime})
+			}
+		}
+		s.listMu.Lock()
+		current := s.listVersions[productName] == version
+		if current {
+			s.listings[productName] = pictureListing{items: pictures, expires: time.Now().Add(30 * time.Second)}
+		}
+		s.listMu.Unlock()
+		if current || attempt == 2 {
+			return append([]ProductPictureInfo(nil), pictures...), nil
+		}
 	}
-
-	return pictures, nil
+	return nil, fmt.Errorf("picture list changed during refresh")
 }
 
 // DownloadPicture streams a picture for a product by filename.
 func (s *ProductPictureService) DownloadPicture(productName, fileName string) (io.ReadCloser, string, error) {
+	value, _ := s.variantLocks.LoadOrStore(productName+"/"+fileName, &sync.Mutex{})
+	lock := value.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	return s.downloadPictureLocked(productName, fileName)
+}
+func (s *ProductPictureService) downloadPictureLocked(productName, fileName string) (io.ReadCloser, string, error) {
 	if !s.Enabled() {
 		return nil, "", fmt.Errorf("product pictures not configured")
 	}
@@ -179,147 +217,88 @@ func (s *ProductPictureService) DownloadPicture(productName, fileName string) (i
 		return nil, "", fmt.Errorf("filename required")
 	}
 	safeName := sanitizeFileName(fileName)
-	body, ct, err := s.client.Download(s.productFilePath(productName, safeName))
+	if body, ct, err := s.originalFromCache(productName, safeName); err == nil {
+		return body, ct, nil
+	}
+	body, _, err := s.client.Download(s.productFilePath(productName, safeName))
 	if err != nil {
 		return nil, "", err
 	}
-	return body, ct, nil
+	data, err := io.ReadAll(io.LimitReader(body, s.maxFileSize+1))
+	body.Close()
+	if err != nil {
+		return nil, "", err
+	}
+	if int64(len(data)) > s.maxFileSize {
+		return nil, "", fmt.Errorf("picture exceeds download limit")
+	}
+	ct := pictureContentType(data)
+	if !s.allowedTypes[ct] {
+		return nil, "", fmt.Errorf("unsupported image content")
+	}
+	_ = writePictureCache(s.cachedPath(productName, safeName, "original", ""), data)
+	_ = writePictureCache(s.cachedPath(productName, safeName, "original", "")+".mime", []byte(ct))
+	return io.NopCloser(bytes.NewReader(data)), ct, nil
 }
 
 // DownloadPictureWithVariant returns the requested variant (thumb/preview) or the original image.
 // Variants are cached as compressed WebP or JPEG on disk for faster subsequent loads.
 // format can be "webp", "jpeg", or "" (defaults to webp for better compression).
 func (s *ProductPictureService) DownloadPictureWithVariant(productName, fileName, variant, format string) (io.ReadCloser, string, error) {
+	variant = normalizePictureVariant(variant)
 	if variant == "" {
 		return s.DownloadPicture(productName, fileName)
 	}
-	maxDim := 0
-	switch strings.ToLower(variant) {
-	case "thumb", "thumbnail":
-		maxDim = 480
-	case "preview", "medium":
-		maxDim = 1200
-	default:
-		return s.DownloadPicture(productName, fileName)
-	}
-
-	if maxDim == 0 {
-		return s.DownloadPicture(productName, fileName)
-	}
-
-	// Default format is webp for better compression
-	if format == "" {
+	format = strings.ToLower(format)
+	if format == "jpeg" || format == "jpg" {
+		format = "jpg"
+	} else {
 		format = "webp"
 	}
-	format = strings.ToLower(format)
-
-	var fileExt, contentType string
-	switch format {
-	case "webp":
-		fileExt = ".webp"
-		contentType = "image/webp"
-	case "jpeg", "jpg":
-		fileExt = ".jpg"
-		contentType = "image/jpeg"
-	default:
-		fileExt = ".webp"
-		contentType = "image/webp"
+	ct := "image/webp"
+	if format == "jpg" {
+		ct = "image/jpeg"
 	}
-
-	safeFile := sanitizeFileName(fileName)
-	cachePath := filepath.Join(s.cacheDir, variant, sanitizeFolderName(productName), safeFile+fileExt)
-	if cached, err := os.Open(cachePath); err == nil {
-		return cached, contentType, nil
+	target := s.cachedPath(productName, fileName, variant, format)
+	if f, err := os.Open(target); err == nil {
+		return f, ct, nil
 	}
-
-	orig, origContentType, err := s.DownloadPicture(productName, safeFile)
-	if err != nil {
-		return nil, "", err
+	if err := s.generateVariants(productName, fileName, format); err != nil {
+		// Formats unsupported by the decoder (e.g. HEIC) retain their original.
+		return s.DownloadPicture(productName, fileName)
 	}
-	defer orig.Close()
-
-	origBytes, err := io.ReadAll(orig)
-	if err != nil {
-		return nil, "", err
-	}
-
-	img, err := imaging.Decode(bytes.NewReader(origBytes), imaging.AutoOrientation(true))
-	if err != nil {
-		// If we cannot decode (e.g. HEIC unsupported), return original stream.
-		return io.NopCloser(bytes.NewReader(origBytes)), origContentType, nil
-	}
-
-	resized := imaging.Fit(img, maxDim, maxDim, imaging.Lanczos)
-	buf := bytes.Buffer{}
-
-	// Encode based on requested format
-	switch format {
-	case "webp":
-		// WebP encoding with quality 85 (25-35% smaller than JPEG)
-		if err := webp.Encode(&buf, resized, &webp.Options{Quality: 85}); err != nil {
-			// Fallback to JPEG if WebP encoding fails
-			if err := imaging.Encode(&buf, resized, imaging.JPEG, imaging.JPEGQuality(85)); err != nil {
-				return io.NopCloser(bytes.NewReader(origBytes)), origContentType, nil
-			}
-			fileExt = ".jpg"
-			contentType = "image/jpeg"
-		}
-	case "jpeg", "jpg":
-		if err := imaging.Encode(&buf, resized, imaging.JPEG, imaging.JPEGQuality(85)); err != nil {
-			return io.NopCloser(bytes.NewReader(origBytes)), origContentType, nil
-		}
-	}
-
-	cachePath = filepath.Join(s.cacheDir, variant, sanitizeFolderName(productName), safeFile+fileExt)
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err == nil {
-		_ = os.WriteFile(cachePath, buf.Bytes(), 0o644)
-	}
-
-	return io.NopCloser(bytes.NewReader(buf.Bytes())), contentType, nil
+	f, err := os.Open(target)
+	return f, ct, err
 }
 
-// WarmPictureVariants generates cached variants in the background to improve perceived speed.
-// Uses WebP format by default for optimal compression.
 func (s *ProductPictureService) WarmPictureVariants(productName, fileName string) {
-	if s == nil || !s.Enabled() {
+	if !s.Enabled() {
 		return
 	}
-	go func() {
-		// Warm up WebP variants (default format)
-		if r, _, err := s.DownloadPictureWithVariant(productName, fileName, "thumb", "webp"); err != nil {
-			log.Printf("[PICTURES] Warm thumb (webp) failed for %s: %v", fileName, err)
-		} else if r != nil {
-			r.Close()
-		}
-		if r, _, err := s.DownloadPictureWithVariant(productName, fileName, "preview", "webp"); err != nil {
-			log.Printf("[PICTURES] Warm preview (webp) failed for %s: %v", fileName, err)
-		} else if r != nil {
-			r.Close()
-		}
-		// Also warm up JPEG variants as fallback for old browsers
-		if r, _, err := s.DownloadPictureWithVariant(productName, fileName, "thumb", "jpeg"); err != nil {
-			log.Printf("[PICTURES] Warm thumb (jpeg) failed for %s: %v", fileName, err)
-		} else if r != nil {
-			r.Close()
-		}
-		if r, _, err := s.DownloadPictureWithVariant(productName, fileName, "preview", "jpeg"); err != nil {
-			log.Printf("[PICTURES] Warm preview (jpeg) failed for %s: %v", fileName, err)
-		} else if r != nil {
-			r.Close()
-		}
-	}()
+	select {
+	case s.warming <- struct{}{}:
+	default:
+		return
+	}
+	go func() { defer func() { <-s.warming }(); _ = s.generateVariants(productName, fileName, "webp") }()
 }
 
-// ClearCachedVariants removes cached thumbnails/previews for a given file.
 func (s *ProductPictureService) ClearCachedVariants(productName, fileName string) {
 	if s == nil || s.cacheDir == "" {
 		return
 	}
-	variants := []string{"thumb", "preview"}
-	for _, variant := range variants {
-		cachePath := filepath.Join(s.cacheDir, variant, sanitizeFolderName(productName), sanitizeFileName(fileName)+".jpg")
-		_ = os.Remove(cachePath)
+	lockValue, _ := s.variantLocks.LoadOrStore(productName+"/"+fileName, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	for _, variant := range []string{"thumb", "preview"} {
+		for _, format := range []string{"jpg", "webp"} {
+			_ = os.Remove(s.cachedPath(productName, fileName, variant, format))
+		}
 	}
+	_ = os.Remove(s.cachedPath(productName, fileName, "original", ""))
+	_ = os.Remove(s.cachedPath(productName, fileName, "original", "") + ".mime")
+	s.invalidateListing(productName)
 }
 
 // DeletePicture removes a specific picture from Nextcloud.
@@ -330,7 +309,11 @@ func (s *ProductPictureService) DeletePicture(productName, fileName string) erro
 	if fileName == "" {
 		return fmt.Errorf("filename required")
 	}
-	return s.client.Delete(s.productFilePath(productName, sanitizeFileName(fileName)))
+	if err := s.client.Delete(s.productFilePath(productName, sanitizeFileName(fileName))); err != nil {
+		return err
+	}
+	s.ClearCachedVariants(productName, fileName)
+	return nil
 }
 
 func (s *ProductPictureService) productFolder(productName string) string {

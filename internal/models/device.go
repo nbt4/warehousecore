@@ -29,6 +29,7 @@ const (
 
 // Device represents a physical device in the warehouse
 type Device struct {
+	Version           string         `json:"version,omitempty"`
 	DeviceID          string         `json:"device_id" db:"deviceID"`
 	ProductID         sql.NullInt64  `json:"product_id" db:"productID"`
 	ProductName       string         `json:"product_name,omitempty" db:"product_name"`

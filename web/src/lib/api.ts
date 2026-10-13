@@ -13,6 +13,7 @@ export const api = axios.create({
 
 // Types
 export interface Device {
+  version?: string;
   device_id: string;
   product_id?: number;
   product_name?: string;
@@ -488,6 +489,7 @@ export interface DeviceCreateInput {
 }
 
 export interface DeviceUpdateInput {
+  expected_updated_at?: string;
   product_id?: number;
   status?: string;
   condition_status?: string;
@@ -688,6 +690,7 @@ export interface PicklistPositionDevice {
 }
 
 export interface PicklistPosition {
+  unit?: string; tracking_mode?: string; origins?: { name: string; relation_type: string }[];
   position_id: number;
   product_id: number | null;
   product_name: string;
@@ -698,11 +701,13 @@ export interface PicklistPosition {
 }
 
 export interface JobPicklist {
+  version: number; warnings: string[];
   job_id: number;
   positions: PicklistPosition[];
 }
 
 export const picklistApi = {
+  confirmQuantity: (jobId: number, productId: number, quantity: number, receipt: string) => api.post(`/jobs/${jobId}/picklist/scan`, { product_id: productId, quantity, receipt }),
   getByJob: (jobId: number) => api.get<JobPicklist>(`/jobs/${jobId}/picklist`),
   scanDevice: (jobId: number, deviceId: string, scannedBy?: string) => api.post<{ position_id: number; device_id: string; message: string }>(`/jobs/${jobId}/picklist/scan`, { device_id: deviceId, scanned_by: scannedBy || '' }),
 };

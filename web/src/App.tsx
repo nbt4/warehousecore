@@ -1,74 +1,210 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { Layout } from './components/Layout';
-import { RoleGuard } from './components/RoleGuard';
-import { CentralLoginRedirect } from './components/CentralLoginRedirect';
-import { ChangePassword } from './pages/ChangePassword';
-import { Dashboard } from './pages/Dashboard';
-import { ScanPage } from './pages/ScanPage';
-import { ZonesPage } from './pages/ZonesPage';
-import { ZoneDetailPage } from './pages/ZoneDetailPage';
-import { JobsPage } from './pages/JobsPage';
-import { MaintenancePage } from './pages/MaintenancePage';
-import { CasesPage } from './pages/CasesPage';
-import { ProductsPage } from './pages/ProductsPage';
-import { CablesPage } from './pages/CablesPage';
-import LabelDesignerPage from './pages/LabelDesignerPage';
-import { JobPicklistPage } from './pages/JobPicklistPage';
-import ToastContainer from './components/ToastContainer';
-import { appBasePath } from './lib/app-paths';
+import { lazy, Suspense } from "react";
+import {
+  WorkspaceLoading,
+  UnsavedNavigationGuard,
+} from "./components/catalog/Workspace";
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  RouterProvider,
+  Outlet,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { Layout } from "./components/Layout";
+import { RoleGuard } from "./components/RoleGuard";
+import { CentralLoginRedirect } from "./components/CentralLoginRedirect";
+import { ChangePassword } from "./pages/ChangePassword";
+import { Dashboard } from "./pages/Dashboard";
+import { ScanPage } from "./pages/ScanPage";
+import { ZonesPage } from "./pages/ZonesPage";
+import { ZoneDetailPage } from "./pages/ZoneDetailPage";
+import { JobsPage } from "./pages/JobsPage";
+import { MaintenancePage } from "./pages/MaintenancePage";
+import { CasesPage } from "./pages/CasesPage";
+const ProductsPage = lazy(() =>
+  import("./pages/ProductsPage").then((module) => ({
+    default: module.ProductsPage,
+  })),
+);
+const CablesPage = lazy(() =>
+  import("./pages/CablesPage").then((module) => ({
+    default: module.CablesPage,
+  })),
+);
+import LabelDesignerPage from "./pages/LabelDesignerPage";
+const JobPicklistPage = lazy(() =>
+  import("./pages/JobPicklistPage").then((module) => ({
+    default: module.JobPicklistPage,
+  })),
+);
+import ToastContainer from "./components/ToastContainer";
+import { appBasePath } from "./lib/app-paths";
 
-function App() {
+function AppRoot() {
   return (
-    <BrowserRouter basename={appBasePath || undefined}>
-      <AuthProvider>
-        <ToastContainer />
-        <Routes>
-          {/* Public route */}
-          <Route path="/login" element={<CentralLoginRedirect />} />
-          <Route path="/profile" element={<Navigate to="/" replace />} />
-
-          {/* Password change route (requires auth but bypasses force check) */}
-          <Route path="/change-password" element={<ProtectedRoute bypassForcePasswordChange><ChangePassword /></ProtectedRoute>} />
-          <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
-          <Route path="/scan" element={<ProtectedRoute><Layout><ScanPage /></Layout></ProtectedRoute>} />
-          <Route path="/labels" element={<ProtectedRoute><Layout><LabelDesignerPage /></Layout></ProtectedRoute>} />
-          <Route path="/zones" element={<ProtectedRoute><Layout><ZonesPage /></Layout></ProtectedRoute>} />
-          <Route path="/zones/:id" element={<ProtectedRoute><Layout><ZoneDetailPage /></Layout></ProtectedRoute>} />
-          <Route path="/cases" element={<ProtectedRoute><Layout><CasesPage /></Layout></ProtectedRoute>} />
-          <Route
-            path="/products"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <RoleGuard requiredRoles={['admin', 'manager', 'warehouse_admin']}>
-                    <ProductsPage />
-                  </RoleGuard>
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/cables"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <RoleGuard requiredRoles={['admin', 'manager', 'warehouse_admin']}>
-                    <CablesPage />
-                  </RoleGuard>
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/jobs" element={<ProtectedRoute><Layout><JobsPage /></Layout></ProtectedRoute>} />
-          <Route path="/jobs/:id" element={<ProtectedRoute><Layout><JobsPage /></Layout></ProtectedRoute>} />
-          <Route path="/jobs/:id/picklist" element={<ProtectedRoute><Layout><JobPicklistPage /></Layout></ProtectedRoute>} />
-          <Route path="/maintenance" element={<ProtectedRoute><Layout><MaintenancePage /></Layout></ProtectedRoute>} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+    <AuthProvider>
+      <ToastContainer />
+      <Suspense fallback={<WorkspaceLoading />}>
+        <UnsavedNavigationGuard />
+        <Outlet />
+      </Suspense>
+    </AuthProvider>
   );
 }
 
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <Route element={<AppRoot />}>
+      {/* Public route */}
+      <Route path="/login" element={<CentralLoginRedirect />} />
+      <Route path="/profile" element={<Navigate to="/" replace />} />
+
+      {/* Password change route (requires auth but bypasses force check) */}
+      <Route
+        path="/change-password"
+        element={
+          <ProtectedRoute bypassForcePasswordChange>
+            <ChangePassword />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Dashboard />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/scan"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ScanPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/labels"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <LabelDesignerPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/zones"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ZonesPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/zones/:id"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ZoneDetailPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cases"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <CasesPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/products/*"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <RoleGuard
+                requiredRoles={["admin", "manager", "warehouse_admin"]}
+              >
+                <ProductsPage />
+              </RoleGuard>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cables"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <RoleGuard
+                requiredRoles={["admin", "manager", "warehouse_admin"]}
+              >
+                <CablesPage />
+              </RoleGuard>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jobs"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <JobsPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jobs/:id"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <JobsPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jobs/:id/picklist"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <JobPicklistPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/maintenance"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <MaintenancePage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+    </Route>,
+  ),
+  { basename: appBasePath || undefined },
+);
+
+function App() {
+  return <RouterProvider router={router} />;
+}
 export default App;

@@ -32,15 +32,16 @@ type RentalEquipment struct {
 
 // RentalEquipmentCreateRequest represents the request to create rental equipment
 type RentalEquipmentCreateRequest struct {
-	ProductName   string                  `json:"product_name"`
-	SupplierName  string                  `json:"supplier_name"`
-	RentalPrice   float64                 `json:"rental_price"`
-	CustomerPrice float64                 `json:"customer_price"`
-	Category      *string                 `json:"category"`
-	Description   *string                 `json:"description"`
-	Notes         *string                 `json:"notes"`
-	IsActive      *bool                   `json:"is_active"`
-	FieldValues   []RentalFieldValueInput `json:"field_values"`
+	ExpectedUpdatedAt string                  `json:"expected_updated_at"`
+	ProductName       string                  `json:"product_name"`
+	SupplierName      string                  `json:"supplier_name"`
+	RentalPrice       float64                 `json:"rental_price"`
+	CustomerPrice     float64                 `json:"customer_price"`
+	Category          *string                 `json:"category"`
+	Description       *string                 `json:"description"`
+	Notes             *string                 `json:"notes"`
+	IsActive          *bool                   `json:"is_active"`
+	FieldValues       []RentalFieldValueInput `json:"field_values"`
 }
 
 // GetRentalEquipment retrieves all rental equipment with optional filtering
@@ -341,7 +342,28 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		isActive = *req.IsActive
 	}
 
-	_, err = db.Exec(`
+	tx, err := db.BeginTx(r.Context(), nil)
+	if err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Fremdmietartikel konnte nicht gespeichert werden"})
+		return
+	}
+	defer tx.Rollback()
+	var version time.Time
+	if err = tx.QueryRow(`SELECT updated_at FROM rental_equipment WHERE id=$1 FOR UPDATE`, id).Scan(&version); err == sql.ErrNoRows {
+		respondJSON(w, 404, map[string]string{"error": "Fremdmietartikel nicht gefunden"})
+		return
+	} else if err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Fremdmietartikel konnte nicht geladen werden"})
+		return
+	}
+	if req.ExpectedUpdatedAt != "" {
+		expected, e := time.Parse(time.RFC3339Nano, req.ExpectedUpdatedAt)
+		if e != nil || !expected.Equal(version) {
+			respondJSON(w, 409, map[string]string{"error": "Fremdmietartikel wurde inzwischen geändert. Bitte neu laden."})
+			return
+		}
+	}
+	_, err = tx.Exec(`
 		UPDATE rental_equipment SET
 			name = $1,
 			supplier = $2,
@@ -371,8 +393,17 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := saveFieldValues(db, id, req.FieldValues); err != nil {
-		log.Printf("Failed to save field values for equipment %d: %v", id, err)
+	if err := saveFieldValues(tx, id, req.FieldValues); err != nil {
+		respondJSON(w, 400, map[string]string{"error": "Eigenschaften konnten nicht gespeichert werden; Artikel blieb unverändert"})
+		return
+	}
+	if err = recordCatalogAudit(tx, r, "rental_equipment", strconv.Itoa(id), "rental_equipment.update", req); err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Änderung konnte nicht protokolliert werden"})
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Fremdmietartikel konnte nicht gespeichert werden"})
+		return
 	}
 
 	// Fetch the updated equipment

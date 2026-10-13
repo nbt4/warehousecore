@@ -40,6 +40,10 @@ CREATE TABLE products(productid INT PRIMARY KEY,name TEXT,is_accessory BOOLEAN,l
 CREATE TABLE job_positions(job_id INT,product_id INT,position_type TEXT,quantity NUMERIC,unit TEXT,sort_order INT);INSERT INTO job_positions VALUES(1,1,'product',3,'Stück',1);
 CREATE TABLE job_product_requirements(id INT PRIMARY KEY,job_id INT,product_id INT,quantity INT,manual_quantity INT,deleted_at TIMESTAMPTZ);INSERT INTO job_product_requirements VALUES(1,1,1,5,2,NULL),(2,1,2,4,4,NULL),(3,1,3,7,7,NOW());
 CREATE TABLE product_dependencies(product_id INT,dependency_product_id INT,default_quantity NUMERIC,lifecycle_status TEXT);INSERT INTO product_dependencies VALUES(1,4,2,'active');`)
+	exec(`ALTER TABLE products ADD COLUMN count_type_id INT;ALTER TABLE products ADD COLUMN tracking_mode TEXT DEFAULT 'individual';CREATE TABLE count_types(count_type_id INT,abbreviation TEXT);
+ ALTER TABLE job_positions ADD COLUMN position_id SERIAL;CREATE TABLE devices(deviceid VARCHAR(50) PRIMARY KEY,productid INT);CREATE TABLE devicescases(deviceid TEXT,caseid INT);CREATE TABLE job_devices(jobid INT,deviceid TEXT,pack_status TEXT);CREATE TABLE job_position_devices(position_id INT,device_id TEXT,scanned_at TIMESTAMPTZ,scanned_by TEXT);ALTER TABLE product_dependencies ADD COLUMN id SERIAL;`)
+	exec(MaterialSnapshotSchema)
+
 	list, err := LoadPackingList(db, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +55,7 @@ CREATE TABLE product_dependencies(product_id INT,dependency_product_id INT,defau
 	if quantities[1] != 5 || quantities[2] != 4 || quantities[3] != 0 || quantities[4] != 10 || len(list.Items) != 3 {
 		t.Fatal("wrong combined/archived demand", list.Items)
 	}
-	exec(`ALTER TABLE job_positions ADD COLUMN deleted_at TIMESTAMPTZ;INSERT INTO job_positions VALUES(1,3,'product',7,'Stück',2,NOW())`)
+	exec(`ALTER TABLE job_positions ADD COLUMN deleted_at TIMESTAMPTZ;INSERT INTO job_positions(job_id,product_id,position_type,quantity,unit,sort_order,deleted_at) VALUES(1,3,'product',7,'Stück',2,NOW())`)
 	list, err = LoadPackingList(db, 1)
 	if err != nil || len(list.Items) != 3 {
 		t.Fatal("archived position remained in packing list", list, err)

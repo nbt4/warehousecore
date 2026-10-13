@@ -1,14 +1,35 @@
-import type { ReactNode } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Package, MapPin, ScanLine, Wrench, Menu, Briefcase, X, LogOut, User, ChevronLeft, ChevronRight, Boxes, Tag, Cable, ChevronDown } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '../contexts/useAuth';
-import { useBranding } from '../hooks/useBranding';
-import { suiteGreetingName } from '../lib/cores-design';
-import { SuiteLanguageSwitcher } from '../lib/SuiteLanguageSwitcher';
-import { useTranslation } from 'react-i18next';
-import { coresDashboardURL } from '../lib/suite-auth';
-import { SuiteCoreNavigation } from './SuiteCoreNavigation';
+import type { ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  Home,
+  Package,
+  MapPin,
+  ScanLine,
+  Wrench,
+  Menu,
+  Briefcase,
+  X,
+  LogOut,
+  User,
+  ChevronLeft,
+  ChevronRight,
+  Boxes,
+  Tag,
+  Cable,
+  ChevronDown,
+  Eye,
+  ShoppingCart,
+  Building2,
+  Settings,
+} from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "../contexts/useAuth";
+import { useBranding } from "../hooks/useBranding";
+import { suiteGreetingName } from "../lib/cores-design";
+import { SuiteLanguageSwitcher } from "../lib/SuiteLanguageSwitcher";
+import { useTranslation } from "react-i18next";
+import { coresDashboardURL } from "../lib/suite-auth";
+import { SuiteCoreNavigation } from "./SuiteCoreNavigation";
 
 interface LayoutProps {
   children: ReactNode;
@@ -21,23 +42,45 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { t } = useTranslation();
-	const branding = useBranding();
-	const companyName = branding.companyName;
+  const [light, setLight] = useState(
+    document.documentElement.dataset.theme === "light",
+  );
+  useEffect(() => {
+    const observer = new MutationObserver(() =>
+      setLight(document.documentElement.dataset.theme === "light"),
+    );
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+  const toggleSidebar = () =>
+    setSidebarOpen((open) => {
+      const next = !open;
+      if (!isMobile)
+        localStorage.setItem("warehouse_sidebar_open", String(next));
+      return next;
+    });
+  const branding = useBranding();
+  const companyName = branding.companyName;
 
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       if (!mobile) {
-        setSidebarOpen(true); // Desktop: sidebar expanded by default
+        setSidebarOpen(
+          localStorage.getItem("warehouse_sidebar_open") !== "false",
+        );
       } else {
         setSidebarOpen(false); // Mobile: sidebar hidden by default
       }
     };
 
     checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   useEffect(() => {
@@ -46,11 +89,11 @@ export function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     const locked = isMobile && sidebarOpen;
-    document.documentElement.classList.toggle('modal-open', locked);
-    document.body.classList.toggle('modal-open', locked);
+    document.documentElement.classList.toggle("modal-open", locked);
+    document.body.classList.toggle("modal-open", locked);
     return () => {
-      document.documentElement.classList.remove('modal-open');
-      document.body.classList.remove('modal-open');
+      document.documentElement.classList.remove("modal-open");
+      document.body.classList.remove("modal-open");
     };
   }, [isMobile, sidebarOpen]);
 
@@ -62,35 +105,71 @@ export function Layout({ children }: LayoutProps) {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   const dashboardURL = coresDashboardURL();
 
-  const mainNavItems = useMemo(() => ([
-    { key: 'dashboard', path: '/', icon: Home, label: t('nav.dashboard') },
-    { key: 'scan', path: '/scan', icon: ScanLine, label: t('nav.scan') },
-    { key: 'labels', path: '/labels', icon: Tag, label: t('nav.labels') },
-    { key: 'cases', path: '/cases', icon: Boxes, label: t('nav.cases') },
-    { key: 'zones', path: '/zones', icon: MapPin, label: t('nav.zones') },
-    { key: 'jobs', path: '/jobs', icon: Briefcase, label: t('nav.jobs') },
-    { key: 'maintenance', path: '/maintenance', icon: Wrench, label: t('nav.maintenance') },
-  ]), [t]);
+  const mainNavItems = useMemo(
+    () => [
+      { key: "dashboard", path: "/", icon: Home, label: t("nav.dashboard") },
+      { key: "scan", path: "/scan", icon: ScanLine, label: t("nav.scan") },
+      { key: "labels", path: "/labels", icon: Tag, label: t("nav.labels") },
+      { key: "cases", path: "/cases", icon: Boxes, label: t("nav.cases") },
+      { key: "zones", path: "/zones", icon: MapPin, label: t("nav.zones") },
+      { key: "jobs", path: "/jobs", icon: Briefcase, label: t("nav.jobs") },
+      {
+        key: "maintenance",
+        path: "/maintenance",
+        icon: Wrench,
+        label: t("nav.maintenance"),
+      },
+    ],
+    [t],
+  );
 
   const navIndex = useMemo(() => {
-    const map = new Map<string, typeof mainNavItems[number]>();
+    const map = new Map<string, (typeof mainNavItems)[number]>();
     mainNavItems.forEach((item) => map.set(item.key, item));
     return map;
   }, [mainNavItems]);
 
-  const productNavItems = useMemo(() => ([
-    { path: '/products', icon: Package, label: t('nav.products') },
-    { path: '/cables', icon: Cable, label: t('nav.cables') },
-  ]), [t]);
+  const productNavItems = useMemo(
+    () => [
+      { path: "/products", icon: Package, label: t("nav.products") },
+      { path: "/cables", icon: Cable, label: t("nav.cables") },
+      { path: "/products/devices", icon: Package, label: t("catalog.devices") },
+      { path: "/products/packages", icon: Boxes, label: t("catalog.packages") },
+      { path: "/products/website", icon: Eye, label: t("catalog.website") },
+      {
+        path: "/products/procurement",
+        icon: ShoppingCart,
+        label: t("catalog.procurement"),
+      },
+      {
+        path: "/products/external",
+        icon: Building2,
+        label: t("catalog.external"),
+      },
+      {
+        path: "/products/master-data",
+        icon: Settings,
+        label: t("catalog.masterData"),
+      },
+    ],
+    [t],
+  );
 
   const productNavActive = useMemo(
-    () => productNavItems.some(item => location.pathname.startsWith(item.path)),
-    [productNavItems, location.pathname]
+    () =>
+      productNavItems.some((item) =>
+        item.path === "/products"
+          ? location.pathname === "/products" ||
+            /^\/products\/\d+(?:\/|$)/.test(location.pathname) ||
+            location.pathname === "/products/new"
+          : location.pathname.startsWith(item.path),
+      ),
+    [productNavItems, location.pathname],
   );
   const [productMenuOpen, setProductMenuOpen] = useState(productNavActive);
 
@@ -101,32 +180,46 @@ export function Layout({ children }: LayoutProps) {
   }, [productNavActive]);
 
   return (
-    <div className="mobile-app-shell min-h-screen bg-dark">
+    <div
+      className="mobile-app-shell min-h-screen"
+      style={{ background: "var(--surface-0)", color: "var(--text-primary)" }}
+    >
       {/* Header */}
       <header
         className="mobile-app-header md:hidden fixed top-0 right-0 left-0 z-50 glass-dark"
-        style={{ height: 'var(--app-header-height)', borderBottom: '1px solid var(--border-subtle)' }}
+        style={{
+          height: "var(--app-header-height)",
+          borderBottom: "1px solid var(--border-subtle)",
+        }}
       >
         <div className="flex items-center justify-between px-4 sm:px-6 h-full">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 rounded-lg transition-colors cursor-pointer"
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text-secondary)",
+              }}
               aria-label="Toggle sidebar"
             >
-              {isMobile
-                ? <Menu className="w-5 h-5" />
-                : sidebarOpen
-                  ? <ChevronLeft className="w-5 h-5" />
-                  : <ChevronRight className="w-5 h-5" />
-              }
+              {isMobile ? (
+                <Menu className="w-5 h-5" />
+              ) : sidebarOpen ? (
+                <ChevronLeft className="w-5 h-5" />
+              ) : (
+                <ChevronRight className="w-5 h-5" />
+              )}
             </button>
           </div>
           <div className="flex items-center gap-3">
             <SuiteLanguageSwitcher compact />
             {companyName && (
-              <span className="text-sm hidden sm:block" style={{ color: 'var(--text-tertiary)' }}>
+              <span
+                className="text-sm hidden sm:block"
+                style={{ color: "var(--text-tertiary)" }}
+              >
                 {companyName}
               </span>
             )}
@@ -138,7 +231,7 @@ export function Layout({ children }: LayoutProps) {
       {isMobile && sidebarOpen && (
         <button
           className="fixed inset-0 z-40"
-          style={{ background: 'var(--bg-overlay)' }}
+          style={{ background: "var(--bg-overlay)" }}
           onClick={closeSidebar}
           aria-label="Close menu"
         />
@@ -147,37 +240,62 @@ export function Layout({ children }: LayoutProps) {
       {/* Sidebar */}
       <aside
         className={`mobile-app-drawer fixed left-0 top-0 bottom-0 z-50 glass-dark flex flex-col transition-all duration-300 ease-in-out ${
-          isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0'
-        } ${isMobile ? 'w-64' : sidebarOpen ? 'w-64' : 'w-20'}`}
-        style={{ borderRight: '1px solid var(--border-subtle)' }}
+          isMobile && !sidebarOpen ? "-translate-x-full" : "translate-x-0"
+        } ${isMobile ? "w-64" : sidebarOpen ? "w-64" : "w-20"}`}
+        style={{
+          borderRight: "1px solid var(--border-subtle)",
+          background: "var(--surface-1)",
+        }}
       >
         <button
           type="button"
-          onClick={() => setSidebarOpen((open) => !open)}
+          onClick={toggleSidebar}
           className="hidden md:flex absolute -right-3 top-[68px] z-10 h-6 w-6 items-center justify-center rounded-full"
-          style={{ background: 'var(--surface-3)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
-          aria-label={sidebarOpen ? 'Sidebar zuklappen' : 'Sidebar aufklappen'}
+          style={{
+            background: "var(--surface-3)",
+            border: "1px solid var(--border-default)",
+            color: "var(--text-secondary)",
+          }}
+          aria-label={sidebarOpen ? "Sidebar zuklappen" : "Sidebar aufklappen"}
           aria-expanded={sidebarOpen}
         >
-          {sidebarOpen ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          {sidebarOpen ? (
+            <ChevronLeft className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
         </button>
         {/* Sidebar header (mobile + desktop) */}
         <div
           className="h-20 flex items-center justify-center px-2 overflow-hidden"
-          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+          style={{ borderBottom: "1px solid var(--border-subtle)" }}
         >
           <img
-            src={sidebarOpen || isMobile
-              ? branding.assets.horizontalOnDark
-              : branding.assets.markOnDark}
+            src={
+              sidebarOpen || isMobile
+                ? light
+                  ? branding.assets.horizontalOnLight
+                  : branding.assets.horizontalOnDark
+                : light
+                  ? branding.assets.markOnLight
+                  : branding.assets.markOnDark
+            }
             alt={branding.productName}
-            className={sidebarOpen || isMobile ? 'h-12 w-44 flex-shrink-0 object-contain' : 'h-10 w-10 flex-shrink-0 object-contain'}
+            className={
+              sidebarOpen || isMobile
+                ? "h-12 w-44 flex-shrink-0 object-contain"
+                : "h-10 w-10 flex-shrink-0 object-contain"
+            }
           />
           {isMobile && (
             <button
               onClick={closeSidebar}
               className="absolute right-2 p-2 rounded-lg cursor-pointer"
-              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)' }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text-secondary)",
+              }}
               aria-label="Close menu"
             >
               <X className="w-5 h-5" />
@@ -187,10 +305,10 @@ export function Layout({ children }: LayoutProps) {
 
         <nav
           className="flex-1 overflow-y-auto p-3 space-y-1"
-          style={{ scrollbarWidth: 'none' }}
+          style={{ scrollbarWidth: "none" }}
         >
           {/* Main nav items */}
-          {['dashboard', 'scan'].map((key) => {
+          {["dashboard", "scan"].map((key) => {
             const item = navIndex.get(key);
             if (!item) return null;
             const Icon = item.icon;
@@ -202,17 +320,19 @@ export function Layout({ children }: LayoutProps) {
                 to={item.path}
                 onClick={closeSidebar}
                 className={`flex items-center rounded-lg transition-all ${
-                  sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
+                  sidebarOpen || isMobile
+                    ? "gap-3 px-3 py-2.5"
+                    : "justify-center p-3"
                 }`}
                 style={{
-                  background: isActive ? 'var(--accent-red)' : 'transparent',
-                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  textDecoration: 'none',
-                  fontSize: '0.875rem',
+                  background: isActive ? "var(--accent-red)" : "transparent",
+                  color: isActive ? "var(--light-0)" : "var(--text-secondary)",
+                  textDecoration: "none",
+                  fontSize: "0.875rem",
                   fontWeight: 500,
-                  boxShadow: isActive ? 'var(--shadow-accent)' : 'none',
+                  boxShadow: isActive ? "var(--shadow-accent)" : "none",
                 }}
-                title={!sidebarOpen && !isMobile ? item.label : ''}
+                title={!sidebarOpen && !isMobile ? item.label : ""}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {(sidebarOpen || isMobile) && <span>{item.label}</span>}
@@ -224,39 +344,58 @@ export function Layout({ children }: LayoutProps) {
           <div>
             <button
               type="button"
-              onClick={() => setProductMenuOpen(prev => !prev)}
+              onClick={() => setProductMenuOpen((prev) => !prev)}
               className={`flex items-center w-full rounded-lg transition-all cursor-pointer ${
-                sidebarOpen || isMobile ? 'justify-between gap-3 px-3 py-2.5' : 'justify-center p-3'
+                sidebarOpen || isMobile
+                  ? "justify-between gap-3 px-3 py-2.5"
+                  : "justify-center p-3"
               }`}
               style={{
-                background: productNavActive ? 'var(--accent-red)' : 'transparent',
-                color: productNavActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                border: 'none',
-                fontSize: '0.875rem',
+                background: productNavActive
+                  ? "var(--accent-red)"
+                  : "transparent",
+                color: productNavActive
+                  ? "var(--light-0)"
+                  : "var(--text-secondary)",
+                border: "none",
+                fontSize: "0.875rem",
                 fontWeight: 500,
-                boxShadow: productNavActive ? 'var(--shadow-accent)' : 'none',
+                boxShadow: productNavActive ? "var(--shadow-accent)" : "none",
               }}
               aria-expanded={productMenuOpen}
-              title={!sidebarOpen && !isMobile ? t('nav.productManagement') : ''}
+              title={
+                !sidebarOpen && !isMobile ? t("nav.productManagement") : ""
+              }
             >
               <div className="flex items-center gap-3">
                 <Package className="w-4 h-4 flex-shrink-0" />
-                {(sidebarOpen || isMobile) && <span>{t('nav.productManagement')}</span>}
+                {(sidebarOpen || isMobile) && (
+                  <span>{t("nav.productManagement")}</span>
+                )}
               </div>
               {(sidebarOpen || isMobile) && (
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${productMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${productMenuOpen ? "rotate-180" : ""}`}
+                />
               )}
             </button>
 
             {(sidebarOpen || isMobile) && (
               <div
                 className={`flex flex-col space-y-0.5 overflow-hidden transition-all duration-200 ${
-                  productMenuOpen ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'
+                  productMenuOpen
+                    ? "max-h-none opacity-100 mt-1"
+                    : "max-h-0 opacity-0"
                 }`}
               >
                 {productNavItems.map((item) => {
                   const Icon = item.icon;
-                  const isActive = location.pathname.startsWith(item.path);
+                  const isActive =
+                    item.path === "/products"
+                      ? location.pathname === "/products" ||
+                        /^\/products\/\d+(?:\/|$)/.test(location.pathname) ||
+                        location.pathname === "/products/new"
+                      : location.pathname.startsWith(item.path);
                   return (
                     <Link
                       key={item.path}
@@ -264,12 +403,17 @@ export function Layout({ children }: LayoutProps) {
                       onClick={closeSidebar}
                       className="flex items-center gap-3 rounded-lg transition-all"
                       style={{
-                        padding: '0.5rem 0.75rem',
-                        marginLeft: '1.25rem',
-                        background: isActive ? 'var(--accent-red)' : 'transparent',
-                        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        textDecoration: 'none',
-                        fontSize: '0.875rem',
+                        padding: "var(--space-2) var(--space-3)",
+                        minHeight: "var(--space-10)",
+                        marginLeft: "1.25rem",
+                        background: isActive
+                          ? "var(--accent-red)"
+                          : "transparent",
+                        color: isActive
+                          ? "var(--light-0)"
+                          : "var(--text-secondary)",
+                        textDecoration: "none",
+                        fontSize: "0.875rem",
                         fontWeight: 500,
                       }}
                     >
@@ -283,11 +427,13 @@ export function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Remaining nav items */}
-          {['labels', 'cases', 'zones', 'jobs', 'maintenance'].map((key) => {
+          {["labels", "cases", "zones", "jobs", "maintenance"].map((key) => {
             const item = navIndex.get(key);
             if (!item) return null;
             const Icon = item.icon;
-            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+            const isActive =
+              location.pathname === item.path ||
+              location.pathname.startsWith(item.path + "/");
 
             return (
               <Link
@@ -295,17 +441,19 @@ export function Layout({ children }: LayoutProps) {
                 to={item.path}
                 onClick={closeSidebar}
                 className={`flex items-center rounded-lg transition-all ${
-                  sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'
+                  sidebarOpen || isMobile
+                    ? "gap-3 px-3 py-2.5"
+                    : "justify-center p-3"
                 }`}
                 style={{
-                  background: isActive ? 'var(--accent-red)' : 'transparent',
-                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  textDecoration: 'none',
-                  fontSize: '0.875rem',
+                  background: isActive ? "var(--accent-red)" : "transparent",
+                  color: isActive ? "var(--light-0)" : "var(--text-secondary)",
+                  textDecoration: "none",
+                  fontSize: "0.875rem",
                   fontWeight: 500,
-                  boxShadow: isActive ? 'var(--shadow-accent)' : 'none',
+                  boxShadow: isActive ? "var(--shadow-accent)" : "none",
                 }}
-                title={!sidebarOpen && !isMobile ? item.label : ''}
+                title={!sidebarOpen && !isMobile ? item.label : ""}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {(sidebarOpen || isMobile) && <span>{item.label}</span>}
@@ -313,40 +461,63 @@ export function Layout({ children }: LayoutProps) {
             );
           })}
 
-          <SuiteCoreNavigation current="warehouse" dashboardURL={dashboardURL} compact={!sidebarOpen && !isMobile} />
-
+          <SuiteCoreNavigation
+            current="warehouse"
+            dashboardURL={dashboardURL}
+            compact={!sidebarOpen && !isMobile}
+          />
         </nav>
 
         {/* Sidebar footer — user + logout */}
         <div
-          className={`p-3 flex flex-col gap-1 ${!sidebarOpen && !isMobile ? 'items-center' : ''}`}
-          style={{ borderTop: '1px solid var(--border-subtle)' }}
+          className={`p-3 flex flex-col gap-1 ${!sidebarOpen && !isMobile ? "items-center" : ""}`}
+          style={{ borderTop: "1px solid var(--border-subtle)" }}
         >
           <SuiteLanguageSwitcher compact={!sidebarOpen && !isMobile} />
           {user && (sidebarOpen || isMobile) && (
             <div
               className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg w-full text-left"
-              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
+              style={{
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
             >
-              <User className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent-red)' }} />
-              <span className="text-sm font-medium truncate">{suiteGreetingName(user)}</span>
+              <User
+                className="w-4 h-4 flex-shrink-0"
+                style={{ color: "var(--accent-red)" }}
+              />
+              <span className="text-sm font-medium truncate">
+                {suiteGreetingName(user)}
+              </span>
             </div>
           )}
           {user && !sidebarOpen && !isMobile && (
             <div
               className="p-2.5 rounded-lg flex justify-center"
-              style={{ background: 'var(--bg-subtle)' }}
+              style={{ background: "var(--bg-subtle)" }}
             >
-              <User className="w-4 h-4" style={{ color: 'var(--accent-red)' }} />
+              <User
+                className="w-4 h-4"
+                style={{ color: "var(--accent-red)" }}
+              />
             </div>
           )}
           <button
             onClick={handleLogout}
             className={`flex items-center rounded-lg transition-all cursor-pointer ${
-              sidebarOpen || isMobile ? 'gap-3 px-3 py-2.5 w-full' : 'justify-center p-3'
+              sidebarOpen || isMobile
+                ? "gap-3 px-3 py-2.5 w-full"
+                : "justify-center p-3"
             }`}
-            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}
-            title={!sidebarOpen && !isMobile ? 'Abmelden' : ''}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+            }}
+            title={!sidebarOpen && !isMobile ? "Abmelden" : ""}
           >
             <LogOut className="w-4 h-4 flex-shrink-0" />
             {(sidebarOpen || isMobile) && <span>Abmelden</span>}
@@ -356,8 +527,8 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Main Content */}
       <main
-        className={`mobile-app-main transition-all duration-300 ${isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'}`}
-        style={{ paddingTop: isMobile ? 'var(--app-header-height)' : 0 }}
+        className={`mobile-app-main transition-all duration-300 ${isMobile ? "ml-0" : sidebarOpen ? "ml-64" : "ml-20"}`}
+        style={{ paddingTop: isMobile ? "var(--app-header-height)" : 0 }}
       >
         <div className="mobile-app-content suite-page p-4 sm:p-6">
           {children}
@@ -366,19 +537,29 @@ export function Layout({ children }: LayoutProps) {
 
       <nav className="mobile-app-tabbar" aria-label="Main navigation">
         {[
-          { path: '/', icon: Home, label: t('nav.dashboard'), exact: true },
-          { path: '/scan', icon: ScanLine, label: t('nav.scan') },
-          { path: '/jobs', icon: Briefcase, label: t('nav.jobs') },
+          { path: "/", icon: Home, label: t("nav.dashboard"), exact: true },
+          { path: "/scan", icon: ScanLine, label: t("nav.scan") },
+          { path: "/jobs", icon: Briefcase, label: t("nav.jobs") },
         ].map(({ path, icon: Icon, label, exact }) => {
-          const active = exact ? location.pathname === path : location.pathname.startsWith(path);
+          const active = exact
+            ? location.pathname === path
+            : location.pathname.startsWith(path);
           return (
-            <Link key={path} to={path} className={`mobile-app-tab ${active ? 'is-active' : ''}`}>
+            <Link
+              key={path}
+              to={path}
+              className={`mobile-app-tab ${active ? "is-active" : ""}`}
+            >
               <Icon aria-hidden="true" />
               <span>{label}</span>
             </Link>
           );
         })}
-        <button type="button" className={`mobile-app-tab ${sidebarOpen ? 'is-active' : ''}`} onClick={() => setSidebarOpen(true)}>
+        <button
+          type="button"
+          className={`mobile-app-tab ${sidebarOpen ? "is-active" : ""}`}
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu aria-hidden="true" />
           <span>Mehr</span>
         </button>

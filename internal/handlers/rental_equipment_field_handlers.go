@@ -238,7 +238,11 @@ func fetchFieldValues(db *sql.DB, equipmentIDs []int) (map[int][]RentalFieldValu
 }
 
 // saveFieldValues replaces all field values for the given equipment.
-func saveFieldValues(db *sql.DB, equipmentID int, inputs []RentalFieldValueInput) error {
+type rentalFieldWriter interface {
+	Exec(string, ...any) (sql.Result, error)
+}
+
+func saveFieldValues(db rentalFieldWriter, equipmentID int, inputs []RentalFieldValueInput) error {
 	_, err := db.Exec(`DELETE FROM rental_equipment_field_values WHERE equipment_id = $1`, equipmentID)
 	if err != nil {
 		return err

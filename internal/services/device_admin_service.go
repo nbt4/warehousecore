@@ -179,6 +179,8 @@ func (s *DeviceAdminService) CreateDevices(ctx context.Context, input *models.De
 }
 
 // UpdateDevice updates an existing device and returns the updated record.
+var ErrDeviceVersionConflict = errors.New("device version changed")
+
 func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, input *models.DeviceUpdateInput) (*models.DeviceWithDetails, error) {
 	if deviceID == "" {
 		return nil, errors.New("deviceID required")
@@ -202,14 +204,17 @@ func (s *DeviceAdminService) UpdateDevice(ctx context.Context, deviceID string, 
 
 	setClauses := make([]string, 0, 12)
 	args := make([]interface{}, 0, 12)
-	var currentStatus, lifecycleStatus string
+	var currentStatus, lifecycleStatus, currentVersion string
 	var currentZone sql.NullInt64
 	var caseID sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT d.status,d.lifecycle_status,d.zone_id,dc.caseID FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID WHERE d.deviceID=$1 FOR UPDATE OF d`, deviceID).
-		Scan(&currentStatus, &lifecycleStatus, &currentZone, &caseID); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT d.status,d.lifecycle_status,d.zone_id,dc.caseID,to_char(d.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM devices d LEFT JOIN devicescases dc ON dc.deviceID=d.deviceID WHERE d.deviceID=$1 FOR UPDATE OF d`, deviceID).
+		Scan(&currentStatus, &lifecycleStatus, &currentZone, &caseID, &currentVersion); errors.Is(err, sql.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to load device state: %w", err)
+	}
+	if input.ExpectedUpdatedAt != "" && input.ExpectedUpdatedAt != currentVersion {
+		return nil, ErrDeviceVersionConflict
 	}
 	if lifecycleStatus != "active" {
 		return nil, ErrDeviceArchived
@@ -584,16 +589,15 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 		       COALESCE(z.code, '') AS zone_code,
 		       dc.caseID,
 		       COALESCE(c.name, '') AS case_name,
-		       jd.jobID,
-		       COALESCE(j.job_code, '') AS job_number
+		       j.jobID,
+		       COALESCE(j.job_code, '') AS job_number,to_char(d.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
 		FROM devices d
 		LEFT JOIN products p ON d.productID = p.productID
 		LEFT JOIN categories cat ON p.categoryID = cat.categoryID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
-		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
+		LEFT JOIN LATERAL (SELECT caseid FROM devicescases WHERE deviceid=d.deviceid ORDER BY (caseid=d.current_case_id) DESC NULLS LAST,caseid LIMIT 1) dc ON TRUE
 		LEFT JOIN cases c ON dc.caseID = c.caseID
-		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID
-		LEFT JOIN jobs j ON jd.jobID = j.jobID
+		LEFT JOIN LATERAL (SELECT jobs.jobid,jobs.job_code FROM job_devices jd JOIN jobs ON jobs.jobid=jd.jobid LEFT JOIN status js ON js.statusid=jobs.statusid WHERE jd.deviceid=d.deviceid AND jobs.deleted_at IS NULL AND NOT warehouse_job_status_is_closed(COALESCE(js.status,'')) ORDER BY jobs.startdate,jobs.jobid LIMIT 1) j ON TRUE
 		WHERE d.deviceID = $1
 		LIMIT 1
 	`, deviceID).Scan(
@@ -623,7 +627,7 @@ func (s *DeviceAdminService) FetchDevice(ctx context.Context, deviceID string) (
 		&device.CaseID,
 		&device.CaseName,
 		&device.CurrentJobID,
-		&device.JobNumber,
+		&device.JobNumber, &device.Version,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, repository.ErrNotFound

@@ -36,6 +36,7 @@ func warehouseProductSearchTerms(value string) []string {
 
 // Product represents a product (item type)
 type Product struct {
+	Version                  string          `json:"version"`
 	ProductID                int             `json:"product_id"`
 	Name                     string          `json:"name"`
 	CategoryID               *int            `json:"category_id"`
@@ -166,7 +167,8 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			m.name as manufacturer_name,
 			ct.name as count_type_name,
 			ct.abbreviation as count_type_abbr,
-			(SELECT COUNT(*) FROM devices WHERE productID = p.productID AND lifecycle_status=p.lifecycle_status) AS device_count
+			(SELECT COUNT(*) FROM devices WHERE productID = p.productID AND lifecycle_status=p.lifecycle_status) AS device_count,
+ to_char(p.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
@@ -174,14 +176,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN brands b ON p.brandid = b.brandid
 		LEFT JOIN manufacturer m ON p.manufacturerid = m.manufacturerid
 		LEFT JOIN count_types ct ON p.count_type_id = ct.count_type_id
-		WHERE NOT EXISTS (
-			SELECT 1
-			FROM product_packages pp
-			WHERE LOWER(TRIM(pp.name)) = LOWER(TRIM(p.name))
-			  AND NOT EXISTS (
-				SELECT 1 FROM product_package_items ppi WHERE ppi.product_id = p.productID
-			  )
-		)
+		WHERE 1=1
 	`
 	if lifecycleStatus == "" {
 		lifecycleStatus = "active"
@@ -204,7 +199,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			argIdx++
 			query += fmt.Sprintf(` AND (
 				CONCAT_WS(' ',p.productID::text,p.name,p.description,b.name,m.name,c.name,sc.name,sbc.name,
-				 p.generic_barcode,p.product_type,p.tracking_mode,ct.name,ct.abbreviation,
+				 p.generic_barcode,p.product_code,p.model_number,p.manufacturer_part_number,p.ean,p.attributes::text,p.product_kind,p.product_type,p.tracking_mode,ct.name,ct.abbreviation,
 				 p.weight::text,p.height::text,p.width::text,p.depth::text,p.powerconsumption::text) ILIKE $%d
 				OR EXISTS (SELECT 1 FROM devices search_device WHERE search_device.productID=p.productID
 				 AND CONCAT_WS(' ',search_device.deviceID,search_device.serialnumber,search_device.barcode,
@@ -226,7 +221,65 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		args = append(args, subcategoryID)
 	}
 
-	query += " ORDER BY p.name"
+	if third := r.URL.Query().Get("third_category_id"); third != "" {
+		argIdx++
+		query += fmt.Sprintf(" AND p.subbiercategoryID = $%d", argIdx)
+		args = append(args, third)
+	}
+
+	for _, field := range []string{"product_kind", "tracking_mode"} {
+		if value := r.URL.Query().Get(field); value != "" {
+			argIdx++
+			query += fmt.Sprintf(" AND p.%s=$%d", field, argIdx)
+			args = append(args, value)
+		}
+	}
+	if value := r.URL.Query().Get("website_visible"); value != "" {
+		if value != "true" && value != "false" {
+			respondJSON(w, 400, map[string]string{"error": "Invalid website filter"})
+			return
+		}
+		argIdx++
+		query += fmt.Sprintf(" AND p.website_visible=$%d", argIdx)
+		args = append(args, value == "true")
+	}
+	if r.URL.Query().Get("missing_images") == "true" {
+		query += ` AND NULLIF(p.website_thumbnail,'') IS NULL AND NOT EXISTS(SELECT 1 FROM warehouse_picture_files pf WHERE pf.entity_type='product' AND pf.entity_id=p.productid)`
+	}
+	if r.URL.Query().Get("below_min_stock") == "true" {
+		query += ` AND COALESCE(p.stock_quantity,0)<COALESCE(p.min_stock_level,0)`
+	}
+	if limitValue := r.URL.Query().Get("limit"); limitValue != "" {
+		limit, err := strconv.Atoi(limitValue)
+		offset := 0
+		if value := r.URL.Query().Get("offset"); value != "" {
+			var offsetErr error
+			offset, offsetErr = strconv.Atoi(value)
+			if offsetErr != nil {
+				err = offsetErr
+			}
+		}
+		if err != nil || limit < 1 || limit > 200 || offset < 0 {
+			respondJSON(w, 400, map[string]string{"error": "Invalid pagination"})
+			return
+		}
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM ("+query+") catalog_matches", args...).Scan(&count); err != nil {
+			log.Printf("[CATALOG] Count query failed: %v", err)
+			respondJSON(w, 500, map[string]string{"error": "Produktanzahl konnte nicht geladen werden"})
+			return
+		}
+		w.Header().Set("X-Total-Count", strconv.Itoa(count))
+		query += " ORDER BY p.name,p.productid"
+		argIdx++
+		query += fmt.Sprintf(" LIMIT $%d", argIdx)
+		args = append(args, limit)
+		argIdx++
+		query += fmt.Sprintf(" OFFSET $%d", argIdx)
+		args = append(args, offset)
+	} else {
+		query += " ORDER BY p.name,p.productid"
+	}
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -285,7 +338,7 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 			&p.ManufacturerName,
 			&p.CountTypeName,
 			&p.CountTypeAbbr,
-			&p.DeviceCount,
+			&p.DeviceCount, &p.Version,
 		)
 		if err != nil {
 			log.Printf("Failed to scan product: %v", err)
@@ -356,7 +409,8 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 			m.name as manufacturer_name,
 			ct.name as count_type_name,
 			ct.abbreviation as count_type_abbr,
-			(SELECT COUNT(*) FROM devices WHERE productID = p.productID AND lifecycle_status=p.lifecycle_status) AS device_count
+			(SELECT COUNT(*) FROM devices WHERE productID = p.productID AND lifecycle_status=p.lifecycle_status) AS device_count,
+ to_char(p.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
 		FROM products p
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
@@ -414,7 +468,7 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		&p.ManufacturerName,
 		&p.CountTypeName,
 		&p.CountTypeAbbr,
-		&p.DeviceCount,
+		&p.DeviceCount, &p.Version,
 	)
 
 	if err == sql.ErrNoRows {
@@ -468,6 +522,12 @@ func GetProductPictures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	items, err = filterPendingPictures("product", id, items)
+	if err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Bilder konnten nicht geladen werden"})
+		return
+	}
+
 	// Sort newest first
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].ModifiedAt.After(items[j].ModifiedAt)
@@ -503,43 +563,7 @@ func GetProductPictures(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProductPicture deletes a stored image for a product.
 func DeleteProductPicture(w http.ResponseWriter, r *http.Request) {
-	if !productPictureService.Enabled() {
-		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Product pictures are not configured"})
-		return
-	}
-
-	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
-		return
-	}
-
-	filename, err := url.PathUnescape(vars["filename"])
-	if err != nil || filename == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid filename"})
-		return
-	}
-
-	productName, err := getProductName(id)
-	if err == sql.ErrNoRows {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
-		return
-	} else if err != nil {
-		log.Printf("[PICTURES] Failed to resolve product name: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load product"})
-		return
-	}
-
-	if err := productPictureService.DeletePicture(productName, filename); err != nil {
-		log.Printf("[PICTURES] Delete failed for product %d (%s): %v", id, filename, err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete picture"})
-		return
-	}
-	productPictureService.ClearCachedVariants(productName, filename)
-	websiteRevalidator.Revalidate("/products")
-
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Picture deleted"})
+	deleteWorkspacePicture(w, r, "product")
 }
 
 // UploadProductPictures stores one or more images for a product in Nextcloud.
@@ -566,11 +590,13 @@ func UploadProductPictures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, productPictureService.MaxFileSize()*20)
 	if err := r.ParseMultipartForm(productPictureService.MaxFileSize() * 4); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid multipart form: " + err.Error()})
 		return
 	}
 
+	defer r.MultipartForm.RemoveAll()
 	files := r.MultipartForm.File["files"]
 	if len(files) == 0 {
 		if singleFile, singleHeader, err := r.FormFile("file"); err == nil {
@@ -583,68 +609,24 @@ func UploadProductPictures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uploaded := make([]string, 0, len(files))
-
-	for _, header := range files {
-		src, err := header.Open()
-		if err != nil {
-			log.Printf("[PICTURES] Failed to open upload %s: %v", header.Filename, err)
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Failed to read uploaded file"})
-			return
-		}
-
-		stored, err := productPictureService.UploadPicture(productName, src, header)
-		src.Close()
-		if err != nil {
-			log.Printf("[PICTURES] Upload failed for product %d: %v", id, err)
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		uploaded = append(uploaded, stored)
-		productPictureService.WarmPictureVariants(productName, stored)
-	}
-
-	// Update product's website images in database
-	db := repository.GetSQLDB()
-
-	// Get thumbnail index if provided
-	thumbnailIndexStr := r.FormValue("thumbnail_index")
-	var thumbnailFilename string
-	if thumbnailIndexStr != "" {
-		if thumbnailIdx, err := strconv.Atoi(thumbnailIndexStr); err == nil && thumbnailIdx >= 0 && thumbnailIdx < len(uploaded) {
-			thumbnailFilename = uploaded[thumbnailIdx]
-		}
-	}
-
-	// If no thumbnail specified but images were uploaded, use the first one
-	if thumbnailFilename == "" && len(uploaded) > 0 {
-		thumbnailFilename = uploaded[0]
-	}
-
-	// Convert uploaded filenames to JSON array for website_images_json
-	imagesJSON, err := json.Marshal(uploaded)
+	infos, err := productPictureService.UploadPictures(productName, files)
 	if err != nil {
-		log.Printf("[PICTURES] Failed to marshal images JSON: %v", err)
-	} else {
-		_, err = db.Exec(`
-			UPDATE products
-			SET website_thumbnail = $1, website_images_json = $2
-			WHERE productID = $3
-		`, thumbnailFilename, imagesJSON, id)
-		if err != nil {
-			log.Printf("[PICTURES] Failed to update product images in database: %v", err)
-		}
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
-	websiteRevalidator.Revalidate("/products")
+	if err := recordUploadedPictures("product", id, productName, infos); err != nil {
+		for _, picture := range infos {
+			_ = productPictureService.DeletePicture(productName, picture.FileName)
+		}
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Bilder konnten nicht gespeichert werden"})
+		return
+	}
+	names := make([]string, 0, len(infos))
+	for _, info := range infos {
+		names = append(names, info.FileName)
+	}
+	respondJSON(w, http.StatusCreated, map[string]any{"uploaded_files": names, "uploaded_count": len(names), "pictures": pictureResponses("product", id, infos)})
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"message":          "Pictures uploaded successfully",
-		"uploaded_files":   uploaded,
-		"uploaded_count":   len(uploaded),
-		"product_name":     productName,
-		"thumbnail":        thumbnailFilename,
-		"nextcloud_folder": productPictureService.FolderForProduct(productName),
-	})
 }
 
 // DownloadProductPicture streams a product picture from Nextcloud.
@@ -664,6 +646,11 @@ func DownloadProductPicture(w http.ResponseWriter, r *http.Request) {
 	filename, err := url.PathUnescape(vars["filename"])
 	if err != nil || filename == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid filename"})
+		return
+	}
+
+	if !publicCatalogPictureAllowed(r, "product", id, filename) {
+		respondJSON(w, 404, map[string]string{"error": "File not found"})
 		return
 	}
 
@@ -697,6 +684,7 @@ func DownloadProductPicture(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", url.PathEscape(filename)))
 
@@ -708,7 +696,7 @@ func DownloadProductPicture(w http.ResponseWriter, r *http.Request) {
 func getProductName(productID int) (string, error) {
 	db := repository.GetSQLDB()
 	var name string
-	err := db.QueryRow("SELECT name FROM products WHERE productID = $1", productID).Scan(&name)
+	err := db.QueryRow(`SELECT COALESCE(f.folder_name,p.name) FROM products p LEFT JOIN warehouse_picture_folders f ON f.entity_type='product' AND f.entity_id=p.productid WHERE p.productid=$1`, productID).Scan(&name)
 	return name, err
 }
 
@@ -1170,6 +1158,17 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 			WHERE productid = $1
 		`, id); err != nil {
 			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to change tracking mode"})
+			return
+		}
+	}
+
+	if req.ProductKind == "cable" {
+		if req.TrackingMode == "none" {
+			respondJSON(w, 400, map[string]string{"error": "Kabel benötigen eine Bestandsführung"})
+			return
+		}
+		if _, err = tx.Exec("UPDATE cable_products SET tracking_mode=$1 WHERE product_id=$2", req.TrackingMode, id); err != nil {
+			respondJSON(w, 500, map[string]string{"error": "Kabelbestand konnte nicht synchronisiert werden"})
 			return
 		}
 	}
@@ -1705,104 +1704,7 @@ func GetLowStockAlerts(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProductWebsite updates website visibility and selected pictures without touching other product fields.
 func UpdateProductWebsite(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
-		return
-	}
-
-	var payload struct {
-		WebsiteVisible   *bool    `json:"website_visible"`
-		WebsiteFeatured  *bool    `json:"website_featured"`
-		WebsiteImages    []string `json:"website_images"`
-		WebsiteThumbnail *string  `json:"website_thumbnail"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
-		return
-	}
-
-	images := sanitizeWebsiteImages(payload.WebsiteImages)
-	if payload.WebsiteThumbnail != nil && strings.TrimSpace(*payload.WebsiteThumbnail) == "" {
-		payload.WebsiteThumbnail = nil
-	}
-
-	filteredImages, filteredThumb, err := filterAllowedImages(id, images, payload.WebsiteThumbnail)
-	if err != nil && !errors.Is(err, errPicturesUnavailable) {
-		log.Printf("[WEBSITE] Failed to validate images for product %d: %v", id, err)
-		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Failed to validate product images"})
-		return
-	}
-
-	websiteVisible := false
-	if payload.WebsiteVisible != nil {
-		websiteVisible = *payload.WebsiteVisible
-	} else {
-		if err := repository.GetSQLDB().QueryRow("SELECT website_visible FROM products WHERE productID = $1", id).Scan(&websiteVisible); err != nil {
-			log.Printf("[WEBSITE] Failed to load current website visibility for product %d: %v", id, err)
-			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
-			return
-		}
-	}
-	if websiteVisible {
-		var lifecycleStatus string
-		if err := repository.GetSQLDB().QueryRow("SELECT lifecycle_status FROM products WHERE productid = $1", id).Scan(&lifecycleStatus); err != nil {
-			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
-			return
-		}
-		if lifecycleStatus != "active" {
-			respondJSON(w, http.StatusConflict, map[string]string{"error": "Archived products cannot be published"})
-			return
-		}
-	}
-	websiteFeatured := false
-	if payload.WebsiteFeatured != nil {
-		websiteFeatured = *payload.WebsiteFeatured
-	} else if err := repository.GetSQLDB().QueryRow("SELECT website_featured FROM products WHERE productID = $1", id).Scan(&websiteFeatured); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load featured status"})
-		return
-	}
-	if !websiteVisible {
-		websiteFeatured = false
-	}
-
-	db := repository.GetSQLDB()
-	result, err := db.Exec(`
-		UPDATE products
-		SET website_visible = $1, website_thumbnail = $2, website_images_json = $3, website_featured = $4, updated_at = CURRENT_TIMESTAMP
-		WHERE productID = $5
-	`, websiteVisible, filteredThumb, nullJSONFromSlice(filteredImages), websiteFeatured, id)
-	if err != nil {
-		log.Printf("[WEBSITE] Failed to update product %d: %v", id, err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
-		return
-	}
-	if rows, _ := result.RowsAffected(); rows == 0 {
-		var exists bool
-		if err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM products WHERE productID = $1)", id).Scan(&exists); err != nil {
-			log.Printf("[WEBSITE] Failed to verify product %d after website update: %v", id, err)
-			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
-			return
-		}
-		if !exists {
-			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
-			return
-		}
-		// Values unchanged, treat as success.
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":           "Website settings updated",
-		"website_visible":   websiteVisible,
-		"website_featured":  websiteFeatured,
-		"website_thumbnail": filteredThumb,
-		"website_images":    filteredImages,
-	})
-
-	// Trigger ISR revalidation for product listing
-	websiteRevalidator.Revalidate("/products")
-
+	saveWebsiteSettings(w, r, "product")
 }
 
 type WebsiteProduct struct {
@@ -1822,22 +1724,15 @@ type WebsiteProduct struct {
 func GetWebsiteProducts(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	rows, err := db.Query(`
-		SELECT p.productID, p.name, b.name as brand_name, p.description, p.price_per_unit, p.website_thumbnail, p.website_images_json, p.website_featured,
+		SELECT p.productID, COALESCE(wc.published->>'title',p.name), b.name as brand_name, COALESCE(wc.published->>'description',p.description), p.price_per_unit, p.website_thumbnail, p.website_images_json, p.website_featured,
 			c.name as category_name, sc.name as subcategory_name
 		FROM products p
+ LEFT JOIN warehouse_website_content wc ON wc.entity_type='product' AND wc.entity_id=p.productid
 		LEFT JOIN brands b ON p.brandID = b.brandID
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
 		LEFT JOIN subcategories sc ON p.subcategoryID = sc.subcategoryID
 		WHERE p.website_visible = TRUE
 		  AND p.lifecycle_status = 'active'
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM product_packages pp
-			WHERE LOWER(TRIM(pp.name)) = LOWER(TRIM(p.name))
-			  AND NOT EXISTS (
-				SELECT 1 FROM product_package_items ppi WHERE ppi.product_id = p.productID
-			  )
-		  )
 		ORDER BY COALESCE(p.pos_in_category, 0), p.name
 	`)
 	if err != nil {
@@ -1891,12 +1786,13 @@ func GetWebsitePackages(w http.ResponseWriter, r *http.Request) {
 		SELECT
 			pp.id,
 			COALESCE(pp.package_code, pp.code, '') as package_code,
-			pp.name,
-			pp.description,
+ COALESCE(wc.published->>'title',pp.name),
+ COALESCE(wc.published->>'description',pp.description),
 			pp.price,
 			pp.website_image_url,
 			pp.website_images_json
 		FROM product_packages pp
+ LEFT JOIN warehouse_website_content wc ON wc.entity_type='package' AND wc.entity_id=pp.id
 		WHERE pp.website_visible = TRUE AND pp.is_active = TRUE
 		ORDER BY pp.website_sort_order, pp.name
 	`)

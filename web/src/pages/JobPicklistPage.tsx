@@ -1,183 +1,305 @@
-import { apiErrorMessage } from '../lib/api-errors';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Clock, ScanLine, Package } from 'lucide-react';
-import { picklistApi, jobsApi } from '../lib/api';
-import type { JobPicklist, JobSummary } from '../lib/api';
-import { toast } from '../lib/toast';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type FormEvent,
+} from "react";
+import { Link, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { ScanLine, CheckCircle2 } from "lucide-react";
+import {
+  picklistApi,
+  jobsApi,
+  type JobPicklist,
+  type JobSummary,
+  type PicklistPosition,
+} from "../lib/api";
+import { catalogError } from "../lib/catalog";
+import {
+  WorkspaceHeader,
+  WorkspaceField,
+  WorkspaceLoading,
+  WorkspaceNotice,
+  WorkspaceDialog,
+} from "../components/catalog/Workspace";
+import { useAuth } from "../contexts/useAuth";
+import "../components/catalog/catalog-workspace.css";
 
 export function JobPicklistPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const jobId = parseInt(id || '0', 10);
-
+  const { id } = useParams();
+  const jobId = Number(id);
+  const { t } = useTranslation();
+  const writable = Boolean(useAuth().user);
   const [picklist, setPicklist] = useState<JobPicklist | null>(null);
   const [job, setJob] = useState<JobSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [scanInput, setScanInput] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const loadPicklist = useCallback(async () => {
+  const [error, setError] = useState("");
+  const [scan, setScan] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [quantityItem, setQuantityItem] = useState<PicklistPosition | null>(
+    null,
+  );
+  const [quantity, setQuantity] = useState(1);
+  const receipt = useRef("");
+  const input = useRef<HTMLInputElement>(null);
+  const load = useCallback(async () => {
     try {
-      const res = await picklistApi.getByJob(jobId);
-      setPicklist(res.data);
-    } catch (e) {
-      toast.error(String(e));
+      const result = await picklistApi.getByJob(jobId);
+      setPicklist(result.data);
+      setError("");
+    } catch (err) {
+      setError(catalogError(err, t("catalog.loadFailed")));
     }
-  }, [jobId]);
-
+  }, [jobId, t]);
   useEffect(() => {
-    Promise.all([
-      jobsApi.getById(jobId),
-      picklistApi.getByJob(jobId),
-    ]).then(([jRes, pRes]) => {
-      setJob(jRes.data);
-      setPicklist(pRes.data);
-    }).catch((e) => toast.error(String(e))).finally(() => setLoading(false));
-
-    const interval = setInterval(loadPicklist, 5000);
-    return () => clearInterval(interval);
-  }, [jobId, loadPicklist]);
-
-  const handleScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const deviceId = scanInput.trim();
-    if (!deviceId) return;
-    setScanning(true);
-    setFeedback(null);
+    let current = true;
+    setLoading(true);
+    void Promise.all([jobsApi.getById(jobId), picklistApi.getByJob(jobId)])
+      .then(([j, p]) => {
+        if (current) {
+          setJob(j.data);
+          setPicklist(p.data);
+        }
+      })
+      .catch((err) => {
+        if (current) setError(catalogError(err, t("catalog.loadFailed")));
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [jobId, load, t]);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!scan.trim() || !writable) return;
+    setSaving(true);
+    setError("");
     try {
-      await picklistApi.scanDevice(jobId, deviceId);
-      setFeedback({ type: 'success', msg: `✓ ${deviceId} zugewiesen` });
-      setScanInput('');
-      loadPicklist();
-    } catch (err: unknown) {
-      const msg = apiErrorMessage(err, 'Kein passender Platz gefunden');
-      setFeedback({ type: 'error', msg: `✗ ${msg}` });
+      await picklistApi.scanDevice(jobId, scan.trim());
+      setMessage(t("catalog.materialAssigned"));
+      setScan("");
+      await load();
+    } catch (err) {
+      setError(catalogError(err, t("catalog.saveFailed")));
     } finally {
-      setScanning(false);
-      inputRef.current?.focus();
-      setTimeout(() => setFeedback(null), 3000);
+      setSaving(false);
+      input.current?.focus();
     }
   };
-
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <div className="w-8 h-8 border-4 border-accent-red/20 border-t-accent-red rounded-full animate-spin" />
-    </div>
-  );
-
-  const total = picklist?.positions.length || 0;
-  const done = picklist?.positions.filter(p => p.fulfilled).length || 0;
-
+  const confirm = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!quantityItem?.product_id) return;
+    setSaving(true);
+    setError("");
+    try {
+      await picklistApi.confirmQuantity(
+        jobId,
+        quantityItem.product_id,
+        quantity,
+        receipt.current,
+      );
+      setQuantityItem(null);
+      setMessage(t("catalog.materialAssigned"));
+      await load();
+    } catch (err) {
+      setError(catalogError(err, t("catalog.saveFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const done = picklist?.positions.filter((item) => item.fulfilled).length ?? 0;
+  const total = picklist?.positions.length ?? 0;
   return (
-    <div className="p-4 max-w-2xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate(`/jobs/${jobId}`)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-white">{job?.job_code} — Picklist</h1>
-          <p className="text-sm text-gray-400">{done}/{total} Positionen abgeschlossen</p>
-        </div>
-        {done === total && total > 0 && (
-          <span className="flex items-center gap-1.5 text-green-400 text-sm font-medium">
-            <CheckCircle2 className="w-4 h-4" /> Vollständig
-          </span>
-        )}
-      </div>
-
-      {/* Progress bar */}
-      {total > 0 && (
-        <div className="w-full bg-white/5 rounded-full h-2">
-          <div
-            className="bg-accent-red h-2 rounded-full transition-all duration-500"
-            style={{ width: `${(done / total) * 100}%` }}
-          />
-        </div>
+    <div
+      className="suite-page catalog-workspace space-y-5"
+      style={{ color: "var(--text-primary)" }}
+    >
+      <Link className="suite-button" to={`/jobs/${jobId}`}>
+        ← {t("catalog.backToJob")}
+      </Link>
+      <WorkspaceHeader
+        title={`${job?.job_code ?? ""} · ${t("catalog.packingList")}`}
+        description={t("catalog.packingProgress", {
+          done,
+          total,
+          version: picklist?.version ?? 1,
+        })}
+      />
+      {error && (
+        <WorkspaceNotice error retry={() => void load()}>
+          {error}
+        </WorkspaceNotice>
       )}
-
-      {/* Scan input */}
-      <form onSubmit={handleScan}>
-        <div className="relative">
-          <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={scanInput}
-            onChange={e => setScanInput(e.target.value)}
-            placeholder="Device-ID scannen oder eingeben..."
-            disabled={scanning}
-            autoFocus
-            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-accent-red/50 focus:bg-white/8 transition-all"
-          />
-        </div>
-        {feedback && (
-          <p className={`mt-2 text-sm font-medium ${feedback.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-            {feedback.msg}
-          </p>
-        )}
-      </form>
-
-      {/* Positions */}
-      {!picklist?.positions.length && (
-        <div className="glass-dark rounded-xl border border-white/10 p-6 text-center text-gray-500">
-          Keine Produktpositionen für diesen Job.
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {picklist?.positions.map(pos => (
-          <div
-            key={pos.position_id}
-            className={`glass-dark rounded-xl border p-4 transition-all ${
-              pos.fulfilled ? 'border-green-500/20' : 'border-white/10'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Package className={`w-4 h-4 ${pos.fulfilled ? 'text-green-400' : 'text-accent-red'}`} />
-                <span className="font-medium text-white">{pos.product_name}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {pos.fulfilled ? (
-                  <span className="flex items-center gap-1 text-xs text-green-400 font-medium bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
-                    <CheckCircle2 className="w-3 h-3" /> {pos.scanned}/{pos.needed}
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs text-yellow-400 font-medium bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded-full">
-                    <Clock className="w-3 h-3" /> {pos.scanned}/{pos.needed}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Progress mini bar */}
-            <div className="w-full bg-white/5 rounded-full h-1 mb-2">
-              <div
-                className={`h-1 rounded-full transition-all ${pos.fulfilled ? 'bg-green-500' : 'bg-accent-red'}`}
-                style={{ width: `${Math.min(100, (pos.scanned / Math.max(1, pos.needed)) * 100)}%` }}
-              />
-            </div>
-
-            {/* Scanned devices */}
-            {pos.devices?.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {pos.devices.map(d => (
-                  <div key={d.device_id} className="flex items-center gap-2 text-xs text-gray-400">
-                    <CheckCircle2 className="w-3 h-3 text-green-500" />
-                    <span className="font-mono text-green-400">{d.device_id}</span>
-                    <span className="text-gray-600">{new Date(d.scanned_at).toLocaleString('de-DE')}</span>
-                    {d.scanned_by && <span className="text-gray-600">— {d.scanned_by}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
+      {message && <WorkspaceNotice>{message}</WorkspaceNotice>}
+      {picklist?.warnings?.map((warning, index) => (
+        <WorkspaceNotice key={index} error>
+          {warning}
+        </WorkspaceNotice>
+      ))}
+      {writable && (
+        <form
+          className="flex flex-wrap gap-3"
+          onSubmit={(event) => void submit(event)}
+        >
+          <div className="suite-search-field flex-1">
+            <ScanLine size={18} />
+            <input
+              ref={input}
+              autoFocus
+              value={scan}
+              disabled={saving}
+              placeholder={t("catalog.scanDevice")}
+              onChange={(event) => setScan(event.target.value)}
+            />
           </div>
-        ))}
-      </div>
+          <button
+            className="suite-button suite-button--primary"
+            disabled={saving || !scan.trim()}
+          >
+            {t("catalog.assign")}
+          </button>
+        </form>
+      )}
+      {loading ? (
+        <WorkspaceLoading />
+      ) : (
+        <div className="suite-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{t("catalog.product")}</th>
+                <th>{t("catalog.source")}</th>
+                <th>{t("catalog.quantityLabel")}</th>
+                <th>{t("catalog.actions")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {picklist?.positions.map((item) => (
+                <tr key={item.product_id ?? item.position_id}>
+                  <td>
+                    <Link
+                      className="underline font-semibold"
+                      to={`/products/${item.product_id}/overview`}
+                    >
+                      {item.product_name}
+                    </Link>
+                    {item.devices.length > 0 && (
+                      <details>
+                        <summary>
+                          {t("catalog.devices")} ({item.devices.length})
+                        </summary>
+                        {item.devices.map((device) => (
+                          <div
+                            key={device.device_id}
+                            className="font-mono text-xs"
+                          >
+                            {device.device_id} ·{" "}
+                            {device.scanned_at ? new Date(device.scanned_at).toLocaleString() : "—"}
+                          </div>
+                        ))}
+                      </details>
+                    )}
+                  </td>
+                  <td>
+                    {item.origins?.map((origin, index) => (
+                      <div key={index}>
+                        {t(`catalog.relation.${origin.relation_type}`)} ·{" "}
+                        {origin.name}
+                      </div>
+                    ))}
+                  </td>
+                  <td>
+                    {item.scanned.toLocaleString()} /{" "}
+                    {item.needed.toLocaleString()} {item.unit}
+                    {item.fulfilled && (
+                      <span
+                        className="flex gap-2 items-center"
+                        style={{ color: "var(--color-success)" }}
+                      >
+                        <CheckCircle2 size={16} />
+                        {t("catalog.fulfilled")}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {writable &&
+                      item.tracking_mode === "quantity" &&
+                      !item.fulfilled && (
+                        <button
+                          className="suite-button"
+                          onClick={() => {
+                            setQuantityItem(item);
+                            setQuantity(
+                              Math.round((item.needed - item.scanned) * 1000) /
+                                1000,
+                            );
+                            receipt.current = crypto.randomUUID();
+                          }}
+                        >
+                          {t("catalog.confirmQuantity")}
+                        </button>
+                      )}
+                  </td>
+                </tr>
+              ))}
+              {!total && (
+                <tr>
+                  <td colSpan={4}>{t("catalog.noMaterial")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {quantityItem && (
+        <WorkspaceDialog
+          title={t("catalog.confirmQuantity")}
+          onClose={() => {
+            if (!saving) setQuantityItem(null);
+          }}
+        >
+          <form className="space-y-4" onSubmit={(event) => void confirm(event)}>
+            <p>{quantityItem.product_name}</p>
+            <WorkspaceNotice>
+              {t("catalog.quantityConfirmationHelp")}
+            </WorkspaceNotice>
+            <WorkspaceField
+              label={`${t("catalog.quantityLabel")} (${quantityItem.unit})`}
+            >
+              <input
+                required
+                type="number"
+                min="0.001"
+                step="0.001"
+                max={
+                  Math.round(
+                    (quantityItem.needed - quantityItem.scanned) * 1000,
+                  ) / 1000
+                }
+                value={quantity}
+                disabled={saving}
+                onChange={(event) => {
+                  setQuantity(Number(event.target.value));
+                  receipt.current = crypto.randomUUID();
+                }}
+              />
+            </WorkspaceField>
+            {error && <WorkspaceNotice error>{error}</WorkspaceNotice>}
+            <button
+              className="suite-button suite-button--primary"
+              disabled={saving}
+            >
+              {t(saving ? "catalog.saving" : "catalog.confirmQuantity")}
+            </button>
+          </form>
+        </WorkspaceDialog>
+      )}
     </div>
   );
 }
