@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"html/template"
@@ -11,6 +12,8 @@ import (
 
 // PackingList contains the printable snapshot of a job.
 type PackingList struct {
+	Version     int64
+	Warnings    []string
 	JobID       int
 	JobCode     string
 	Title       string
@@ -54,62 +57,16 @@ func LoadPackingList(db *sql.DB, jobID int) (*PackingList, error) {
 		return nil, fmt.Errorf("load job %d: %w", jobID, err)
 	}
 
-	rows, err := db.Query(`
-		WITH RECURSIVE position_roots AS (
-			SELECT jp.product_id, SUM(jp.quantity)::numeric AS quantity,
-			       MIN(jp.unit) AS unit, MIN(jp.sort_order) AS sort_order
-			FROM job_positions jp
-			WHERE jp.job_id = $1 AND jp.position_type = 'product' AND COALESCE(to_jsonb(jp)->>'deleted_at','')='' AND jp.product_id IS NOT NULL
-			GROUP BY jp.product_id
-		), roots AS (
-			SELECT pr.product_id,
-			       pr.quantity + COALESCE((to_jsonb(jpr)->>'manual_quantity')::numeric,0) AS quantity,
-			       pr.unit,pr.sort_order
-			FROM position_roots pr
-			LEFT JOIN job_product_requirements jpr ON jpr.job_id=$1 AND jpr.product_id=pr.product_id
-			 AND COALESCE(to_jsonb(jpr)->>'deleted_at','')=''
-			UNION ALL
-			SELECT jpr.product_id, jpr.quantity::numeric, 'Stück', 100000 + jpr.id::int
-			FROM job_product_requirements jpr
-			WHERE jpr.job_id = $1 AND COALESCE(to_jsonb(jpr)->>'deleted_at','')=''
-			  AND NOT EXISTS (
-				SELECT 1 FROM position_roots pr WHERE pr.product_id=jpr.product_id
-			  )
-		), tree AS (
-			SELECT r.sort_order AS root_order, p.productid, p.name, r.quantity,
-			       COALESCE(NULLIF(r.unit, ''), 'Stück') AS unit, 0 AS depth,
-			       ARRAY[p.productid] AS path, COALESCE(p.is_accessory, false) AS accessory
-			FROM roots r
-			JOIN products p ON p.productid = r.product_id
-			UNION ALL
-			SELECT t.root_order, child.productid, child.name,
-			       t.quantity * COALESCE(pd.default_quantity, 1), 'Stück', t.depth + 1,
-			       t.path || child.productid, true
-			FROM tree t
-			JOIN products source ON source.productid=t.productid AND source.lifecycle_status='active'
-			JOIN product_dependencies pd ON pd.product_id = t.productid AND pd.lifecycle_status='active'
-			JOIN products child ON child.productid = pd.dependency_product_id
-			WHERE child.lifecycle_status='active' AND t.depth < 5 AND NOT child.productid = ANY(t.path)
-		)
-		SELECT productid, name, quantity::float8, unit, depth, accessory
-		FROM tree
-		ORDER BY root_order, path
-	`, jobID)
+	snapshot, err := LoadMaterialSnapshot(context.Background(), db, jobID)
 	if err != nil {
-		return nil, fmt.Errorf("load packing-list products for job %d: %w", jobID, err)
+		return nil, fmt.Errorf("load packing-list snapshot: %w", err)
 	}
-	defer rows.Close()
+	result.Version = snapshot.Version
+	result.Warnings = snapshot.Warnings
+	for _, item := range snapshot.Items {
+		result.Items = append(result.Items, PackingListItem{ProductID: item.ProductID, Name: item.Name, Quantity: item.Quantity, Unit: item.Unit, Accessory: len(item.Origins) > 0 && item.Origins[0].Type != "booking"})
+	}
 
-	for rows.Next() {
-		var item PackingListItem
-		if err := rows.Scan(&item.ProductID, &item.Name, &item.Quantity, &item.Unit, &item.Depth, &item.Accessory); err != nil {
-			return nil, fmt.Errorf("read packing-list product: %w", err)
-		}
-		result.Items = append(result.Items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read packing-list products: %w", err)
-	}
 	return result, nil
 }
 
@@ -162,7 +119,7 @@ footer { margin-top: 8mm; display: flex; justify-content: space-between; font-si
 <div><div class="label">Job-ID</div><span>{{.JobID}}</span></div></section>
 <table><thead><tr><th>Produkt / Zubehör</th><th class="qty">Menge</th></tr></thead><tbody>
 {{range .Items}}<tr><td style="{{indent .Depth}}" class="{{if or .Accessory (gt .Depth 0)}}accessory{{end}}">{{.Name}}</td><td class="qty">{{quantity .Quantity}} {{.Unit}}</td></tr>{{else}}<tr><td colspan="2" class="empty">Keine Produkte hinterlegt.</td></tr>{{end}}
-</tbody></table><footer><span>{{.CompanyName}}</span><span>Automatisch aus WarehouseCore erzeugt</span></footer>
+</tbody></table>{{if .Warnings}}<section>{{range .Warnings}}<p>{{.}}</p>{{end}}</section>{{end}}<footer><span>Materialstand {{.Version}}</span><span>{{.CompanyName}}</span><span>Automatisch aus WarehouseCore erzeugt</span></footer>
 <script>Promise.all(Array.from(document.images).map(function(img){return img.complete ? Promise.resolve() : new Promise(function(resolve){img.onload=img.onerror=resolve;});})).then(function(){window.pdfReady=true;});</script>
 </body></html>`))
 

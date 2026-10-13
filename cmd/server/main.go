@@ -276,6 +276,10 @@ func main() {
 		log.Fatalf("Failed to initialize label studio schema: %v", err)
 	}
 
+	if err := handlers.EnsureProductWorkspaceSchema(); err != nil {
+		log.Fatalf("Product workspace schema: %v", err)
+	}
+
 	// Set initial DB connection gauge
 	if sqlDB := repository.GetSQLDB(); sqlDB != nil {
 		metrics.DBConnectionsOpen.Set(float64(sqlDB.Stats().OpenConnections))
@@ -319,7 +323,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.114")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.115")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
@@ -387,8 +391,8 @@ func main() {
 	api.HandleFunc("/jobs/scan", handlers.GetJobByScan).Methods("GET")
 	api.HandleFunc("/jobs/{id}", handlers.GetJobSummary).Methods("GET")
 	api.HandleFunc("/jobs/{id}/requirements", handlers.GetJobRequirements).Methods("GET")
-	api.HandleFunc("/jobs/{id}/picklist", handlers.GetJobPicklist).Methods("GET")
-	api.HandleFunc("/jobs/{id}/picklist/scan", handlers.ScanDeviceToPicklist).Methods("POST")
+	protected.HandleFunc("/jobs/{id}/picklist", handlers.GetJobPicklist).Methods("GET")
+	protected.HandleFunc("/jobs/{id}/picklist/scan", handlers.ScanDeviceToPicklist).Methods("POST")
 	api.HandleFunc("/jobs/{id}/complete", handlers.CompleteJob).Methods("POST")
 
 	// Public rental equipment endpoint (for RentalCore integration)
@@ -505,6 +509,13 @@ func main() {
 	adminRead.HandleFunc("/count-types", handlers.ListCountTypes).Methods("GET")
 	adminRead.HandleFunc("/brands", handlers.GetBrands).Methods("GET")
 	adminRead.HandleFunc("/manufacturers", handlers.GetManufacturers).Methods("GET")
+	adminRead.HandleFunc("/products/{id}/stock", handlers.GetProductStock).Methods("GET")
+	adminRead.HandleFunc("/products/{id}/history", handlers.GetProductHistory).Methods("GET")
+	adminRead.HandleFunc("/products/{id}/dependency-preview", handlers.GetProductDependencyPreview).Methods("GET")
+	adminRead.HandleFunc("/catalog-master/{entity}", handlers.GetCatalogMaster).Methods("GET")
+	adminRead.HandleFunc("/website-status", handlers.GetWebsitePublicationStatus).Methods("GET")
+	adminRead.HandleFunc("/products/{id}/website", handlers.GetProductWebsite).Methods("GET")
+	adminRead.HandleFunc("/product-packages/{id}/website", handlers.GetProductPackageWebsite).Methods("GET")
 	adminRead.HandleFunc("/products", handlers.GetProducts).Methods("GET")
 	adminRead.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
 	adminRead.HandleFunc("/product-links", handlers.ListProductProcurementLinks).Methods("GET")
@@ -567,6 +578,7 @@ func main() {
 	admin.HandleFunc("/manufacturers", handlers.CreateManufacturer).Methods("POST")
 	admin.HandleFunc("/manufacturers/{id}", handlers.UpdateManufacturer).Methods("PUT")
 	admin.HandleFunc("/manufacturers/{id}", handlers.DeleteManufacturer).Methods("DELETE")
+	admin.HandleFunc("/products/bulk-categories", handlers.AssignCatalogCategory).Methods("POST")
 	admin.HandleFunc("/products", handlers.CreateProduct).Methods("POST")
 	admin.HandleFunc("/products/{id}", handlers.UpdateProduct).Methods("PUT")
 	admin.HandleFunc("/products/{id}/procurement-link", handlers.LinkProductToProcurement).Methods("POST")
@@ -575,12 +587,19 @@ func main() {
 	admin.HandleFunc("/products/{id}", handlers.DeleteProduct).Methods("DELETE")
 	admin.HandleFunc("/products/{id}/restore", handlers.RestoreProduct).Methods("PUT")
 	admin.HandleFunc("/products/{id}/permanent", handlers.PermanentlyDeleteProduct).Methods("DELETE")
+	admin.HandleFunc("/products/{id}/stock", handlers.CorrectProductStock).Methods("POST")
+	admin.HandleFunc("/products/{id}/dependencies/{dep_id}", handlers.UpdateProductDependency).Methods("PUT")
+	admin.HandleFunc("/products/{id}/dependencies/{dep_id}/restore", handlers.RestoreProductDependency).Methods("POST")
+	admin.HandleFunc("/catalog-master/{entity}", handlers.SaveCatalogMaster).Methods("POST")
+	admin.HandleFunc("/catalog-master/{entity}/{id}", handlers.SaveCatalogMaster).Methods("PUT")
+	admin.HandleFunc("/catalog-master/{entity}/{id}/{operation:archive|restore}", handlers.CatalogMasterLifecycle).Methods("POST")
+	admin.HandleFunc("/website-status/retry", handlers.RetryWebsitePublication).Methods("POST")
 	admin.HandleFunc("/products/{id}/website", handlers.UpdateProductWebsite).Methods("PUT")
 	admin.HandleFunc("/products/{id}/pictures", handlers.UploadProductPictures).Methods("POST")
 	admin.HandleFunc("/products/{id}/pictures/{filename}", handlers.DeleteProductPicture).Methods("DELETE")
-	admin.HandleFunc("/products/{id}/devices", handlers.GetProductDevices).Methods("GET")
+	adminRead.HandleFunc("/products/{id}/devices", handlers.GetProductDevices).Methods("GET")
 	admin.HandleFunc("/products/{id}/devices", handlers.CreateDevicesForProduct).Methods("POST")
-	admin.HandleFunc("/products/{id}/dependencies", handlers.GetProductDependencies).Methods("GET")
+	adminRead.HandleFunc("/products/{id}/dependencies", handlers.GetProductDependencies).Methods("GET")
 	admin.HandleFunc("/products/{id}/dependencies", handlers.CreateProductDependency).Methods("POST")
 	admin.HandleFunc("/products/{id}/dependencies/{dep_id}", handlers.DeleteProductDependency).Methods("DELETE")
 	admin.HandleFunc("/product-packages", handlers.CreateProductPackage).Methods("POST")
@@ -616,9 +635,9 @@ func main() {
 	admin.HandleFunc("/cable-types", handlers.CreateCableType).Methods("POST")
 	admin.HandleFunc("/cable-types/{id}", handlers.UpdateCableType).Methods("PUT")
 	admin.HandleFunc("/cable-types/{id}", handlers.DeleteCableType).Methods("DELETE")
-	admin.HandleFunc("/devices-list", handlers.GetAllDevicesAdmin).Methods("GET")
+	adminRead.HandleFunc("/devices-list", handlers.GetAllDevicesAdmin).Methods("GET")
 	admin.HandleFunc("/devices", handlers.CreateDevice).Methods("POST")
-	admin.HandleFunc("/devices/{id}", handlers.GetDeviceAdmin).Methods("GET")
+	adminRead.HandleFunc("/devices/{id}", handlers.GetDeviceAdmin).Methods("GET")
 	admin.HandleFunc("/devices/{id}", handlers.UpdateDevice).Methods("PUT")
 	admin.HandleFunc("/devices/{id}", handlers.DeleteDevice).Methods("DELETE")
 	admin.HandleFunc("/mcp/{entity:maintenance-orders|defects}/{operation:create|update|transition|complete|cancel|reopen|archive|restore}", handlers.WarehouseMaintenanceOrderMCP).Methods("POST")
@@ -685,6 +704,7 @@ func main() {
 		AllowedOrigins:   cfg.CORS.AllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		ExposedHeaders:   []string{"X-Total-Count"},
 		AllowCredentials: true,
 	})
 

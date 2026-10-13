@@ -23,7 +23,7 @@ type CountType struct {
 func ListCountTypes(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 
-	rows, err := db.Query("SELECT count_type_id, name, abbreviation, is_decimal FROM count_types ORDER BY name")
+	rows, err := db.Query("SELECT count_type_id, name, abbreviation, is_decimal FROM count_types WHERE lifecycle_status='active' ORDER BY name")
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch measurement units"})
 		return

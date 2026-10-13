@@ -1,0 +1,38 @@
+/* Layout and integration of older editors. Controls, typography and surfaces
+   use the suite tokens; there is no separate catalog palette or size scale. */
+.catalog-workspace {
+  min-width: 0;
+}
+.catalog-workspace dialog::backdrop {
+  background: var(--bg-overlay);
+}
+.catalog-workspace textarea {
+  min-height: calc(var(--space-10) * 2);
+}
+.catalog-workspace table {
+  width: 100%;
+}
+.catalog-workspace th {
+  white-space: nowrap;
+}
+.catalog-workspace button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.catalog-workspace input[type="checkbox"],
+.catalog-workspace input[type="radio"] {
+  accent-color: var(--color-accent-red);
+}
+.catalog-workspace progress {
+  accent-color: var(--color-accent-red);
+}
+@media (max-width: 767px) {
+  .catalog-workspace .suite-button {
+    min-width: var(--space-11);
+    min-height: var(--space-11);
+  }
+  .catalog-workspace input,
+  .catalog-workspace select {
+    max-width: 100%;
+  }
+}

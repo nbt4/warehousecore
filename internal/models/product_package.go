@@ -14,11 +14,14 @@ type ProductPackage struct {
 	WebsiteThumbnail *string     `json:"website_thumbnail,omitempty" db:"website_image_url"`
 	WebsiteImages    []string    `json:"website_images" db:"-"`
 	CreatedAt        time.Time   `json:"created_at" db:"created_at"`
+	IsActive         bool        `json:"is_active"`
+	Version          string      `json:"version"`
 	UpdatedAt        time.Time   `json:"updated_at" db:"updated_at"`
 }
 
 // ProductPackageItem represents the relationship between a package and a product
 type ProductPackageItem struct {
+	IsOptional    bool      `json:"is_optional"`
 	PackageItemID int       `json:"package_item_id" db:"package_item_id"`
 	PackageID     int       `json:"package_id" db:"package_id"`
 	ProductID     int       `json:"product_id" db:"product_id"`
@@ -36,6 +39,7 @@ type ProductPackageWithItems struct {
 
 // PackageItemDetail provides detailed information about a product in the package
 type PackageItemDetail struct {
+	IsOptional    bool    `json:"is_optional"`
 	PackageItemID int     `json:"package_item_id"`
 	ProductID     int     `json:"product_id"`
 	ProductName   string  `json:"product_name"`

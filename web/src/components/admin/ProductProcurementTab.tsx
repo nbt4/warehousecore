@@ -1,3 +1,4 @@
+import { useCatalogWriteAccess } from "../catalog/useCatalog";
 import {
   useCallback,
   useEffect,
@@ -12,11 +13,10 @@ import {
   Search,
   ShoppingCart,
   Unlink,
-  X,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { toast } from "../../lib/toast";
-import { ModalPortal } from "../ModalPortal";
+import { WorkspaceDialog } from "../catalog/Workspace";
 
 type ProcurementProduct = {
   product_id: number;
@@ -59,7 +59,8 @@ const optionStyle = {
   color: "var(--text-primary)",
 };
 
-export function ProductProcurementTab() {
+export function ProductProcurementTab({ productId }: { productId?: number }) {
+  const writable = useCatalogWriteAccess();
   const [data, setData] = useState<LinkData>({
     products: [],
     procurement_products: [],
@@ -71,7 +72,9 @@ export function ProductProcurementTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await api.get<LinkData>("/admin/product-links");
+      const response = await api.get<LinkData>("/admin/product-links", {
+        params: { product_id: productId },
+      });
       setData(response.data);
       setSelection(
         Object.fromEntries(
@@ -94,7 +97,7 @@ export function ProductProcurementTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [productId]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -327,6 +330,7 @@ export function ProductProcurementTab() {
                         {linked ? (
                           <>
                             <button
+                              disabled={!writable}
                               onClick={() => setNeed(product)}
                               className="suite-button suite-button--primary"
                             >
@@ -335,12 +339,15 @@ export function ProductProcurementTab() {
                             </button>
                             <a
                               className="suite-button suite-button--secondary"
-                              href={procurementHref("/catalog")}
+                              href={procurementHref(
+                                `/catalog?product_id=${linked.product_id}`,
+                              )}
                             >
                               <ExternalLink className="h-4 w-4" />
                               Öffnen
                             </a>
                             <button
+                              disabled={!writable}
                               onClick={() => void unlink(product)}
                               className="suite-button suite-button--secondary"
                               title="Verknüpfung lösen"
@@ -350,7 +357,7 @@ export function ProductProcurementTab() {
                           </>
                         ) : (
                           <button
-                            disabled={!selectedID}
+                            disabled={!writable || !selectedID}
                             onClick={() => void link(product)}
                             className="suite-button suite-button--primary disabled:opacity-50"
                           >
@@ -424,109 +431,80 @@ function NeedModal({
     }
   };
   return (
-    <ModalPortal>
-      <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4">
-        <form
-          onSubmit={submit}
-          className="w-full max-w-xl rounded-2xl border p-5 shadow-xl"
-          style={{
-            borderColor: "var(--border-default)",
-            background: "var(--surface-1)",
-          }}
-        >
-          <div className="mb-5 flex items-start justify-between">
-            <div>
-              <h3
-                className="text-xl font-bold"
-                style={{ color: "var(--text-primary)" }}
-              >
-                Bedarf melden
-              </h3>
-              <p
-                className="mt-1 text-sm"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {product.name} → {procurement?.name}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="suite-button suite-button--secondary"
-              aria-label="Schließen"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label
-              className="text-sm"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Menge
-              <input
-                required
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={quantity}
-                onChange={(event) => setQuantity(Number(event.target.value))}
-                className="mt-1 w-full"
-              />
-            </label>
-            <label
-              className="text-sm"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Benötigt bis
-              <input
-                type="date"
-                value={neededBy}
-                onChange={(event) => setNeededBy(event.target.value)}
-                className="mt-1 w-full"
-              />
-            </label>
-            <label
-              className="text-sm sm:col-span-2"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Kostenstelle
-              <input
-                value={costCenter}
-                onChange={(event) => setCostCenter(event.target.value)}
-                className="mt-1 w-full"
-              />
-            </label>
-            <label
-              className="text-sm sm:col-span-2"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Begründung
-              <textarea
-                value={justification}
-                onChange={(event) => setJustification(event.target.value)}
-                className="mt-1 w-full"
-                placeholder="Warum wird das Material benötigt?"
-              />
-            </label>
-          </div>
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="suite-button suite-button--secondary"
-            >
-              Abbrechen
-            </button>
-            <button
-              disabled={saving}
-              className="suite-button suite-button--primary"
-            >
-              {saving ? "Wird angelegt …" : "Als Entwurf anlegen"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </ModalPortal>
+    <WorkspaceDialog title="Bedarf melden" onClose={onClose}>
+      <form
+        onSubmit={submit}
+        className="w-full max-w-xl rounded-2xl border p-5 shadow-xl"
+        style={{
+          borderColor: "var(--border-default)",
+          background: "var(--surface-1)",
+        }}
+      >
+        <p className="mb-4">
+          {product.name} → {procurement?.name}
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Menge
+            <input
+              required
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={quantity}
+              onChange={(event) => setQuantity(Number(event.target.value))}
+              className="mt-1 w-full"
+            />
+          </label>
+          <label className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Benötigt bis
+            <input
+              type="date"
+              value={neededBy}
+              onChange={(event) => setNeededBy(event.target.value)}
+              className="mt-1 w-full"
+            />
+          </label>
+          <label
+            className="text-sm sm:col-span-2"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Kostenstelle
+            <input
+              value={costCenter}
+              onChange={(event) => setCostCenter(event.target.value)}
+              className="mt-1 w-full"
+            />
+          </label>
+          <label
+            className="text-sm sm:col-span-2"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Begründung
+            <textarea
+              value={justification}
+              onChange={(event) => setJustification(event.target.value)}
+              className="mt-1 w-full"
+              placeholder="Warum wird das Material benötigt?"
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="suite-button suite-button--secondary"
+          >
+            Abbrechen
+          </button>
+          <button
+            disabled={saving}
+            className="suite-button suite-button--primary"
+          >
+            {saving ? "Wird angelegt …" : "Als Entwurf anlegen"}
+          </button>
+        </div>
+      </form>
+    </WorkspaceDialog>
   );
 }

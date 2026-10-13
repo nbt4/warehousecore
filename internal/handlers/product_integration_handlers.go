@@ -149,14 +149,14 @@ func queryProcurementProducts(db *sql.DB) ([]procurementCatalogProduct, error) {
 	return result, rows.Err()
 }
 
-func ListProductProcurementLinks(w http.ResponseWriter, _ *http.Request) {
+func ListProductProcurementLinks(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
 	procurement, err := queryProcurementProducts(db)
 	if err != nil {
 		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "ProcurementCore-Produktstamm ist nicht verfügbar"})
 		return
 	}
-	rows, err := db.Query(`SELECT p.productID,p.product_code,p.name,COALESCE(m.name,''),COALESCE(p.model_number,''),COALESCE(p.manufacturer_part_number,''),COALESCE(p.ean,''),COALESCE(p.stock_quantity,0),COALESCE(p.min_stock_level,0),p.tracking_mode,cpl.procurement_product_id FROM products p LEFT JOIN manufacturer m ON m.manufacturerid=p.manufacturerid LEFT JOIN core_product_links cpl ON cpl.warehouse_product_id=p.productID WHERE p.lifecycle_status='active' ORDER BY p.name`)
+	rows, err := db.Query(`SELECT p.productID,p.product_code,p.name,COALESCE(m.name,''),COALESCE(p.model_number,''),COALESCE(p.manufacturer_part_number,''),COALESCE(p.ean,''),COALESCE(p.stock_quantity,0),COALESCE(p.min_stock_level,0),p.tracking_mode,cpl.procurement_product_id FROM products p LEFT JOIN manufacturer m ON m.manufacturerid=p.manufacturerid LEFT JOIN core_product_links cpl ON cpl.warehouse_product_id=p.productID WHERE p.lifecycle_status='active' AND ($1=0 OR p.productid=$1) ORDER BY p.name`, procurementFilterID(r))
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -393,4 +393,9 @@ func CreateProductRequisition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusCreated, map[string]any{"requisition_id": requisitionID, "number": number, "status": "draft"})
+}
+
+func procurementFilterID(r *http.Request) int {
+	value, _ := strconv.Atoi(r.URL.Query().Get("product_id"))
+	return value
 }

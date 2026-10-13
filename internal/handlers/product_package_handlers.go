@@ -24,13 +24,14 @@ import (
 )
 
 type productPackageRequest struct {
-	Name           string                      `json:"name"`
-	Description    *string                     `json:"description"`
-	Price          *float64                    `json:"price"`
-	Category       *string                     `json:"category"`
-	Items          []models.ProductPackageItem `json:"items"`
-	Aliases        []string                    `json:"aliases"`
-	WebsiteVisible bool                        `json:"website_visible"`
+	Name              string                      `json:"name"`
+	Description       *string                     `json:"description"`
+	Price             *float64                    `json:"price"`
+	Category          *string                     `json:"category"`
+	Items             []models.ProductPackageItem `json:"items"`
+	Aliases           []string                    `json:"aliases"`
+	WebsiteVisible    *bool                       `json:"website_visible"`
+	ExpectedUpdatedAt *string                     `json:"expected_updated_at"`
 }
 
 var (
@@ -52,10 +53,10 @@ func GetProductPackages(w http.ResponseWriter, r *http.Request) {
 		       pp.name, pp.description, pp.price, pp.category,
 		       COALESCE(pp.website_visible, FALSE), pp.website_image_url,
 		       pp.website_images_json, pp.alias_json, pp.created_at, pp.updated_at,
-		       COALESCE((SELECT SUM(ppi.quantity) FROM product_package_items ppi WHERE ppi.package_id = pp.id), 0)
+		       COALESCE((SELECT SUM(ppi.quantity) FROM product_package_items ppi WHERE ppi.package_id = pp.id), 0),COALESCE(pp.is_active,TRUE)
 		FROM product_packages pp
-		WHERE COALESCE(pp.is_active, TRUE) = TRUE`
-	args := []interface{}{}
+		WHERE ($1='all' OR COALESCE(pp.is_active,TRUE)=($1='active'))`
+	args := []interface{}{normalizePackageLifecycle(r.URL.Query().Get("lifecycle_status"))}
 	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
 		for _, term := range warehouseProductSearchTerms(search) {
 			args = append(args, "%"+term+"%")
@@ -109,7 +110,7 @@ func GetProductPackage(w http.ResponseWriter, r *http.Request) {
 		       pp.name, pp.description, pp.price, pp.category,
 		       COALESCE(pp.website_visible, FALSE), pp.website_image_url,
 		       pp.website_images_json, pp.alias_json, pp.created_at, pp.updated_at,
-		       COALESCE((SELECT SUM(ppi.quantity) FROM product_package_items ppi WHERE ppi.package_id = pp.id), 0)
+		       COALESCE((SELECT SUM(ppi.quantity) FROM product_package_items ppi WHERE ppi.package_id = pp.id), 0),COALESCE(pp.is_active,TRUE)
 		FROM product_packages pp
 		WHERE pp.id = $1`, id)
 	pkg, err := scanProductPackage(row.Scan)
@@ -150,6 +151,10 @@ func CreateProductPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.WebsiteVisible != nil && *req.WebsiteVisible {
+		respondJSON(w, 400, map[string]string{"error": "Veröffentlichung erfolgt über den Website-Bereich"})
+		return
+	}
 	db := repository.GetSQLDB()
 	if err := ensureProductPackageStorage(db); err != nil {
 		packageStorageError(w, err)
@@ -175,7 +180,7 @@ func CreateProductPackage(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO product_packages
 			(code, package_code, name, description, price, category, is_active, website_visible, alias_json)
 		VALUES ($1, $1, $2, $3, $4, $5, TRUE, $6, $7)
-		RETURNING id`, code, strings.TrimSpace(req.Name), req.Description, req.Price, cleanOptionalString(req.Category), req.WebsiteVisible, aliasJSON).Scan(&id)
+		RETURNING id`, code, strings.TrimSpace(req.Name), req.Description, req.Price, cleanOptionalString(req.Category), false, aliasJSON).Scan(&id)
 	if err != nil {
 		log.Printf("[PACKAGES] Failed to create package: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create package"})
@@ -186,6 +191,11 @@ func CreateProductPackage(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Failed to save package products"})
 		return
 	}
+	if err = recordCatalogAudit(tx, r, "package", strconv.FormatInt(id, 10), "package.create", req); err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Paket konnte nicht protokolliert werden"})
+		return
+	}
+
 	if err := tx.Commit(); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create package"})
 		return
@@ -229,12 +239,30 @@ func UpdateProductPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	var active, visible bool
+	var version string
+	if err = tx.QueryRow(`SELECT COALESCE(is_active,true),COALESCE(website_visible,false),to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') FROM product_packages WHERE id=$1 FOR UPDATE`, id).Scan(&active, &visible, &version); err != nil {
+		respondJSON(w, 404, map[string]string{"error": "Paket nicht gefunden"})
+		return
+	}
+	if !active {
+		respondJSON(w, 409, map[string]string{"error": "Archiviertes Paket zuerst wiederherstellen"})
+		return
+	}
+	if req.ExpectedUpdatedAt != nil && *req.ExpectedUpdatedAt != version {
+		respondJSON(w, 409, map[string]string{"error": "Paket wurde inzwischen verändert. Bitte neu laden."})
+		return
+	}
+	if req.WebsiteVisible != nil && *req.WebsiteVisible != visible {
+		respondJSON(w, 409, map[string]string{"error": "Veröffentlichung erfolgt über den Website-Bereich"})
+		return
+	}
 	result, err := tx.Exec(`
 		UPDATE product_packages
 		SET name = $1, description = $2, price = $3, category = $4,
-		    website_visible = $5, alias_json = $6, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $7`, strings.TrimSpace(req.Name), req.Description, req.Price,
-		cleanOptionalString(req.Category), req.WebsiteVisible,
+		    alias_json = $5, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $6`, strings.TrimSpace(req.Name), req.Description, req.Price,
+		cleanOptionalString(req.Category),
 		marshalStringSlice(normalizeAliases(req.Aliases)), id)
 	if err != nil {
 		log.Printf("[PACKAGES] Failed to update package %d: %v", id, err)
@@ -250,6 +278,11 @@ func UpdateProductPackage(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Failed to save package products"})
 		return
 	}
+	if err = recordCatalogAudit(tx, r, "package", strconv.Itoa(id), "package.update", req); err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Paket konnte nicht protokolliert werden"})
+		return
+	}
+
 	if err := tx.Commit(); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update package"})
 		return
@@ -403,6 +436,12 @@ func GetProductPackagePictures(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Failed to list pictures"})
 		return
 	}
+	items, err = filterPendingPictures("package", id, items)
+	if err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Bilder konnten nicht geladen werden"})
+		return
+	}
+
 	sort.Slice(items, func(i, j int) bool { return items[i].ModifiedAt.After(items[j].ModifiedAt) })
 	type pictureResponse struct {
 		FileName    string    `json:"file_name"`
@@ -421,7 +460,7 @@ func GetProductPackagePictures(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{"pictures": resp})
 }
 
-// UploadProductPackagePictures uploads images and appends them to the website selection.
+// UploadProductPackagePictures stores library images without publishing them.
 func UploadProductPackagePictures(w http.ResponseWriter, r *http.Request) {
 	id, name, ok := resolvePackageName(w, r)
 	if !ok {
@@ -431,92 +470,40 @@ func UploadProductPackagePictures(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Product pictures are not configured"})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, productPictureService.MaxFileSize()*20)
 	if err := r.ParseMultipartForm(productPictureService.MaxFileSize() * 4); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid multipart form: " + err.Error()})
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 	files := r.MultipartForm.File["files"]
 	if len(files) == 0 {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "No files provided"})
 		return
 	}
-	uploaded := make([]string, 0, len(files))
-	for _, header := range files {
-		src, err := header.Open()
-		if err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Failed to read uploaded file"})
-			return
-		}
-		stored, uploadErr := productPictureService.UploadPicture(name, src, header)
-		src.Close()
-		if uploadErr != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": uploadErr.Error()})
-			return
-		}
-		uploaded = append(uploaded, stored)
-		productPictureService.WarmPictureVariants(name, stored)
-	}
-
-	db := repository.GetSQLDB()
-	var currentRaw sql.NullString
-	var currentThumb sql.NullString
-	if err := db.QueryRow("SELECT website_images_json, website_image_url FROM product_packages WHERE id = $1", id).Scan(&currentRaw, &currentThumb); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Pictures uploaded but package metadata could not be updated"})
+	infos, err := productPictureService.UploadPictures(name, files)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	images := sanitizeWebsiteImages(append(parseStringSlice(currentRaw), uploaded...))
-	thumbnail := ""
-	if currentThumb.Valid {
-		thumbnail = currentThumb.String
+	if err = recordUploadedPictures("package", id, name, infos); err != nil {
+		for _, picture := range infos {
+			_ = productPictureService.DeletePicture(name, picture.FileName)
+		}
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Bilder konnten nicht gespeichert werden"})
+		return
 	}
-	if index, err := strconv.Atoi(r.FormValue("thumbnail_index")); err == nil && index >= 0 && index < len(uploaded) {
-		thumbnail = uploaded[index]
+	names := make([]string, 0, len(infos))
+	for _, info := range infos {
+		names = append(names, info.FileName)
 	}
-	if thumbnail == "" && len(images) > 0 {
-		thumbnail = images[0]
-	}
-	if _, err := db.Exec("UPDATE product_packages SET website_image_url = $1, website_images_json = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3", nullString(thumbnail), marshalStringSlice(images), id); err != nil {
-		log.Printf("[PACKAGE PICTURES] Failed to update package %d image metadata: %v", id, err)
-	}
-	websiteRevalidator.Revalidate("/products")
-	respondJSON(w, http.StatusCreated, map[string]interface{}{"message": "Pictures uploaded successfully", "uploaded_files": uploaded, "uploaded_count": len(uploaded), "thumbnail": thumbnail})
+	respondJSON(w, http.StatusCreated, map[string]any{"uploaded_files": names, "uploaded_count": len(names), "pictures": pictureResponses("package", id, infos)})
+
 }
 
 // DeleteProductPackagePicture deletes an image and removes it from website metadata.
 func DeleteProductPackagePicture(w http.ResponseWriter, r *http.Request) {
-	id, name, ok := resolvePackageName(w, r)
-	if !ok {
-		return
-	}
-	filename, err := url.PathUnescape(mux.Vars(r)["filename"])
-	if err != nil || filename == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid filename"})
-		return
-	}
-	if err := productPictureService.DeletePicture(name, filename); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete picture"})
-		return
-	}
-	productPictureService.ClearCachedVariants(name, filename)
-	db := repository.GetSQLDB()
-	var raw, thumb sql.NullString
-	if err := db.QueryRow("SELECT website_images_json, website_image_url FROM product_packages WHERE id = $1", id).Scan(&raw, &thumb); err == nil {
-		images := make([]string, 0)
-		for _, image := range parseStringSlice(raw) {
-			if image != filename {
-				images = append(images, image)
-			}
-		}
-		thumbnail := ""
-		if thumb.Valid && thumb.String != filename {
-			thumbnail = thumb.String
-		} else if len(images) > 0 {
-			thumbnail = images[0]
-		}
-		_, _ = db.Exec("UPDATE product_packages SET website_image_url = $1, website_images_json = $2 WHERE id = $3", nullString(thumbnail), marshalStringSlice(images), id)
-	}
-	websiteRevalidator.Revalidate("/products")
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Picture deleted"})
+	deleteWorkspacePicture(w, r, "package")
 }
 
 // DownloadProductPackagePicture streams an admin or public package image.
@@ -530,6 +517,11 @@ func DownloadProductPackagePicture(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid filename"})
 		return
 	}
+	if !publicCatalogPictureAllowed(r, "package", id, filename) {
+		respondJSON(w, 404, map[string]string{"error": "File not found"})
+		return
+	}
+
 	reader, contentType, err := productPictureService.DownloadPictureWithVariant(name, filename, strings.TrimSpace(r.URL.Query().Get("variant")), strings.TrimSpace(r.URL.Query().Get("format")))
 	if err != nil {
 		log.Printf("[PACKAGE PICTURES] Download failed for package %d: %v", id, err)
@@ -541,6 +533,7 @@ func DownloadProductPackagePicture(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", url.PathEscape(filename)))
 	if _, err := io.Copy(w, reader); err != nil {
@@ -550,60 +543,7 @@ func DownloadProductPackagePicture(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProductPackageWebsite controls public visibility and selected images.
 func UpdateProductPackageWebsite(w http.ResponseWriter, r *http.Request) {
-	id, name, ok := resolvePackageName(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		WebsiteVisible   bool     `json:"website_visible"`
-		WebsiteThumbnail *string  `json:"website_thumbnail"`
-		WebsiteImages    []string `json:"website_images"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
-		return
-	}
-	images := sanitizeWebsiteImages(req.WebsiteImages)
-	thumbnail := req.WebsiteThumbnail
-	if thumbnail != nil && strings.TrimSpace(*thumbnail) == "" {
-		thumbnail = nil
-	}
-	if productPictureService.Enabled() {
-		pictures, err := productPictureService.ListPictures(name)
-		if err != nil && !isStorageNotFound(err) {
-			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Failed to validate package images"})
-			return
-		}
-		allowed := make(map[string]bool, len(pictures))
-		for _, picture := range pictures {
-			allowed[picture.FileName] = true
-		}
-		filtered := images[:0]
-		for _, image := range images {
-			if allowed[image] {
-				filtered = append(filtered, image)
-			}
-		}
-		images = filtered
-		if thumbnail != nil && !allowed[*thumbnail] {
-			thumbnail = nil
-		}
-	}
-	if thumbnail == nil && len(images) > 0 {
-		thumbnail = &images[0]
-	}
-	db := repository.GetSQLDB()
-	result, err := db.Exec(`UPDATE product_packages SET website_visible = $1, website_image_url = $2, website_images_json = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`, req.WebsiteVisible, thumbnail, marshalStringSlice(images), id)
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update package website settings"})
-		return
-	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product package not found"})
-		return
-	}
-	websiteRevalidator.Revalidate("/products")
-	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Website settings updated", "website_visible": req.WebsiteVisible, "website_thumbnail": thumbnail, "website_images": images})
+	saveWebsiteSettings(w, r, "package")
 }
 
 type rowScanner func(dest ...interface{}) error
@@ -613,10 +553,11 @@ func scanProductPackage(scan rowScanner) (models.ProductPackageWithItems, error)
 	var rawImages, rawAliases sql.NullString
 	err := scan(&pkg.PackageID, &pkg.PackageCode, &pkg.Name, &pkg.Description, &pkg.Price,
 		&pkg.Category, &pkg.WebsiteVisible, &pkg.WebsiteThumbnail, &rawImages, &rawAliases,
-		&pkg.CreatedAt, &pkg.UpdatedAt, &pkg.TotalItems)
+		&pkg.CreatedAt, &pkg.UpdatedAt, &pkg.TotalItems, &pkg.IsActive)
 	if err != nil {
 		return pkg, err
 	}
+	pkg.Version = pkg.UpdatedAt.UTC().Format("2006-01-02T15:04:05.000000Z")
 	pkg.WebsiteImages = parseStringSlice(rawImages)
 	pkg.Aliases = parseStringSlice(rawAliases)
 	return pkg, nil
@@ -624,7 +565,7 @@ func scanProductPackage(scan rowScanner) (models.ProductPackageWithItems, error)
 
 func fetchPackageItems(db *sql.DB, packageID int) ([]models.PackageItemDetail, error) {
 	rows, err := db.Query(`
-		SELECT ppi.id, ppi.product_id, p.name, COALESCE(ppi.quantity, 1), c.name, b.name
+		SELECT ppi.id, ppi.product_id, p.name, COALESCE(ppi.quantity, 1), c.name, b.name,COALESCE(ppi.is_optional,false)
 		FROM product_package_items ppi
 		JOIN products p ON p.productID = ppi.product_id
 		LEFT JOIN categories c ON p.categoryID = c.categoryID
@@ -637,7 +578,7 @@ func fetchPackageItems(db *sql.DB, packageID int) ([]models.PackageItemDetail, e
 	items := make([]models.PackageItemDetail, 0)
 	for rows.Next() {
 		var item models.PackageItemDetail
-		if err := rows.Scan(&item.PackageItemID, &item.ProductID, &item.ProductName, &item.Quantity, &item.CategoryName, &item.BrandName); err != nil {
+		if err := rows.Scan(&item.PackageItemID, &item.ProductID, &item.ProductName, &item.Quantity, &item.CategoryName, &item.BrandName, &item.IsOptional); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -650,16 +591,18 @@ func replacePackageItems(tx *sql.Tx, packageID int, requested []models.ProductPa
 		return err
 	}
 	quantities := make(map[int]int)
+	optional := map[int]bool{}
 	for _, item := range requested {
 		if item.ProductID > 0 && item.Quantity > 0 {
 			quantities[item.ProductID] += item.Quantity
+			optional[item.ProductID] = item.IsOptional
 		}
 	}
 	if len(quantities) == 0 {
 		return errors.New("a package must contain at least one product")
 	}
 	for productID, quantity := range quantities {
-		if _, err := tx.Exec("INSERT INTO product_package_items (package_id, product_id, quantity) VALUES ($1, $2, $3)", packageID, productID, quantity); err != nil {
+		if _, err := tx.Exec("INSERT INTO product_package_items (package_id, product_id, quantity,is_optional) VALUES ($1, $2, $3,$4)", packageID, productID, quantity, optional[productID]); err != nil {
 			return err
 		}
 	}
@@ -670,6 +613,17 @@ func validateProductPackageRequest(req *productPackageRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return errors.New("package name is required")
 	}
+	if len([]rune(req.Name)) > 255 || len(req.Items) > 500 {
+		return errors.New("package name or item list is too long")
+	}
+	seen := map[int]bool{}
+	for _, item := range req.Items {
+		if seen[item.ProductID] || item.ProductID < 1 || item.Quantity < 1 || item.Quantity > 100000 {
+			return errors.New("package products must be unique with a positive supported quantity")
+		}
+		seen[item.ProductID] = true
+	}
+
 	validItems := 0
 	for _, item := range req.Items {
 		if item.ProductID > 0 && item.Quantity > 0 {
@@ -805,7 +759,7 @@ func resolvePackageName(w http.ResponseWriter, r *http.Request) (int, string, bo
 		return 0, "", false
 	}
 	var name string
-	if err := db.QueryRow("SELECT name FROM product_packages WHERE id = $1", id).Scan(&name); err == sql.ErrNoRows {
+	if err := db.QueryRow(`SELECT COALESCE(f.folder_name,p.name) FROM product_packages p LEFT JOIN warehouse_picture_folders f ON f.entity_type='package' AND f.entity_id=p.id WHERE p.id=$1`, id).Scan(&name); err == sql.ErrNoRows {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product package not found"})
 		return 0, "", false
 	} else if err != nil {
@@ -847,4 +801,11 @@ func generatePackageCode(db interface{ QueryRow(string, ...any) *sql.Row }) (str
 		}
 	}
 	return "", errors.New("could not generate unique package code")
+}
+
+func normalizePackageLifecycle(value string) string {
+	if value == "all" || value == "archived" {
+		return value
+	}
+	return "active"
 }

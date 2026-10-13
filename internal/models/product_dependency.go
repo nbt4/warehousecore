@@ -33,6 +33,8 @@ type ProductDependencyWithDetails struct {
 	DefaultQuantity     float64  `json:"default_quantity"`
 	Notes               *string  `json:"notes,omitempty"`
 	CreatedAt           string   `json:"created_at"`
+	UpdatedAt           string   `json:"updated_at"`
+	LifecycleStatus     string   `json:"lifecycle_status"`
 }
 
 // CreateProductDependencyRequest represents a request to create a dependency

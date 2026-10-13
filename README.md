@@ -1,5 +1,17 @@
 # WarehouseCore
 
+## Produktmanagement · WarehouseCore 5.9.115
+
+Produkte, Geräte, Kabel, Pakete, Website, Beschaffung und Stammdaten haben
+übersichtliche, direkt verlinkbare Arbeitsbereiche. Bilduploads nutzen optionale
+Browseroptimierung, parallele Übertragung und lokalen Vorschau-Cache. Website-
+Entwurf und Veröffentlichung sind getrennt; eine persistente Hintergrundwarteschlange
+zeigt Aktualisierungsstatus und Wiederholungen. Packlisten-PDF und Scanansicht teilen
+einen versionierten Materialstand mit typisierten Packregeln und tatsächlichen
+Gerätezuordnungen. Details, Kompatibilität und Prüfungen:
+[Produktmanagement](docs/product-management.md).
+
+
 ## Auftragspositionen — Rental 5.3.121 / Warehouse 5.9.113 / MCP 1.5.59
 
 `rental.job_positions.prepare_create/create`, `prepare_update/update` und

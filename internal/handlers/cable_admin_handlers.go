@@ -220,7 +220,7 @@ func scanCable(scanner interface{ Scan(...interface{}) error }) (*Cable, error) 
 
 func GetAllCables(w http.ResponseWriter, r *http.Request) {
 	db := repository.GetSQLDB()
-	query := cableSelectQuery() + ` WHERE 1=1`
+	query := cableSelectQuery() + ` WHERE p.lifecycle_status='active'`
 	args := make([]interface{}, 0, 8)
 	addArg := func(value interface{}) string {
 		args = append(args, value)
@@ -395,10 +395,10 @@ func CreateCable(w http.ResponseWriter, r *http.Request) {
 
 	var productID int
 	if err := tx.QueryRow(`
-		INSERT INTO products (name, is_accessory, is_consumable, count_type_id, stock_quantity, created_at, updated_at)
-		VALUES ($1, TRUE, FALSE, $2, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		INSERT INTO products (name, is_accessory, is_consumable, count_type_id, stock_quantity, categoryid, product_type, product_kind, tracking_mode, created_at, updated_at)
+		VALUES ($1, TRUE, FALSE, $2, 0, (SELECT categoryid FROM categories WHERE name='Kabel & Adapter' AND lifecycle_status='active' LIMIT 1), 'accessory', 'cable', $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		RETURNING productid
-	`, name, countTypeID).Scan(&productID); err != nil {
+	`, name, countTypeID, input.TrackingMode).Scan(&productID); err != nil {
 		log.Printf("[CABLE CREATE] product insert failed: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create cable product"})
 		return
@@ -896,7 +896,7 @@ func createCableUnits(tx *sql.Tx, productID, quantity int, zoneID *int) error {
 }
 
 func GetCableConnectors(w http.ResponseWriter, _ *http.Request) {
-	rows, err := repository.GetSQLDB().Query(`SELECT cable_connectorsid, name, abbreviation, gender FROM cable_connectors ORDER BY name, gender`)
+	rows, err := repository.GetSQLDB().Query(`SELECT cable_connectorsid, name, abbreviation, gender FROM cable_connectors WHERE lifecycle_status='active' ORDER BY name, gender`)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch cable connectors"})
 		return
@@ -917,7 +917,8 @@ func GetCableTypes(w http.ResponseWriter, _ *http.Request) {
 		SELECT ct.cable_typesid, ct.name, COUNT(cp.cable_product_id)
 		FROM cable_types ct
 		LEFT JOIN cable_products cp ON cp.cable_type_id = ct.cable_typesid
-		GROUP BY ct.cable_typesid, ct.name
+		WHERE ct.lifecycle_status='active'
+ GROUP BY ct.cable_typesid, ct.name
 		ORDER BY ct.name
 	`)
 	if err != nil {

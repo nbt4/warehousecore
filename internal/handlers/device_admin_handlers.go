@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 )
 
 type DeviceAdminResponse struct {
+	Version         string  `json:"version,omitempty"`
 	DeviceID        string  `json:"device_id"`
 	ProductID       *int    `json:"product_id,omitempty"`
 	ProductName     string  `json:"product_name,omitempty"`
@@ -69,6 +71,7 @@ func toDeviceAdminResponse(device *models.DeviceWithDetails) DeviceAdminResponse
 
 	return DeviceAdminResponse{
 		DeviceID:        device.DeviceID,
+		Version:         device.Version,
 		ProductID:       nullIntToPtr(device.ProductID),
 		ProductName:     device.ProductName,
 		ProductCategory: device.ProductCategory,
@@ -122,7 +125,7 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 		SELECT d.deviceID, d.productID, d.serialnumber, d.barcode, d.qr_code, d.status, d.condition_status,
 		       d.lifecycle_status,d.archived_at,d.archived_by_product,
 		       d.current_location, d.zone_id,
-		       d.condition_rating, d.usage_hours, d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
+		       COALESCE(d.condition_rating,5), COALESCE(d.usage_hours,0), d.purchaseDate, d.lastmaintenance, d.nextmaintenance,
 		       d.notes, d.label_path,
 		       COALESCE(p.name, '') AS product_name,
 		       COALESCE(cat.name, '') AS product_category,
@@ -130,21 +133,57 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(z.code, '') AS zone_code,
 		       dc.caseID,
 		       COALESCE(c.name, '') AS case_name,
-		       jd.jobID,
-		       COALESCE(j.job_code, '') AS job_number
+		       j.jobID,
+		       COALESCE(j.job_code, '') AS job_number,to_char(d.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
 		FROM devices d
 		LEFT JOIN products p ON d.productID = p.productID
 		LEFT JOIN categories cat ON p.categoryID = cat.categoryID
 		LEFT JOIN storage_zones z ON d.zone_id = z.zone_id
-		LEFT JOIN devicescases dc ON d.deviceID = dc.deviceID
+		LEFT JOIN LATERAL (SELECT caseid FROM devicescases WHERE deviceid=d.deviceid ORDER BY (caseid=d.current_case_id) DESC NULLS LAST,caseid LIMIT 1) dc ON TRUE
 		LEFT JOIN cases c ON dc.caseID = c.caseID
-		LEFT JOIN job_devices jd ON d.deviceID = jd.deviceID
-		LEFT JOIN jobs j ON jd.jobID = j.jobID
-		WHERE ($1='all' OR d.lifecycle_status=$1)
-		ORDER BY d.deviceID DESC
+		LEFT JOIN LATERAL (SELECT jobs.jobid,jobs.job_code FROM job_devices jd JOIN jobs ON jobs.jobid=jd.jobid LEFT JOIN status js ON js.statusid=jobs.statusid WHERE jd.deviceid=d.deviceid AND jobs.deleted_at IS NULL AND NOT warehouse_job_status_is_closed(COALESCE(js.status,'')) ORDER BY jobs.startdate,jobs.jobid LIMIT 1) j ON TRUE
+		WHERE ($1='all' OR d.lifecycle_status=$1) AND ($2=0 OR d.productid=$2) AND ($3='' OR CONCAT_WS(' ',d.deviceid,d.serialnumber,d.barcode,d.qr_code,p.name) ILIKE $3)
+		ORDER BY d.deviceID DESC LIMIT $4 OFFSET $5
 	`
 
-	rows, err := db.Query(query, lifecycleStatus)
+	productID := 0
+	if value := r.URL.Query().Get("product_id"); value != "" {
+		parsed, e := strconv.Atoi(value)
+		if e != nil || parsed < 1 {
+			respondJSON(w, 400, map[string]string{"error": "Invalid product ID"})
+			return
+		}
+		productID = parsed
+	}
+	offset := 0
+	if value := r.URL.Query().Get("offset"); value != "" {
+		parsed, e := strconv.Atoi(value)
+		if e != nil || parsed < 0 {
+			respondJSON(w, 400, map[string]string{"error": "Invalid offset"})
+			return
+		}
+		offset = parsed
+	}
+	limit := 200
+	if value := r.URL.Query().Get("limit"); value != "" {
+		parsed, e := strconv.Atoi(value)
+		if e != nil || parsed < 1 || parsed > 1000 {
+			respondJSON(w, 400, map[string]string{"error": "Invalid limit"})
+			return
+		}
+		limit = parsed
+	}
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if search != "" {
+		search = "%" + search + "%"
+	}
+	var total int
+	if err = db.QueryRow("SELECT COUNT(*) FROM ("+strings.Split(query, "ORDER BY d.deviceID DESC")[0]+") device_matches", lifecycleStatus, productID, search).Scan(&total); err != nil {
+		respondJSON(w, 500, map[string]string{"error": "Geräteanzahl konnte nicht geladen werden"})
+		return
+	}
+	w.Header().Set("X-Total-Count", strconv.Itoa(total))
+	rows, err := db.Query(query, lifecycleStatus, productID, search, limit, offset)
 	if err != nil {
 		log.Printf("[DEVICE LIST] Failed to query devices: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch devices"})
@@ -152,7 +191,7 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var responses []DeviceAdminResponse
+	responses := []DeviceAdminResponse{}
 	for rows.Next() {
 		var device models.DeviceWithDetails
 		err := rows.Scan(
@@ -182,7 +221,7 @@ func GetAllDevicesAdmin(w http.ResponseWriter, r *http.Request) {
 			&device.CaseID,
 			&device.CaseName,
 			&device.CurrentJobID,
-			&device.JobNumber,
+			&device.JobNumber, &device.Version,
 		)
 		if err != nil {
 			log.Printf("[DEVICE LIST] Failed to scan device: %v", err)
@@ -233,6 +272,7 @@ func CreateDevice(w http.ResponseWriter, r *http.Request) {
 	service := services.NewDeviceAdminService()
 	devices, err := service.CreateDevices(r.Context(), &input)
 	if err != nil {
+
 		if errors.Is(err, repository.ErrNotFound) {
 			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Product not found"})
 			return
@@ -280,6 +320,10 @@ func UpdateDevice(w http.ResponseWriter, r *http.Request) {
 	service := services.NewDeviceAdminService()
 	device, err := service.UpdateDevice(r.Context(), deviceID, &input)
 	if err != nil {
+		if errors.Is(err, services.ErrDeviceVersionConflict) {
+			respondJSON(w, 409, map[string]string{"error": "Gerät wurde inzwischen geändert. Bitte neu laden."})
+			return
+		}
 		if errors.Is(err, repository.ErrNotFound) {
 			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
 			return

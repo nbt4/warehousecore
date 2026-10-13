@@ -9,16 +9,19 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
 // NextcloudClient is a lightweight WebDAV client for pushing files to Nextcloud.
 type NextcloudClient struct {
-	baseURL    *url.URL
-	username   string
-	password   string
-	basePath   string
-	httpClient *http.Client
+	baseURL       *url.URL
+	username      string
+	password      string
+	basePath      string
+	httpClient    *http.Client
+	collectionsMu sync.Mutex
+	collections   map[string]time.Time
 }
 
 // RemoteEntry represents a file or directory in Nextcloud.
@@ -41,11 +44,12 @@ func NewNextcloudClient(rawURL, username, password, basePath string) (*Nextcloud
 		basePath = "rentalcore-filepool"
 	}
 	return &NextcloudClient{
-		baseURL:    parsed,
-		username:   username,
-		password:   password,
-		basePath:   strings.Trim(basePath, "/"),
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		baseURL:     parsed,
+		username:    username,
+		password:    password,
+		basePath:    strings.Trim(basePath, "/"),
+		httpClient:  &http.Client{Timeout: 60 * time.Second},
+		collections: make(map[string]time.Time),
 	}, nil
 }
 
@@ -66,6 +70,8 @@ func (c *NextcloudClient) joinPath(rel string) string {
 
 // EnsureCollections makes sure each segment exists via MKCOL.
 func (c *NextcloudClient) EnsureCollections(rel string) error {
+	c.collectionsMu.Lock()
+	defer c.collectionsMu.Unlock()
 	rel = normalizeRel(rel)
 	segments := strings.Split(rel, "/")
 	current := ""
@@ -74,6 +80,9 @@ func (c *NextcloudClient) EnsureCollections(rel string) error {
 			continue
 		}
 		current = path.Join(current, seg)
+		if time.Since(c.collections[current]) < 5*time.Minute {
+			continue
+		}
 		req, err := http.NewRequest("MKCOL", c.joinPath(current), nil)
 		if err != nil {
 			return fmt.Errorf("mkcol request: %w", err)
@@ -88,7 +97,9 @@ func (c *NextcloudClient) EnsureCollections(rel string) error {
 			resp.Body.Close()
 			return fmt.Errorf("mkcol %s failed with status %s", current, resp.Status)
 		}
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
+		c.collections[current] = time.Now()
 	}
 	return nil
 }
@@ -99,23 +110,47 @@ func (c *NextcloudClient) Upload(rel string, body io.Reader, contentType string)
 	if err := c.EnsureCollections(rel); err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPut, c.joinPath(rel), body)
-	if err != nil {
-		return fmt.Errorf("put request: %w", err)
+	// Retry once if a previously cached collection was removed externally.
+	seeker, rewindable := body.(io.ReadSeeker)
+	start := int64(0)
+	if rewindable {
+		var err error
+		start, err = seeker.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
 	}
-	req.SetBasicAuth(c.username, c.password)
-	if contentType != "" {
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest(http.MethodPut, c.joinPath(rel), body)
+		if err != nil {
+			return fmt.Errorf("put request: %w", err)
+		}
+		req.SetBasicAuth(c.username, c.password)
 		req.Header.Set("Content-Type", contentType)
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("upload: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("upload: %w", err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode < 300 {
+			return nil
+		}
+		if attempt == 0 && rewindable && (resp.StatusCode == 404 || resp.StatusCode == 409) {
+			if _, err := seeker.Seek(start, io.SeekStart); err != nil {
+				return err
+			}
+			c.collectionsMu.Lock()
+			clear(c.collections)
+			c.collectionsMu.Unlock()
+			if err := c.EnsureCollections(rel); err != nil {
+				return err
+			}
+			continue
+		}
 		return fmt.Errorf("upload failed: %s", resp.Status)
 	}
-	return nil
+	return fmt.Errorf("upload failed")
 }
 
 // Download fetches a file from Nextcloud.
@@ -281,7 +316,11 @@ func (c *NextcloudClient) walk(rel string, results *[]RemoteEntry) error {
 
 // normalizeHref makes a relative path (trim base + basePath and trailing slash).
 func (c *NextcloudClient) normalizeHref(href string) string {
-	clean := path.Clean(href)
+	decoded, err := url.PathUnescape(href)
+	if err != nil {
+		return ""
+	}
+	clean := path.Clean(decoded)
 	prefix := path.Join("/", strings.Trim(c.baseURL.Path, "/"), c.basePath)
 	rel := strings.TrimPrefix(clean, prefix)
 	rel = strings.TrimPrefix(rel, "/")

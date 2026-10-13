@@ -40,7 +40,12 @@ func serveJobPackingList(w http.ResponseWriter, r *http.Request, regenerate bool
 	if directory == "" {
 		directory = defaultPackingListDirectory
 	}
-	path := filepath.Join(directory, fmt.Sprintf("job-%d-packing-list.pdf", jobID))
+	material, err := services.LoadMaterialSnapshot(r.Context(), repository.GetSQLDB(), jobID)
+	if err != nil {
+		respondJSON(w, 404, map[string]string{"error": "Packbedarf konnte nicht geladen werden"})
+		return
+	}
+	path := filepath.Join(directory, fmt.Sprintf("job-%d-material-%d-packing-list.pdf", jobID, material.Version))
 	if regenerate || !regularFileExists(path) {
 		if err := generateAndSavePackingList(jobID, directory, path); err != nil {
 			status := http.StatusInternalServerError
