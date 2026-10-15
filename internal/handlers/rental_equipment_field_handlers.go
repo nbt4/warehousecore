@@ -82,6 +82,9 @@ func GetRentalFieldDefinitions(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateRentalFieldDefinition(w http.ResponseWriter, r *http.Request) {
+	if rejectDelegatedRentalCatalog(w, r) {
+		return
+	}
 	db := repository.GetSQLDB()
 	var req RentalFieldDefinitionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -117,6 +120,9 @@ func CreateRentalFieldDefinition(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateRentalFieldDefinition(w http.ResponseWriter, r *http.Request) {
+	if rejectDelegatedRentalCatalog(w, r) {
+		return
+	}
 	db := repository.GetSQLDB()
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -160,6 +166,9 @@ func UpdateRentalFieldDefinition(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteRentalFieldDefinition(w http.ResponseWriter, r *http.Request) {
+	if rejectDelegatedRentalCatalog(w, r) {
+		return
+	}
 	db := repository.GetSQLDB()
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
