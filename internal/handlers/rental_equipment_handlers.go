@@ -218,12 +218,19 @@ func GetRentalEquipmentByID(w http.ResponseWriter, r *http.Request) {
 
 // CreateRentalEquipment creates a new rental equipment item
 func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
+	if rejectDelegatedRentalCatalog(w, r) {
+		return
+	}
 	var req RentalEquipmentCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
 
+	if !rentalNativeCatalogPricesValid(req) {
+		respondJSON(w, 400, map[string]string{"error": "Preise müssen positiv oder null, zweistellig und begrenzt sein"})
+		return
+	}
 	if req.ProductName == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Product name is required"})
 		return
@@ -236,8 +243,14 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		isActive = *req.IsActive
 	}
 
+	tx, err := db.BeginTx(r.Context(), nil)
+	if err != nil {
+		rentalNativeCatalogError(w, err)
+		return
+	}
+	defer tx.Rollback()
 	var id int64
-	err := db.QueryRow(`
+	err = tx.QueryRow(`
 		INSERT INTO rental_equipment (
 			name,
 			supplier,
@@ -264,14 +277,21 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Printf("Failed to create rental equipment: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create rental equipment"})
+		rentalNativeCatalogError(w, err)
 		return
 	}
 
-	if len(req.FieldValues) > 0 {
-		if err := saveFieldValues(db, int(id), req.FieldValues); err != nil {
-			log.Printf("Failed to save field values for new equipment %d: %v", id, err)
-		}
+	if err = saveFieldValues(tx, int(id), req.FieldValues); err != nil {
+		respondJSON(w, 400, map[string]string{"error": "Eigenschaften konnten nicht gespeichert werden; Artikel blieb unverändert"})
+		return
+	}
+	if err = recordRentalCatalogAudit(tx, r, int(id), "rental_equipment.create", nil); err != nil {
+		rentalNativeCatalogError(w, err)
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		rentalNativeCatalogError(w, err)
+		return
 	}
 
 	// Fetch the created equipment
@@ -316,6 +336,9 @@ func CreateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRentalEquipment updates an existing rental equipment item
 func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
+	if rejectDelegatedRentalCatalog(w, r) {
+		return
+	}
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.Atoi(idStr)
@@ -330,6 +353,10 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !rentalNativeCatalogPricesValid(req) {
+		respondJSON(w, 400, map[string]string{"error": "Preise müssen positiv oder null, zweistellig und begrenzt sein"})
+		return
+	}
 	if req.ProductName == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Product name is required"})
 		return
@@ -349,7 +376,8 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var version time.Time
-	if err = tx.QueryRow(`SELECT updated_at FROM rental_equipment WHERE id=$1 FOR UPDATE`, id).Scan(&version); err == sql.ErrNoRows {
+	var before json.RawMessage
+	if err = tx.QueryRow(`SELECT updated_at,to_jsonb(re) FROM rental_equipment re WHERE id=$1 FOR UPDATE`, id).Scan(&version, &before); err == sql.ErrNoRows {
 		respondJSON(w, 404, map[string]string{"error": "Fremdmietartikel nicht gefunden"})
 		return
 	} else if err != nil {
@@ -389,15 +417,30 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		log.Printf("Failed to update rental equipment: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update rental equipment"})
+		rentalNativeCatalogError(w, err)
 		return
 	}
 
-	if err := saveFieldValues(tx, id, req.FieldValues); err != nil {
+	var oldRecord struct {
+		IsActive bool `json:"is_active"`
+	}
+	_ = json.Unmarshal(before, &oldRecord)
+	if oldRecord.IsActive != isActive {
+		same, err := rentalCatalogPropertiesUnchanged(tx, id, req.FieldValues)
+		if err != nil {
+			rentalNativeCatalogError(w, err)
+			return
+		}
+		if !same {
+			respondJSON(w, 409, map[string]string{"error": "Archivierung und Wiederherstellung erhalten Eigenschaften; bitte getrennt bearbeiten"})
+			return
+		}
+	} else if err := saveFieldValues(tx, id, req.FieldValues); err != nil {
 		respondJSON(w, 400, map[string]string{"error": "Eigenschaften konnten nicht gespeichert werden; Artikel blieb unverändert"})
 		return
 	}
-	if err = recordCatalogAudit(tx, r, "rental_equipment", strconv.Itoa(id), "rental_equipment.update", req); err != nil {
+
+	if err = recordRentalCatalogAudit(tx, r, id, "rental_equipment.update", before); err != nil {
 		respondJSON(w, 500, map[string]string{"error": "Änderung konnte nicht protokolliert werden"})
 		return
 	}
@@ -447,25 +490,46 @@ func UpdateRentalEquipment(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteRentalEquipment deletes a rental equipment item
+// DeleteRentalEquipment retains identity and history through soft archive.
 func DeleteRentalEquipment(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	idStr := vars["id"]
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid equipment ID"})
+	if rejectDelegatedRentalCatalog(w, r) {
 		return
 	}
-
-	db := repository.GetSQLDB()
-
-	_, err = db.Exec("DELETE FROM rental_equipment WHERE id = $1", id)
-	if err != nil {
-		log.Printf("Failed to delete rental equipment: %v", err)
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete rental equipment"})
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil || id < 1 {
+		respondJSON(w, 400, map[string]string{"error": "Invalid equipment ID"})
 		return
 	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"message": "Deleted successfully"})
+	tx, err := repository.GetSQLDB().BeginTx(r.Context(), nil)
+	if err != nil {
+		rentalNativeCatalogError(w, err)
+		return
+	}
+	defer tx.Rollback()
+	var before json.RawMessage
+	var active bool
+	if err = tx.QueryRow(`SELECT to_jsonb(re),is_active FROM rental_equipment re WHERE id=$1 FOR UPDATE`, id).Scan(&before, &active); err == sql.ErrNoRows {
+		respondJSON(w, 404, map[string]string{"error": "Fremdmietartikel nicht gefunden"})
+		return
+	} else if err != nil {
+		rentalNativeCatalogError(w, err)
+		return
+	}
+	if active {
+		if _, err = tx.Exec(`UPDATE rental_equipment SET is_active=false WHERE id=$1`, id); err != nil {
+			rentalNativeCatalogError(w, err)
+			return
+		}
+		if err = recordRentalCatalogAudit(tx, r, id, "rental_equipment.archive", before); err != nil {
+			rentalNativeCatalogError(w, err)
+			return
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		rentalNativeCatalogError(w, err)
+		return
+	}
+	respondJSON(w, 200, map[string]any{"message": "Archived successfully", "equipment_id": id, "is_active": false})
 }
 
 // GetRentalEquipmentSuppliers returns a list of unique suppliers

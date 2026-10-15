@@ -280,6 +280,10 @@ func main() {
 		log.Fatalf("Product workspace schema: %v", err)
 	}
 
+	if err := handlers.EnsureRentalExternalCatalogLifecycle(); err != nil {
+		log.Fatalf("Failed to initialize external rental catalog lifecycle: %v", err)
+	}
+
 	// Set initial DB connection gauge
 	if sqlDB := repository.GetSQLDB(); sqlDB != nil {
 		metrics.DBConnectionsOpen.Set(float64(sqlDB.Stats().OpenConnections))
@@ -323,7 +327,7 @@ func main() {
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST")
 
 	// Health check (public)
-	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.115")).Methods("GET")
+	api.HandleFunc("/health", commonhealth.Handler(repository.GetSQLDB(), "warehousecore", "5.9.116")).Methods("GET")
 
 	// Public product pictures (must be accessible without headers for IMG tags)
 	api.HandleFunc("/public/products/{id}/pictures/{filename}", handlers.DownloadProductPicture).Methods("GET", "HEAD")
